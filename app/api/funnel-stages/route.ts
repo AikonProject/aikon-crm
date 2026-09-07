@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 
 export async function GET() {
     try {
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const { data, error } = await supabase
             .from('funnel_stages')
             .select('*')
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .order('position', { ascending: true });
 
         if (error) throw error;
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
         }
 
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
 
         // Determine position if not provided
         let stagePosition = position;
@@ -36,7 +38,7 @@ export async function POST(request: Request) {
             const { data: existing } = await supabase
                 .from('funnel_stages')
                 .select('position')
-                .eq('tenant_id', MOCK_TENANT_ID)
+                .eq('tenant_id', TENANT_ID)
                 .order('position', { ascending: false })
                 .limit(1);
             stagePosition = existing && existing.length > 0 ? existing[0].position + 1 : 0;
@@ -49,7 +51,7 @@ export async function POST(request: Request) {
         const { data, error } = await supabase
             .from('funnel_stages')
             .insert({
-                tenant_id: MOCK_TENANT_ID,
+                tenant_id: TENANT_ID,
                 name,
                 slug,
                 color: color ?? '#818CF8',

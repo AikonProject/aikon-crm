@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 import type { ReservationStatus } from '@/lib/types/database';
 
 export async function GET(request: Request) {
@@ -11,6 +11,7 @@ export async function GET(request: Request) {
         const tableId = searchParams.get('table_id');
 
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         let query = supabase
             .from('reservations')
             .select(
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
                  table:restaurant_tables ( id, name, capacity ),
                  event:restaurant_events ( id, name )`
             )
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .order('reservation_date', { ascending: true })
             .order('reservation_time', { ascending: true });
 
@@ -63,10 +64,11 @@ export async function POST(request: Request) {
         }
 
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const { data, error } = await supabase
             .from('reservations')
             .insert({
-                tenant_id: MOCK_TENANT_ID,
+                tenant_id: TENANT_ID,
                 guest_name,
                 guest_phone: guest_phone || null,
                 guest_email: guest_email || null,

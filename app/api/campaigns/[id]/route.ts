@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 
 export async function GET(
     _req: NextRequest,
@@ -9,12 +9,13 @@ export async function GET(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
 
         const { data: campaign, error } = await supabase
             .from('campaigns')
             .select('*, template:message_templates(id, name, category, language, content, variables)')
             .eq('id', id)
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .single();
 
         if (error) throw error;
@@ -41,12 +42,13 @@ export async function PATCH(
         const { id } = await params;
         const body = await req.json();
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
 
         const { data, error } = await supabase
             .from('campaigns')
             .update({ ...body, updated_at: new Date().toISOString() })
             .eq('id', id)
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .select()
             .single();
 

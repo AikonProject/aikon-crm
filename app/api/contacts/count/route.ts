@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 import type { ContactSource } from '@/lib/types/database';
 
 export async function GET(req: NextRequest) {
@@ -10,10 +10,11 @@ export async function GET(req: NextRequest) {
         const source = searchParams.get('source');
 
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         let query = supabase
             .from('contacts')
             .select('id', { count: 'exact', head: true })
-            .eq('tenant_id', MOCK_TENANT_ID);
+            .eq('tenant_id', TENANT_ID);
 
         if (funnel_stage_id) query = query.eq('funnel_stage_id', funnel_stage_id);
         if (source) query = query.eq('source', source as ContactSource);

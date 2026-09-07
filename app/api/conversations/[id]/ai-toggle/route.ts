@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 
 export async function PATCH(
     request: NextRequest,
@@ -9,6 +9,7 @@ export async function PATCH(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const body = await request.json();
 
         if (typeof body.ai_enabled !== 'boolean') {
@@ -22,7 +23,7 @@ export async function PATCH(
             .from('conversations')
             .update({ ai_enabled: body.ai_enabled } as Record<string, unknown>)
             .eq('id', id)
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .select()
             .single();
 

@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 
 export async function GET() {
     try {
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const { data, error } = await supabase
             .from('restaurant_schedules')
             .select('*')
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .order('day_of_week', { ascending: true });
         if (error) throw error;
         return NextResponse.json(data ?? []);
@@ -24,10 +25,11 @@ export async function POST(request: Request) {
         const { day_of_week, open_time, close_time, is_closed } = body;
 
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const { data, error } = await supabase
             .from('restaurant_schedules')
             .insert({
-                tenant_id: MOCK_TENANT_ID,
+                tenant_id: TENANT_ID,
                 day_of_week,
                 open_time: open_time || '12:00',
                 close_time: close_time || '22:00',

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 
 const PAGE_SIZE = 12;
 
@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
         const stageId = searchParams.get('stage_id') ?? '';
 
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
 
         let query = supabase
             .from('contacts')
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
         `,
                 { count: 'exact' }
             )
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .order('created_at', { ascending: false });
 
         if (search) {
@@ -83,11 +84,12 @@ export async function POST(req: NextRequest) {
         }
 
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
 
         const { data, error } = await supabase
             .from('contacts')
             .insert({
-                tenant_id: MOCK_TENANT_ID,
+                tenant_id: TENANT_ID,
                 nombre: nombre.trim(),
                 email: email ?? null,
                 wa_id: wa_id ?? null,

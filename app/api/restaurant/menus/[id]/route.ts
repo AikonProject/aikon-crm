@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 
 export async function PATCH(
     request: Request,
@@ -16,11 +16,12 @@ export async function PATCH(
         }
 
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const { data, error } = await supabase
             .from('restaurant_menus')
             .update(update)
             .eq('id', id)
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .select()
             .single();
 
@@ -39,11 +40,12 @@ export async function DELETE(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const { error } = await supabase
             .from('restaurant_menus')
             .delete()
             .eq('id', id)
-            .eq('tenant_id', MOCK_TENANT_ID);
+            .eq('tenant_id', TENANT_ID);
 
         if (error) throw error;
         return NextResponse.json({ success: true });

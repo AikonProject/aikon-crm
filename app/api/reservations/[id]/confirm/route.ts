@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 
 type ReservationRow = {
     id: string;
@@ -20,6 +20,7 @@ export async function POST(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
 
         // 1. Fetch reservation with contact — cast to avoid generated-type join mismatch
         const { data: rawReservation, error: resError } = await supabase
@@ -35,7 +36,7 @@ export async function POST(
                 contacts ( wa_id )
             `)
             .eq('id', id)
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .single();
 
         if (resError || !rawReservation) {
@@ -48,7 +49,7 @@ export async function POST(
         const { data: creds } = await supabase
             .from('tenant_credentials')
             .select('n8n_send_message_webhook')
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .single();
 
         const webhookUrl = creds?.n8n_send_message_webhook;
@@ -67,7 +68,7 @@ export async function POST(
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: 'reservation_confirmation',
-                    tenant_id: MOCK_TENANT_ID,
+                    tenant_id: TENANT_ID,
                     reservation_id: id,
                     guest_name: reservation.guest_name,
                     guest_phone: reservation.guest_phone ?? null,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 
 export async function POST(
     req: NextRequest,
@@ -16,13 +16,14 @@ export async function POST(
         }
 
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
 
         // Verify the contact belongs to this tenant
         const { data: contact } = await supabase
             .from('contacts')
             .select('id')
             .eq('id', contactId)
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .single();
 
         if (!contact) {
@@ -32,7 +33,7 @@ export async function POST(
         const { data: note, error } = await supabase
             .from('contact_notes')
             .insert({
-                tenant_id: MOCK_TENANT_ID,
+                tenant_id: TENANT_ID,
                 contact_id: contactId,
                 content: content.trim(),
                 created_by: null, // No auth yet

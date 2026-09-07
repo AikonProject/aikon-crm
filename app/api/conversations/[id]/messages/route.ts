@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 
 export async function GET(
     request: NextRequest,
@@ -9,6 +9,7 @@ export async function GET(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
 
         const { data: messages, error } = await supabase
             .from('messages')
@@ -26,7 +27,7 @@ export async function GET(
             .from('conversations')
             .update({ unread_count: 0 })
             .eq('id', id)
-            .eq('tenant_id', MOCK_TENANT_ID);
+            .eq('tenant_id', TENANT_ID);
 
         return NextResponse.json(messages ?? []);
     } catch (err) {
@@ -42,6 +43,7 @@ export async function POST(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const body = await request.json();
 
         // Fetch conversation to get contact info for webhook
@@ -54,7 +56,7 @@ export async function POST(
             .from('conversations')
             .select('id, contact_id, contact:contacts(id, nombre, wa_id)')
             .eq('id', id)
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .single() as unknown as Promise<{ data: ConvWithContact | null; error: unknown }>);
         const { data: conversation, error: convError } = convQueryResult;
 
@@ -67,7 +69,7 @@ export async function POST(
         const { data: message, error } = await supabase
             .from('messages')
             .insert({
-                tenant_id: MOCK_TENANT_ID,
+                tenant_id: TENANT_ID,
                 conversation_id: id,
                 contact_id: conversation.contact_id,
                 content: body.content,
@@ -97,7 +99,7 @@ export async function POST(
                 const { data: credentials } = await supabase
                     .from('tenant_credentials')
                     .select('n8n_send_message_webhook')
-                    .eq('tenant_id', MOCK_TENANT_ID)
+                    .eq('tenant_id', TENANT_ID)
                     .maybeSingle();
 
                 const webhookUrl = credentials?.n8n_send_message_webhook ?? undefined;
@@ -111,7 +113,7 @@ export async function POST(
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            tenant_id: MOCK_TENANT_ID,
+                            tenant_id: TENANT_ID,
                             conversation_id: id,
                             contact_id: contact?.id,
                             wa_id: contact?.wa_id,

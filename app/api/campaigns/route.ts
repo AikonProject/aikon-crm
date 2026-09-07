@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 import type { Campaign } from '@/lib/types/database';
 
 export async function GET() {
     try {
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const { data: rawData, error } = await supabase
             .from('campaigns')
             .select('*')
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -56,12 +57,13 @@ export async function POST(req: NextRequest) {
         }
 
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
 
         // Build contact query with optional segment filters
         let query = supabase
             .from('contacts')
             .select('id')
-            .eq('tenant_id', MOCK_TENANT_ID);
+            .eq('tenant_id', TENANT_ID);
 
         if (segment_filters?.funnel_stage_id) {
             query = query.eq('funnel_stage_id', segment_filters.funnel_stage_id);
@@ -78,7 +80,7 @@ export async function POST(req: NextRequest) {
         const { data: campaignRaw, error: campaignError } = await supabase
             .from('campaigns')
             .insert({
-                tenant_id: MOCK_TENANT_ID,
+                tenant_id: TENANT_ID,
                 name,
                 description: description ?? null,
                 status,
@@ -99,7 +101,7 @@ export async function POST(req: NextRequest) {
         // Create campaign_messages for each contact
         if ((contacts ?? []).length > 0) {
             const campaignMessages = (contacts ?? []).map((c) => ({
-                tenant_id: MOCK_TENANT_ID,
+                tenant_id: TENANT_ID,
                 campaign_id: campaign.id,
                 contact_id: c.id,
                 status: 'pending' as const,

@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 
 export async function GET() {
     try {
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const { data, error } = await supabase
             .from('restaurant_tables')
             .select('*')
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .order('name', { ascending: true });
         if (error) throw error;
         return NextResponse.json(data ?? []);
@@ -26,10 +27,11 @@ export async function POST(request: Request) {
         if (!name) return NextResponse.json({ error: 'name is required' }, { status: 400 });
 
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const { data, error } = await supabase
             .from('restaurant_tables')
             .insert({
-                tenant_id: MOCK_TENANT_ID,
+                tenant_id: TENANT_ID,
                 name,
                 capacity: Number(capacity) || 4,
                 zone: zone || null,

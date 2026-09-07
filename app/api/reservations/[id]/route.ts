@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 
 export async function PATCH(
     request: Request,
@@ -29,11 +29,12 @@ export async function PATCH(
         }
 
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const { data, error } = await supabase
             .from('reservations')
             .update(update)
             .eq('id', id)
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .select()
             .single();
 
@@ -46,7 +47,7 @@ export async function PATCH(
                     const { data: creds } = await supabase
                         .from('tenant_credentials')
                         .select('n8n_send_message_webhook')
-                        .eq('tenant_id', MOCK_TENANT_ID)
+                        .eq('tenant_id', TENANT_ID)
                         .single();
 
                     const webhookUrl = creds?.n8n_send_message_webhook;
@@ -84,7 +85,7 @@ export async function PATCH(
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             action: 'reservation_confirmation',
-                            tenant_id: MOCK_TENANT_ID,
+                            tenant_id: TENANT_ID,
                             reservation_id: id,
                             guest_name: res.guest_name,
                             guest_phone: res.guest_phone ?? null,

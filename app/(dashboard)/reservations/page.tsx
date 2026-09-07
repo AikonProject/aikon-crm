@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { ReservationsPageClient } from '@/components/reservations/reservations-page-client';
 import type { Reservation, RestaurantTable, RestaurantEvent } from '@/lib/types/database';
@@ -13,6 +13,7 @@ type ReservationWithRelations = Reservation & {
 
 async function getPageData() {
     const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
     const today = format(new Date(), 'yyyy-MM-dd');
 
     const [reservationsRes, tablesRes, eventsRes, tenantRes] = await Promise.all([
@@ -24,27 +25,27 @@ async function getPageData() {
                  table:restaurant_tables ( id, name, capacity ),
                  event:restaurant_events ( id, name )`
             )
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .order('reservation_date', { ascending: false })
             .order('reservation_time', { ascending: true })
             .limit(300),
         supabase
             .from('restaurant_tables')
             .select('id, name, capacity, location, is_active')
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .eq('is_active', true)
             .order('name', { ascending: true }),
         supabase
             .from('restaurant_events')
             .select('id, name, event_date, start_time')
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .eq('is_active', true)
             .gte('event_date', today)
             .order('event_date', { ascending: true }),
         supabase
             .from('tenants')
             .select('slug')
-            .eq('id', MOCK_TENANT_ID)
+            .eq('id', TENANT_ID)
             .single(),
     ]);
 

@@ -1,16 +1,17 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 
 export async function POST() {
     try {
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
 
         // Fetch tenant credentials for Meta/WhatsApp
         const { data: credentials } = await supabase
             .from('tenant_credentials')
             .select('waba_id, meta_access_token')
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .maybeSingle();
 
         if (!credentials?.waba_id || !credentials?.meta_access_token) {
@@ -47,7 +48,7 @@ export async function POST() {
         for (const t of metaTemplates) {
             await supabase.from('message_templates').upsert(
                 {
-                    tenant_id: MOCK_TENANT_ID,
+                    tenant_id: TENANT_ID,
                     name: t.name,
                     category: t.category,
                     language: t.language,

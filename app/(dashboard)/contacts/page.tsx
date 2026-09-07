@@ -1,6 +1,6 @@
 import { Plus, Upload } from 'lucide-react';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
@@ -11,12 +11,13 @@ import type { FunnelStage } from '@/lib/types/database';
 // Server-side data fetching
 async function getPageData() {
     const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
 
     const [stagesRes, contactsRes] = await Promise.all([
         supabase
             .from('funnel_stages')
             .select('id, name, color, position')
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .order('position', { ascending: true }),
         supabase
             .from('contacts')
@@ -29,7 +30,7 @@ async function getPageData() {
         `,
                 { count: 'exact' }
             )
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .order('created_at', { ascending: false })
             .limit(200),
     ]);

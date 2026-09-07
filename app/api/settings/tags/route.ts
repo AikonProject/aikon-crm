@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 
 export async function GET() {
     try {
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const { data, error } = await supabase
             .from('tags')
             .select('*')
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .order('created_at', { ascending: true });
 
         if (error) throw error;
@@ -28,9 +29,10 @@ export async function POST(req: NextRequest) {
         if (!name) return NextResponse.json({ error: 'name is required' }, { status: 400 });
 
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const { data, error } = await supabase
             .from('tags')
-            .insert({ tenant_id: MOCK_TENANT_ID, name, color: color ?? null })
+            .insert({ tenant_id: TENANT_ID, name, color: color ?? null })
             .select()
             .single();
 

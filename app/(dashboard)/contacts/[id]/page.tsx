@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft, Phone, Mail as MailIcon } from 'lucide-react';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { FunnelStageBadge } from '@/components/contacts/funnel-stage-badge';
@@ -16,6 +16,7 @@ import type { FunnelStage } from '@/lib/types/database';
 // ---------------------------------------------------------------------------
 async function getContactData(id: string) {
     const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [contactRes, conversationsRes, reservationsRes, notesRes, activityRes, stagesRes] =
@@ -34,14 +35,14 @@ async function getContactData(id: string) {
           `
                 )
                 .eq('id', id)
-                .eq('tenant_id', MOCK_TENANT_ID)
+                .eq('tenant_id', TENANT_ID)
                 .single() as unknown) as Promise<{ data: ContactDetail | null; error: unknown }>,
 
             supabase
                 .from('conversations')
                 .select('id, channel, status, last_message_at, unread_count, assigned_to, created_at')
                 .eq('contact_id', id)
-                .eq('tenant_id', MOCK_TENANT_ID)
+                .eq('tenant_id', TENANT_ID)
                 .order('last_message_at', { ascending: false })
                 .limit(20),
 
@@ -51,7 +52,7 @@ async function getContactData(id: string) {
                     'id, reservation_date, reservation_time, party_size, status, source, created_at, table:restaurant_tables ( id, name )'
                 )
                 .eq('contact_id', id)
-                .eq('tenant_id', MOCK_TENANT_ID)
+                .eq('tenant_id', TENANT_ID)
                 .order('reservation_date', { ascending: false })
                 .limit(50),
 
@@ -66,14 +67,14 @@ async function getContactData(id: string) {
                 .from('activity_log')
                 .select('id, description, activity_type, created_at')
                 .eq('contact_id', id)
-                .eq('tenant_id', MOCK_TENANT_ID)
+                .eq('tenant_id', TENANT_ID)
                 .order('created_at', { ascending: false })
                 .limit(40),
 
             supabase
                 .from('funnel_stages')
                 .select('id, name, color, position')
-                .eq('tenant_id', MOCK_TENANT_ID)
+                .eq('tenant_id', TENANT_ID)
                 .order('position', { ascending: true }),
         ]);
 

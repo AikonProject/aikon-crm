@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 
 export async function PATCH(
     request: Request,
@@ -12,6 +12,7 @@ export async function PATCH(
         const { name, color, position, is_won, is_lost } = body;
 
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const update: Record<string, unknown> = {};
         if (name !== undefined) {
             update.name = name;
@@ -27,7 +28,7 @@ export async function PATCH(
             .from('funnel_stages')
             .update(update)
             .eq('id', id)
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .select()
             .single();
 
@@ -46,19 +47,20 @@ export async function DELETE(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
 
         // Nullify contacts referencing this stage first
         await supabase
             .from('contacts')
             .update({ funnel_stage_id: null })
             .eq('funnel_stage_id', id)
-            .eq('tenant_id', MOCK_TENANT_ID);
+            .eq('tenant_id', TENANT_ID);
 
         const { error } = await supabase
             .from('funnel_stages')
             .delete()
             .eq('id', id)
-            .eq('tenant_id', MOCK_TENANT_ID);
+            .eq('tenant_id', TENANT_ID);
 
         if (error) throw error;
         return NextResponse.json({ success: true });

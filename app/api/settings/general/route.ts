@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 
 export async function GET() {
     try {
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const { data, error } = await supabase
             .from('tenants')
             .select('*')
-            .eq('id', MOCK_TENANT_ID)
+            .eq('id', TENANT_ID)
             .single();
 
         if (error) throw error;
@@ -26,6 +27,7 @@ export async function PATCH(req: NextRequest) {
         const { name, slug, logo_url } = body;
 
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const { data, error } = await supabase
             .from('tenants')
             .update({
@@ -34,7 +36,7 @@ export async function PATCH(req: NextRequest) {
                 ...(logo_url !== undefined && { logo_url }),
                 updated_at: new Date().toISOString(),
             })
-            .eq('id', MOCK_TENANT_ID)
+            .eq('id', TENANT_ID)
             .select()
             .single();
 

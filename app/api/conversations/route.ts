@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { MOCK_TENANT_ID } from '@/lib/mock-tenant';
+import { getServerTenantId } from '@/lib/tenant';
 import type { ConversationStatus } from '@/lib/types/database';
 
 export async function GET(request: NextRequest) {
     try {
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const { searchParams } = new URL(request.url);
         const status = searchParams.get('status');
 
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
                     funnel_stage:funnel_stages(id, name, color)
                 )
             `)
-            .eq('tenant_id', MOCK_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .order('last_message_at', { ascending: false, nullsFirst: false });
 
         if (status && status !== 'all') {
@@ -43,12 +44,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
     try {
         const supabase = createAdminClient();
+    const TENANT_ID = await getServerTenantId();
         const body = await request.json();
 
         const { data, error } = await supabase
             .from('conversations')
             .insert({
-                tenant_id: MOCK_TENANT_ID,
+                tenant_id: TENANT_ID,
                 contact_id: body.contact_id,
                 channel: body.channel ?? 'whatsapp',
                 status: 'open' as ConversationStatus,
