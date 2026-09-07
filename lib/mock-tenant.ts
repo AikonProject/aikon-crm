@@ -1,0 +1,2 @@
+// Temporary until Clerk is integrated
+export const MOCK_TENANT_ID = '00000000-0000-0000-0000-000000000001'

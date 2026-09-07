@@ -1,0 +1,726 @@
+'use client';
+
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useParams } from 'next/navigation';
+import { ChevronLeft, ChevronRight, Minus, Plus, Check, Loader2 } from 'lucide-react';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+type TenantPublic = {
+  id: string;
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  primary_color?: string | null;
+};
+type ScheduleRow = {
+  id: string;
+  day_of_week: number;
+  shift_name: string | null;
+  open_time: string;
+  close_time: string;
+};
+type EventRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  event_date: string;
+  start_time: string | null;
+  price: number | null;
+  currency: string | null;
+  max_guests: number | null;
+  image_url: string | null;
+};
+
+const MONTH_NAMES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+];
+const DAY_HEADERS = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do'];
+const QUICK_SIZES = [1, 2, 3, 4, 5, 6, 8, 10, 12];
+const TOTAL_STEPS = 6;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+function pad2(n: number) {
+  return n.toString().padStart(2, '0');
+}
+
+function generateTimeSlots(schedules: ScheduleRow[], dateStr: string): string[] {
+  const d = new Date(dateStr + 'T00:00:00');
+  const dow = d.getDay(); // 0=Sun
+  const matched = schedules.filter((s) => s.day_of_week === dow);
+  const slots: string[] = [];
+  for (const s of matched) {
+    const [oh, om] = s.open_time.split(':').map(Number);
+    const [ch, cm] = s.close_time.split(':').map(Number);
+    const openMin = oh * 60 + om;
+    const closeMin = ch * 60 + cm;
+    let cur = openMin;
+    while (cur < closeMin) {
+      slots.push(`${pad2(Math.floor(cur / 60))}:${pad2(cur % 60)}`);
+      cur += 90;
+    }
+  }
+  return slots;
+}
+
+function formatDateShort(dateStr: string): string {
+  const d = new Date(dateStr + 'T12:00:00');
+  const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function formatEventDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T12:00:00');
+  const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  return `${d.getDate()} ${months[d.getMonth()]}`;
+}
+
+function getCalendarDays(year: number, month: number): (number | null)[] {
+  const firstDay = new Date(year, month, 1).getDay();
+  const offset = firstDay === 0 ? 6 : firstDay - 1; // Monday-based
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < offset; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  return cells;
+}
+
+function toDateStr(y: number, m: number, d: number): string {
+  return `${y}-${pad2(m + 1)}-${pad2(d)}`;
+}
+
+function todayStr(): string {
+  const n = new Date();
+  return toDateStr(n.getFullYear(), n.getMonth(), n.getDate());
+}
+
+// ---------------------------------------------------------------------------
+// Marquee CSS (injected once)
+// ---------------------------------------------------------------------------
+const marqueeCSS = `
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+`;
+
+// ---------------------------------------------------------------------------
+// Page component
+// ---------------------------------------------------------------------------
+export default function PublicBookingPage() {
+  const { slug } = useParams<{ slug: string }>();
+
+  // Data
+  const [tenant, setTenant] = useState<TenantPublic | null>(null);
+  const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
+  const [events, setEvents] = useState<EventRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+
+  // Wizard state
+  const [step, setStep] = useState(1);
+  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedTime, setSelectedTime] = useState('');
+  const [partySize, setPartySize] = useState(2);
+  const [guestName, setGuestName] = useState('');
+  const [guestPhone, setGuestPhone] = useState('');
+  const [guestEmail, setGuestEmail] = useState('');
+
+  // Calendar state
+  const [calYear, setCalYear] = useState(() => new Date().getFullYear());
+  const [calMonth, setCalMonth] = useState(() => new Date().getMonth());
+
+  // Submission
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [confirmationCode, setConfirmationCode] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const accent = tenant?.primary_color || '#C8961C';
+
+  // Fetch tenant data
+  useEffect(() => {
+    if (!slug) return;
+    fetch(`/api/public/${slug}`)
+      .then((r) => {
+        if (r.status === 404) {
+          setNotFound(true);
+          return null;
+        }
+        return r.json();
+      })
+      .then((data) => {
+        if (!data) return;
+        setTenant(data.tenant);
+        setSchedules(data.schedules ?? []);
+        setEvents(data.events ?? []);
+      })
+      .finally(() => setLoading(false));
+  }, [slug]);
+
+  // Time slots for selected date
+  const timeSlots = useMemo(() => {
+    if (!selectedDate) return [];
+    return generateTimeSlots(schedules, selectedDate);
+  }, [selectedDate, schedules]);
+
+  // Calendar days
+  const calendarDays = useMemo(() => getCalendarDays(calYear, calMonth), [calYear, calMonth]);
+
+  const today = todayStr();
+
+  // Step titles
+  const stepTitles: Record<number, string> = {
+    1: 'Elige tu fecha',
+    2: 'Selecciona el horario',
+    3: '¿Cuantos son?',
+    4: 'Tu nombre',
+    5: 'Tu contacto',
+    6: 'Confirmación',
+  };
+
+  // Can continue?
+  const canContinue = useCallback((): boolean => {
+    switch (step) {
+      case 1: return selectedDate !== '';
+      case 2: return selectedTime !== '';
+      case 3: return partySize >= 1 && partySize <= 20;
+      case 4: return guestName.trim().length > 0;
+      case 5: return guestPhone.trim().length > 0 || guestEmail.trim().length > 0;
+      case 6: return true;
+      default: return false;
+    }
+  }, [step, selectedDate, selectedTime, partySize, guestName, guestPhone, guestEmail]);
+
+  // Navigation
+  function goBack() {
+    if (step > 1) {
+      setStep(step - 1);
+      setFormError(null);
+    }
+  }
+
+  function goNext() {
+    if (!canContinue()) return;
+    if (step < TOTAL_STEPS) {
+      setStep(step + 1);
+      setFormError(null);
+    }
+  }
+
+  // Reset when date changes (clear time selection)
+  function handleDateSelect(dateStr: string) {
+    setSelectedDate(dateStr);
+    setSelectedTime('');
+  }
+
+  // Submit reservation
+  async function handleSubmit() {
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      const res = await fetch(`/api/public/${slug}/reservations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          guest_name: guestName.trim(),
+          guest_phone: guestPhone.trim() || null,
+          guest_email: guestEmail.trim() || null,
+          reservation_date: selectedDate,
+          reservation_time: selectedTime,
+          party_size: partySize,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Error al crear la reserva');
+      setConfirmationCode(data.reservation?.confirmation_code ?? null);
+      setSubmitted(true);
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Error al crear la reserva');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function resetWizard() {
+    setStep(1);
+    setSelectedDate('');
+    setSelectedTime('');
+    setPartySize(2);
+    setGuestName('');
+    setGuestPhone('');
+    setGuestEmail('');
+    setSubmitted(false);
+    setConfirmationCode(null);
+    setFormError(null);
+  }
+
+  // Calendar navigation
+  function prevMonth() {
+    if (calMonth === 0) {
+      setCalMonth(11);
+      setCalYear(calYear - 1);
+    } else {
+      setCalMonth(calMonth - 1);
+    }
+  }
+  function nextMonth() {
+    if (calMonth === 11) {
+      setCalMonth(0);
+      setCalYear(calYear + 1);
+    } else {
+      setCalMonth(calMonth + 1);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Loading
+  // ---------------------------------------------------------------------------
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0D0D0D] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-white/40 animate-spin" />
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Not found
+  // ---------------------------------------------------------------------------
+  if (notFound || !tenant) {
+    return (
+      <div className="min-h-screen bg-[#0D0D0D] flex flex-col items-center justify-center gap-4 px-4">
+        <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center">
+          <span className="text-3xl">?</span>
+        </div>
+        <h1 className="text-xl font-bold text-white text-center">Restaurante no encontrado</h1>
+        <p className="text-sm text-white/40 text-center max-w-xs">
+          El enlace que visitaste no corresponde a ningún restaurante activo.
+        </p>
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Success screen
+  // ---------------------------------------------------------------------------
+  if (submitted) {
+    return (
+      <div
+        className="min-h-screen bg-[#0D0D0D] flex flex-col items-center justify-center px-4"
+        style={{
+          background: `radial-gradient(ellipse at bottom right, ${accent}15 0%, #0D0D0D 70%)`,
+        }}
+      >
+        <style>{marqueeCSS}</style>
+        <div className="flex flex-col items-center gap-6 max-w-[520px] w-full">
+          {/* Checkmark */}
+          <div
+            className="w-20 h-20 rounded-full flex items-center justify-center"
+            style={{ backgroundColor: accent }}
+          >
+            <Check className="w-10 h-10 text-[#0D0D0D]" strokeWidth={3} />
+          </div>
+
+          <h2 className="text-2xl font-bold text-white text-center">Reserva confirmada</h2>
+
+          {confirmationCode && (
+            <div className="bg-[#1C1C1C] rounded-2xl border border-white/10 px-6 py-4 text-center">
+              <p className="text-xs text-white/40 mb-1 uppercase tracking-wider">Codigo de reserva</p>
+              <p className="text-2xl font-bold tracking-[0.2em]" style={{ color: accent }}>
+                {confirmationCode}
+              </p>
+            </div>
+          )}
+
+          {/* Summary */}
+          <div className="bg-[#1C1C1C] rounded-2xl border border-white/10 p-5 w-full space-y-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-white/40">Fecha</span>
+              <span className="text-white">{formatDateShort(selectedDate)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/40">Hora</span>
+              <span className="text-white">{selectedTime}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/40">Personas</span>
+              <span className="text-white">{partySize}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/40">Nombre</span>
+              <span className="text-white">{guestName}</span>
+            </div>
+          </div>
+
+          <button
+            onClick={resetWizard}
+            className="w-full py-4 rounded-2xl text-base font-bold transition-opacity hover:opacity-90"
+            style={{ backgroundColor: accent, color: '#0D0D0D' }}
+          >
+            Hacer otra reserva
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Main wizard
+  // ---------------------------------------------------------------------------
+  return (
+    <div
+      className="min-h-screen bg-[#0D0D0D] flex flex-col text-white"
+      style={{
+        background: `radial-gradient(ellipse at bottom right, ${accent}15 0%, #0D0D0D 70%)`,
+      }}
+    >
+      <style>{marqueeCSS}</style>
+
+      {/* Events ticker */}
+      {events.length > 0 && (
+        <div
+          className="w-full overflow-hidden py-2.5 text-sm font-medium"
+          style={{ backgroundColor: `${accent}20`, color: accent }}
+        >
+          <div
+            className="whitespace-nowrap flex"
+            style={{ animation: 'marquee 30s linear infinite' }}
+          >
+            {/* Duplicate content for seamless loop */}
+            {[...events, ...events].map((ev, i) => (
+              <span key={`${ev.id}-${i}`} className="mx-6">
+                ✦ {ev.name} · {formatEventDate(ev.event_date)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4">
+        {/* Back button */}
+        <button
+          onClick={goBack}
+          className={`w-10 h-10 rounded-full flex items-center justify-center transition-opacity ${
+            step === 1 ? 'opacity-0 pointer-events-none' : 'opacity-100 hover:bg-white/5'
+          }`}
+        >
+          <ChevronLeft className="w-5 h-5 text-white/60" />
+        </button>
+
+        {/* Center: restaurant name + step title */}
+        <div className="text-center flex-1">
+          <p className="text-[11px] uppercase tracking-[0.15em] text-white/40 mb-0.5">
+            {tenant.name}
+          </p>
+          <h1 className="text-lg font-bold text-white">{stepTitles[step]}</h1>
+        </div>
+
+        {/* Step counter */}
+        <div className="w-10 h-10 flex items-center justify-center">
+          <span className="text-sm text-white/40 font-medium">{step}/{TOTAL_STEPS}</span>
+        </div>
+      </div>
+
+      {/* Content area */}
+      <div className="flex-1 flex items-center justify-center px-5 py-4 overflow-y-auto">
+        <div className="w-full max-w-[520px]">
+          {/* Step 1: Calendar */}
+          {step === 1 && (
+            <div className="bg-[#1C1C1C] rounded-2xl border border-white/10 p-5">
+              {/* Month/year header */}
+              <div className="flex items-center justify-between mb-5">
+                <button
+                  onClick={prevMonth}
+                  className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-white/5 transition"
+                >
+                  <ChevronLeft className="w-5 h-5 text-white/60" />
+                </button>
+                <h3 className="text-base font-semibold text-white">
+                  {MONTH_NAMES[calMonth]} {calYear}
+                </h3>
+                <button
+                  onClick={nextMonth}
+                  className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-white/5 transition"
+                >
+                  <ChevronRight className="w-5 h-5 text-white/60" />
+                </button>
+              </div>
+
+              {/* Day headers */}
+              <div className="grid grid-cols-7 mb-2">
+                {DAY_HEADERS.map((dh) => (
+                  <div key={dh} className="text-center text-xs text-white/30 font-medium py-1">
+                    {dh}
+                  </div>
+                ))}
+              </div>
+
+              {/* Day grid */}
+              <div className="grid grid-cols-7 gap-y-1">
+                {calendarDays.map((day, idx) => {
+                  if (day === null) {
+                    return <div key={`empty-${idx}`} />;
+                  }
+                  const dateStr = toDateStr(calYear, calMonth, day);
+                  const isPast = dateStr < today;
+                  const isToday = dateStr === today;
+                  const isSelected = dateStr === selectedDate;
+
+                  return (
+                    <button
+                      key={dateStr}
+                      disabled={isPast}
+                      onClick={() => handleDateSelect(dateStr)}
+                      className={`relative mx-auto w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium transition-all ${
+                        isPast
+                          ? 'opacity-30 cursor-not-allowed text-white/50'
+                          : isSelected
+                            ? 'text-[#0D0D0D] font-bold'
+                            : 'text-white hover:bg-white/5 cursor-pointer'
+                      }`}
+                      style={isSelected ? { backgroundColor: accent } : undefined}
+                    >
+                      {day}
+                      {isToday && !isSelected && (
+                        <span
+                          className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
+                          style={{ backgroundColor: accent }}
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Time slots */}
+          {step === 2 && (
+            <div>
+              {timeSlots.length === 0 ? (
+                <div className="bg-[#1C1C1C] rounded-2xl border border-white/10 p-8 text-center">
+                  <p className="text-white/40 text-base">
+                    No hay turnos disponibles para esta fecha
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-3">
+                  {timeSlots.map((slot) => {
+                    const isSelected = slot === selectedTime;
+                    return (
+                      <button
+                        key={slot}
+                        onClick={() => setSelectedTime(slot)}
+                        className={`py-3.5 rounded-2xl text-base font-medium transition-all border ${
+                          isSelected
+                            ? 'border-transparent text-[#0D0D0D] font-bold'
+                            : 'border-white/10 bg-[#1C1C1C] text-white hover:border-white/20'
+                        }`}
+                        style={isSelected ? { backgroundColor: accent } : undefined}
+                      >
+                        {slot}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 3: Party size */}
+          {step === 3 && (
+            <div className="flex flex-col items-center gap-8">
+              {/* Big counter */}
+              <div className="flex items-center gap-8">
+                <button
+                  onClick={() => setPartySize(Math.max(1, partySize - 1))}
+                  disabled={partySize <= 1}
+                  className="w-14 h-14 rounded-full bg-[#1C1C1C] border border-white/10 flex items-center justify-center text-white/60 hover:bg-white/5 transition disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <Minus className="w-6 h-6" />
+                </button>
+                <span className="text-7xl font-bold text-white tabular-nums min-w-[100px] text-center">
+                  {partySize}
+                </span>
+                <button
+                  onClick={() => setPartySize(Math.min(20, partySize + 1))}
+                  disabled={partySize >= 20}
+                  className="w-14 h-14 rounded-full bg-[#1C1C1C] border border-white/10 flex items-center justify-center text-white/60 hover:bg-white/5 transition disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <Plus className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Quick select pills */}
+              <div className="flex flex-wrap justify-center gap-2.5">
+                {QUICK_SIZES.map((n) => {
+                  const isSelected = n === partySize;
+                  return (
+                    <button
+                      key={n}
+                      onClick={() => setPartySize(n)}
+                      className={`w-12 h-12 rounded-full text-sm font-semibold transition-all border ${
+                        isSelected
+                          ? 'border-transparent text-[#0D0D0D]'
+                          : 'border-white/10 bg-[#1C1C1C] text-white hover:border-white/20'
+                      }`}
+                      style={isSelected ? { backgroundColor: accent } : undefined}
+                    >
+                      {n}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Name */}
+          {step === 4 && (
+            <div className="flex flex-col items-center gap-4">
+              <label className="text-white/40 text-base">¿Como te llamamos?</label>
+              <input
+                type="text"
+                value={guestName}
+                onChange={(e) => setGuestName(e.target.value)}
+                placeholder="Tu nombre"
+                autoFocus
+                className="bg-[#1C1C1C] border border-white/15 rounded-2xl text-white text-lg px-5 py-4 w-full focus:outline-none text-center placeholder:text-white/20"
+                style={{ boxShadow: guestName ? `0 0 0 2px ${accent}` : undefined }}
+              />
+            </div>
+          )}
+
+          {/* Step 5: Contact */}
+          {step === 5 && (
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="text-white/40 text-sm mb-2 block">Telefono</label>
+                <input
+                  type="tel"
+                  value={guestPhone}
+                  onChange={(e) => setGuestPhone(e.target.value)}
+                  placeholder="+52 55 0000 0000"
+                  autoFocus
+                  className="bg-[#1C1C1C] border border-white/15 rounded-2xl text-white text-lg px-5 py-4 w-full focus:outline-none placeholder:text-white/20"
+                  style={{
+                    boxShadow: guestPhone ? `0 0 0 2px ${accent}` : undefined,
+                  }}
+                />
+              </div>
+              <div>
+                <label className="text-white/40 text-sm mb-2 block">Correo electronico</label>
+                <input
+                  type="email"
+                  value={guestEmail}
+                  onChange={(e) => setGuestEmail(e.target.value)}
+                  placeholder="tu@email.com"
+                  className="bg-[#1C1C1C] border border-white/15 rounded-2xl text-white text-lg px-5 py-4 w-full focus:outline-none placeholder:text-white/20"
+                  style={{
+                    boxShadow: guestEmail ? `0 0 0 2px ${accent}` : undefined,
+                  }}
+                />
+              </div>
+              <p className="text-white/30 text-xs text-center mt-1">
+                Al menos uno de los dos es necesario
+              </p>
+            </div>
+          )}
+
+          {/* Step 6: Confirmation */}
+          {step === 6 && (
+            <div className="flex flex-col gap-5">
+              <div className="bg-[#1C1C1C] rounded-2xl border border-white/10 p-5 space-y-4">
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">Fecha</span>
+                  <span className="text-white font-medium">{formatDateShort(selectedDate)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">Hora</span>
+                  <span className="text-white font-medium">{selectedTime}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">Personas</span>
+                  <span className="text-white font-medium">{partySize}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">Nombre</span>
+                  <span className="text-white font-medium">{guestName}</span>
+                </div>
+                {guestPhone && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-white/40">Telefono</span>
+                    <span className="text-white font-medium">{guestPhone}</span>
+                  </div>
+                )}
+                {guestEmail && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-white/40">Email</span>
+                    <span className="text-white font-medium">{guestEmail}</span>
+                  </div>
+                )}
+              </div>
+
+              {formError && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-2xl px-4 py-3">
+                  <p className="text-sm text-red-400">{formError}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Progress dots */}
+      <div className="flex items-center justify-center gap-2 py-4">
+        {Array.from({ length: TOTAL_STEPS }, (_, i) => i + 1).map((s) => (
+          <div
+            key={s}
+            className="w-2 h-2 rounded-full transition-all"
+            style={{
+              backgroundColor: s === step ? accent : 'rgba(255,255,255,0.15)',
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Continue / Confirm button */}
+      <div className="px-5 pb-6">
+        {step < TOTAL_STEPS ? (
+          <button
+            onClick={goNext}
+            disabled={!canContinue()}
+            className="w-full py-4 rounded-2xl text-base font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            style={{
+              backgroundColor: canContinue() ? accent : `${accent}50`,
+              color: '#0D0D0D',
+            }}
+          >
+            Continuar
+          </button>
+        ) : (
+          <button
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="w-full py-4 rounded-2xl text-base font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+            style={{ backgroundColor: accent, color: '#0D0D0D' }}
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Enviando...
+              </>
+            ) : (
+              'Confirmar reserva'
+            )}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
