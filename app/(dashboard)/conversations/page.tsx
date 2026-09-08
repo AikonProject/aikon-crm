@@ -18,7 +18,7 @@ export default async function ConversationsPage() {
             )
         `)
         .eq('tenant_id', TENANT_ID)
-        .order('last_message_at', { ascending: false, nullsFirst: false });
+        .order('last_message_at', { ascending: false });
 
     const initialConversations = (data ?? []) as Conversation[];
 

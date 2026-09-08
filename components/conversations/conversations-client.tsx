@@ -102,12 +102,14 @@ export default function ConversationsClient({ initialConversations }: Conversati
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const convSubscriptionRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
     const msgSubscriptionRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+    // Skip the initial fetch on mount — data already loaded server-side
+    const isMountedRef = useRef(false);
 
     const activeConversation = conversations.find((c) => c.id === activeConvId) ?? null;
     const activeContact = activeConversation?.contact ?? null;
     const contactName = activeContact?.nombre ?? '';
 
-    // ── Fetch conversations ─────────────────────────────────────────────────
+    // ── Fetch conversations (only when status filter changes after mount) ───
     const fetchConversations = useCallback(async () => {
         setLoadingConvs(true);
         try {
@@ -123,6 +125,11 @@ export default function ConversationsClient({ initialConversations }: Conversati
     }, [statusFilter]);
 
     useEffect(() => {
+        // On first mount skip the fetch — initialConversations from server is sufficient
+        if (!isMountedRef.current) {
+            isMountedRef.current = true;
+            return;
+        }
         fetchConversations();
     }, [fetchConversations]);
 

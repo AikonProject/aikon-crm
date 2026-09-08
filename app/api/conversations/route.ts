@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
                 )
             `)
             .eq('tenant_id', TENANT_ID)
-            .order('last_message_at', { ascending: false, nullsFirst: false });
+            .order('last_message_at', { ascending: false });
 
         if (status && status !== 'all') {
             query = query.eq('status', status as ConversationStatus);
