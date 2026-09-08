@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { after } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { ReservationStatus, ReservationSource } from '@/lib/types/database';
 
@@ -10,7 +11,7 @@ export async function POST(
         const { slug } = await params;
         const supabase = createAdminClient();
 
-        // Look up tenant by slug
+        // Look up tenant + webhook URL in one query
         const { data: tenant, error: tenantError } = await supabase
             .from('tenants')
             .select('id, is_active')
@@ -37,46 +38,49 @@ export async function POST(
 
         if (!guest_name || !reservation_date || !reservation_time || !party_size) {
             return NextResponse.json(
-                { error: 'guest_name, reservation_date, reservation_time, and party_size are required' },
+                { error: 'guest_name, reservation_date, reservation_time, and party_size son requeridos' },
                 { status: 400 }
             );
         }
 
-        // Validate date is not in the past
         const today = new Date().toISOString().split('T')[0];
         if (reservation_date < today) {
-            return NextResponse.json({ error: 'Reservation date cannot be in the past' }, { status: 400 });
+            return NextResponse.json({ error: 'La fecha de reserva no puede ser en el pasado' }, { status: 400 });
         }
 
-        // Validate party_size
         const size = Number(party_size);
         if (isNaN(size) || size < 1 || size > 50) {
-            return NextResponse.json({ error: 'party_size must be between 1 and 50' }, { status: 400 });
+            return NextResponse.json({ error: 'El número de personas debe estar entre 1 y 50' }, { status: 400 });
         }
 
         // ── Availability check ────────────────────────────────────────────────
-        // 1. Get total table capacity for the restaurant
-        const { data: tables } = await supabase
-            .from('restaurant_tables')
-            .select('capacity')
-            .eq('tenant_id', tenant.id)
-            .eq('is_active', true);
+        const [tablesRes, existingRes, credsRes] = await Promise.all([
+            supabase
+                .from('restaurant_tables')
+                .select('capacity')
+                .eq('tenant_id', tenant.id)
+                .eq('is_active', true),
+            supabase
+                .from('reservations')
+                .select('party_size')
+                .eq('tenant_id', tenant.id)
+                .eq('reservation_date', reservation_date)
+                .eq('reservation_time', reservation_time)
+                .not('status', 'in', '(cancelled,no_show,completed)'),
+            supabase
+                .from('tenant_credentials')
+                .select('n8n_reservation_webhook')
+                .eq('tenant_id', tenant.id)
+                .maybeSingle(),
+        ]);
 
+        const tables = tablesRes.data;
         const totalCapacity = tables && tables.length > 0
             ? tables.reduce((sum, t) => sum + (t.capacity ?? 0), 0)
-            : 50; // fallback: 50 guests if no tables configured
+            : 50;
 
-        // 2. Sum party_size already booked for the same date + time slot
-        const { data: existing } = await supabase
-            .from('reservations')
-            .select('party_size')
-            .eq('tenant_id', tenant.id)
-            .eq('reservation_date', reservation_date)
-            .eq('reservation_time', reservation_time)
-            .not('status', 'in', '(cancelled,no_show,completed)');
-
-        const bookedSeats = existing
-            ? existing.reduce((sum, r) => sum + (r.party_size ?? 0), 0)
+        const bookedSeats = existingRes.data
+            ? existingRes.data.reduce((sum, r) => sum + (r.party_size ?? 0), 0)
             : 0;
 
         if (bookedSeats + size > totalCapacity) {
@@ -108,19 +112,48 @@ export async function POST(
                 source: 'web' as ReservationSource,
                 status: 'pending' as ReservationStatus,
             })
-            .select('id, confirmation_code, reservation_date, reservation_time, party_size, status, guest_name, guest_phone')
+            .select('id, confirmation_code, reservation_date, reservation_time, party_size, status, guest_name, guest_phone, guest_email')
             .single();
 
         if (error) throw error;
 
-        // Link reservation to a CRM contact (best-effort — never fails the reservation)
-        let waId: string | null = null;
-        try {
-            const phone = guest_phone?.trim() || null;
-            const email = guest_email?.trim() || null;
+        // ── Fire webhook synchronously before returning ───────────────────────
+        // Using a 4-second AbortSignal so the webhook never blocks the user more than that
+        const webhookUrl = credsRes.data?.n8n_reservation_webhook;
+        if (webhookUrl) {
+            try {
+                await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'reservation_new',
+                        tenant_id: tenant.id,
+                        reservation_id: data.id,
+                        confirmation_code: data.confirmation_code,
+                        guest_name: data.guest_name,
+                        guest_phone: data.guest_phone ?? null,
+                        guest_email: data.guest_email ?? null,
+                        wa_id: data.guest_phone ?? null,
+                        reservation_date: data.reservation_date,
+                        reservation_time: data.reservation_time,
+                        party_size: data.party_size,
+                        status: data.status,
+                    }),
+                    signal: AbortSignal.timeout(4000),
+                });
+            } catch (webhookErr) {
+                // Log but never block the response
+                console.error('[reservation webhook] failed:', webhookErr);
+            }
+        }
+        // ─────────────────────────────────────────────────────────────────────
 
-            if (phone || email) {
-                let contactId: string | null = null;
+        // ── Link contact in the background after response is sent ─────────────
+        after(async () => {
+            try {
+                const phone = guest_phone?.trim() || null;
+                const email = guest_email?.trim() || null;
+                if (!phone && !email) return;
 
                 const orParts: string[] = [];
                 if (phone) orParts.push(`wa_id.eq.${phone}`);
@@ -134,9 +167,9 @@ export async function POST(
                     .limit(1)
                     .maybeSingle();
 
+                let contactId: string | null = null;
                 if (existingContact) {
                     contactId = existingContact.id;
-                    waId = existingContact.wa_id;
                 } else {
                     const { data: newContact } = await supabase
                         .from('contacts')
@@ -144,17 +177,13 @@ export async function POST(
                             tenant_id: tenant.id,
                             nombre: guest_name.trim(),
                             wa_id: phone,
-                            email: email,
+                            email,
                             source: 'web',
                             lead_score: 0,
                         })
-                        .select('id, wa_id')
+                        .select('id')
                         .single();
-
-                    if (newContact) {
-                        contactId = newContact.id;
-                        waId = newContact.wa_id;
-                    }
+                    if (newContact) contactId = newContact.id;
                 }
 
                 if (contactId) {
@@ -163,44 +192,10 @@ export async function POST(
                         .update({ contact_id: contactId })
                         .eq('id', data.id);
                 }
+            } catch (err) {
+                console.error('[reservation contact linking]', err);
             }
-        } catch (contactErr) {
-            console.error('[POST /api/public/[slug]/reservations] contact linking failed', contactErr);
-        }
-
-        // ── Fire reservation webhook (fire-and-forget) ────────────────────────
-        void (async () => {
-            try {
-                const { data: creds } = await supabase
-                    .from('tenant_credentials')
-                    .select('n8n_reservation_webhook')
-                    .eq('tenant_id', tenant.id)
-                    .maybeSingle();
-
-                const webhookUrl = creds?.n8n_reservation_webhook;
-                if (!webhookUrl) return;
-
-                await fetch(webhookUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: 'reservation_new',
-                        tenant_id: tenant.id,
-                        reservation_id: data.id,
-                        confirmation_code: data.confirmation_code,
-                        guest_name: data.guest_name,
-                        guest_phone: data.guest_phone ?? null,
-                        wa_id: waId ?? data.guest_phone ?? null,
-                        reservation_date: data.reservation_date,
-                        reservation_time: data.reservation_time,
-                        party_size: data.party_size,
-                        status: data.status,
-                    }),
-                });
-            } catch (webhookErr) {
-                console.error('[reservation webhook on new booking]', webhookErr);
-            }
-        })();
+        });
         // ─────────────────────────────────────────────────────────────────────
 
         return NextResponse.json({ reservation: data }, { status: 201 });
