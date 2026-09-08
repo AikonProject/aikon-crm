@@ -20,6 +20,13 @@ type ScheduleRow = {
   shift_name: string | null;
   open_time: string;
   close_time: string;
+  slot_duration_minutes: number | null;
+};
+type MenuRow = {
+  id: string;
+  name: string;
+  menu_url: string | null;
+  is_default: boolean | null;
 };
 type EventRow = {
   id: string;
@@ -57,14 +64,17 @@ function generateTimeSlots(schedules: ScheduleRow[], dateStr: string): string[] 
     const [oh, om] = s.open_time.split(':').map(Number);
     const [ch, cm] = s.close_time.split(':').map(Number);
     const openMin = oh * 60 + om;
-    const closeMin = ch * 60 + cm;
+    // close_time "00:00" means midnight (next day) → 24*60 = 1440
+    const closeMin = ch === 0 && cm === 0 ? 24 * 60 : ch * 60 + cm;
+    const interval = s.slot_duration_minutes && s.slot_duration_minutes > 0 ? s.slot_duration_minutes : 90;
     let cur = openMin;
     while (cur < closeMin) {
-      slots.push(`${pad2(Math.floor(cur / 60))}:${pad2(cur % 60)}`);
-      cur += 90;
+      slots.push(`${pad2(Math.floor(cur / 60) % 24)}:${pad2(cur % 60)}`);
+      cur += interval;
     }
   }
-  return slots;
+  // Deduplicate (in case shifts overlap) and sort
+  return [...new Set(slots)].sort();
 }
 
 function formatDateShort(dateStr: string): string {
@@ -118,6 +128,7 @@ export default function PublicBookingPage() {
   const [tenant, setTenant] = useState<TenantPublic | null>(null);
   const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
+  const [menus, setMenus] = useState<MenuRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
@@ -158,6 +169,7 @@ export default function PublicBookingPage() {
         setTenant(data.tenant);
         setSchedules(data.schedules ?? []);
         setEvents(data.events ?? []);
+        setMenus(data.menus ?? []);
       })
       .finally(() => setLoading(false));
   }, [slug]);
@@ -421,9 +433,21 @@ export default function PublicBookingPage() {
           <h1 className="text-lg font-bold text-white">{stepTitles[step]}</h1>
         </div>
 
-        {/* Step counter */}
-        <div className="w-10 h-10 flex items-center justify-center">
-          <span className="text-sm text-white/40 font-medium">{step}/{TOTAL_STEPS}</span>
+        {/* Right side: menu button or step counter */}
+        <div className="w-auto min-w-[40px] flex items-center justify-end">
+          {menus.length > 0 && menus[0].menu_url ? (
+            <a
+              href={menus[0].menu_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors"
+              style={{ borderColor: `${accent}60`, color: accent }}
+            >
+              Ver menú
+            </a>
+          ) : (
+            <span className="text-sm text-white/40 font-medium">{step}/{TOTAL_STEPS}</span>
+          )}
         </div>
       </div>
 

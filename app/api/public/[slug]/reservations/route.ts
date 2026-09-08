@@ -73,7 +73,7 @@ export async function POST(
             .eq('tenant_id', tenant.id)
             .eq('reservation_date', reservation_date)
             .eq('reservation_time', reservation_time)
-            .not('status', 'in', '("cancelled","no_show","completed")');
+            .not('status', 'in', '(cancelled,no_show,completed)');
 
         const bookedSeats = existing
             ? existing.reduce((sum, r) => sum + (r.party_size ?? 0), 0)
