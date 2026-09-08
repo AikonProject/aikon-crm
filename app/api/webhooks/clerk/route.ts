@@ -98,11 +98,14 @@ export async function POST(req: Request) {
             }
 
             // Upsert user row — tenant_id and role are set later via membership events
-            await supabase.from('users').upsert({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (supabase.from('users') as any).upsert({
                 clerk_user_id: user.id,
                 email,
                 full_name: fullName,
                 avatar_url: user.image_url ?? null,
+                tenant_id: null,
+                role: 'agent',
                 is_active: true,
             }, { onConflict: 'clerk_user_id' });
         }
@@ -134,12 +137,12 @@ export async function POST(req: Request) {
                         .update({ tenant_id: tenant.id, role, is_active: true })
                         .eq('clerk_user_id', clerkUserId);
                 } else {
-                    // Fallback: fetch user from Clerk API is not available here,
-                    // insert a minimal row so membership is not lost
+                    // Fallback: user.created was missed — insert minimal row
                     await supabase.from('users').insert({
                         clerk_user_id: clerkUserId,
                         tenant_id: tenant.id,
                         email: `${clerkUserId}@pending.clerk`,
+                        full_name: clerkUserId,
                         role,
                         is_active: true,
                     });
