@@ -5,7 +5,7 @@ import { getServerTenantId } from '@/lib/tenant';
 export async function GET() {
     try {
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await getServerTenantId();
         const { data, error } = await supabase
             .from('restaurant_menus')
             .select('*')
@@ -22,21 +22,21 @@ export async function GET() {
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { name, description, image_url, is_available } = body;
+        const { name, menu_url, is_active, is_default } = body;
 
         if (!name) return NextResponse.json({ error: 'name is required' }, { status: 400 });
 
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await getServerTenantId();
 
         const { data, error } = await supabase
             .from('restaurant_menus')
             .insert({
                 tenant_id: TENANT_ID,
                 name,
-                description: description || null,
-                image_url: image_url || null,
-                is_available: is_available !== false,
+                menu_url: menu_url?.trim() || null,
+                is_active: is_active !== false,
+                is_default: is_default === true,
             })
             .select()
             .single();

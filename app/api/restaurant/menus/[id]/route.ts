@@ -9,14 +9,14 @@ export async function PATCH(
     try {
         const { id } = await params;
         const body = await request.json();
-        const allowed = ['name', 'description', 'image_url', 'is_available', 'position'];
+        const allowed = ['name', 'menu_url', 'is_active', 'is_default'];
         const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
         for (const key of allowed) {
             if (body[key] !== undefined) update[key] = body[key];
         }
 
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await getServerTenantId();
         const { data, error } = await supabase
             .from('restaurant_menus')
             .update(update)
@@ -40,7 +40,7 @@ export async function DELETE(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await getServerTenantId();
         const { error } = await supabase
             .from('restaurant_menus')
             .delete()

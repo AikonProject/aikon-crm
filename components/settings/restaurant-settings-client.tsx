@@ -287,6 +287,8 @@ function HorariosTab({ schedules: initialSchedules }: { schedules: RestaurantSch
     async function handleSaveAll() {
         setSaving(true);
         try {
+            // For each day: if we have an existing schedule, PATCH it.
+            // If not, POST a new one. One schedule per day.
             await Promise.all(
                 days.map(async (day) => {
                     const existing = scheduleMap.get(day);
@@ -295,6 +297,7 @@ function HorariosTab({ schedules: initialSchedules }: { schedules: RestaurantSch
                         open_time: localSchedules[day].open_time,
                         close_time: localSchedules[day].close_time,
                         is_active: !localSchedules[day].is_closed,
+                        slot_duration_minutes: 30,
                     };
                     if (existing) {
                         await fetch(`/api/restaurant/schedules/${existing.id}`, {

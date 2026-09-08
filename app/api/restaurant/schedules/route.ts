@@ -5,7 +5,7 @@ import { getServerTenantId } from '@/lib/tenant';
 export async function GET() {
     try {
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await getServerTenantId();
         const { data, error } = await supabase
             .from('restaurant_schedules')
             .select('*')
@@ -22,18 +22,27 @@ export async function GET() {
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { day_of_week, open_time, close_time, is_closed } = body;
+        const { day_of_week, open_time, close_time, is_active, slot_duration_minutes } = body;
 
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await getServerTenantId();
+
+        // Use the day number as the shift_name fallback
+        const DAY_NAMES: Record<number, string> = {
+            0: 'Domingo', 1: 'Lunes', 2: 'Martes', 3: 'Miercoles',
+            4: 'Jueves', 5: 'Viernes', 6: 'Sabado',
+        };
+
         const { data, error } = await supabase
             .from('restaurant_schedules')
             .insert({
                 tenant_id: TENANT_ID,
                 day_of_week,
+                shift_name: DAY_NAMES[day_of_week] ?? `Dia ${day_of_week}`,
                 open_time: open_time || '12:00',
-                close_time: close_time || '22:00',
-                is_closed: is_closed ?? false,
+                close_time: close_time || '23:00',
+                is_active: is_active !== false,
+                slot_duration_minutes: slot_duration_minutes ?? 30,
             })
             .select()
             .single();

@@ -23,7 +23,7 @@ async function getPageData() {
             .from('restaurant_events')
             .select('*')
             .eq('tenant_id', TENANT_ID)
-            .order('date', { ascending: true }),
+            .order('event_date', { ascending: true }),
         supabase
             .from('restaurant_menus')
             .select('*')
