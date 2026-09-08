@@ -1,7 +1,7 @@
 'use client';
 
-import { FileText, Music, Image } from 'lucide-react';
-import type { Message } from '@/lib/types/database';
+import { FileText, Music, Image, Clock, Check, CheckCheck, X } from 'lucide-react';
+import type { Message, DeliveryStatus } from '@/lib/types/database';
 
 interface MessageBubbleProps {
     message: Message & { is_note?: boolean };
@@ -10,6 +10,23 @@ interface MessageBubbleProps {
 function formatTime(dateStr: string) {
     const d = new Date(dateStr);
     return d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function DeliveryIcon({ status }: { status: DeliveryStatus | null }) {
+    switch (status) {
+        case 'sending':
+            return <Clock size={11} className="text-white/50" />;
+        case 'sent':
+            return <Check size={11} className="text-white/70" />;
+        case 'delivered':
+            return <CheckCheck size={11} className="text-white/70" />;
+        case 'read':
+            return <CheckCheck size={11} className="text-[#93C5FD]" />;
+        case 'failed':
+            return <X size={11} className="text-red-300" />;
+        default:
+            return <Clock size={11} className="text-white/50" />;
+    }
 }
 
 function MessageContent({ message }: { message: Message & { is_note?: boolean } }) {
@@ -70,7 +87,10 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                     <div className="bg-[#818CF8] text-white rounded-2xl rounded-tr-sm px-4 py-2.5">
                         <MessageContent message={message} />
                     </div>
-                    <p className="text-[11px] text-[#9CA3AF] text-right mt-0.5 px-1">{formatTime(message.created_at)}</p>
+                    <div className="flex items-center justify-end gap-1 mt-0.5 px-1">
+                        <p className="text-[11px] text-[#9CA3AF]">{formatTime(message.created_at)}</p>
+                        <DeliveryIcon status={message.delivery_status} />
+                    </div>
                 </div>
             </div>
         );

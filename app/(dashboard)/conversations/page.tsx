@@ -276,6 +276,7 @@ export default function ConversationsPage() {
             message_type: 'text',
             direction: 'outbound',
             status: 'pending',
+            delivery_status: 'sending',
             sent_by: null,
             sent_by_name: 'Agente',
             is_note: isNoteMode,

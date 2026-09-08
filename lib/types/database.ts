@@ -225,6 +225,7 @@ export type MessageType =
     | 'reaction';
 export type MessageDirection = 'inbound' | 'outbound';
 export type MessageStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
+export type DeliveryStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 export type Message = {
     id: string;
@@ -241,6 +242,7 @@ export type Message = {
     template_vars: unknown | null; // jsonb
     wa_message_id: string | null;
     status: MessageStatus;
+    delivery_status: DeliveryStatus | null; // WhatsApp delivery receipt, updated by n8n
     is_note: boolean;
     sent_by: string | null; // User.id for outbound
     sent_by_name: string | null;
