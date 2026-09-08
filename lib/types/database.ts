@@ -54,6 +54,7 @@ export type TenantCredentials = {
     n8n_webhook_secret: string | null;
     n8n_send_message_webhook: string | null;
     n8n_bot_webhook: string | null;
+    n8n_reservation_webhook: string | null;
     google_calendar_id: string | null;
     google_service_account_json: string | null;
     created_at: string;

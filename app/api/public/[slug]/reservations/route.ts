@@ -54,6 +54,44 @@ export async function POST(
             return NextResponse.json({ error: 'party_size must be between 1 and 50' }, { status: 400 });
         }
 
+        // ── Availability check ────────────────────────────────────────────────
+        // 1. Get total table capacity for the restaurant
+        const { data: tables } = await supabase
+            .from('restaurant_tables')
+            .select('capacity')
+            .eq('tenant_id', tenant.id)
+            .eq('is_active', true);
+
+        const totalCapacity = tables && tables.length > 0
+            ? tables.reduce((sum, t) => sum + (t.capacity ?? 0), 0)
+            : 50; // fallback: 50 guests if no tables configured
+
+        // 2. Sum party_size already booked for the same date + time slot
+        const { data: existing } = await supabase
+            .from('reservations')
+            .select('party_size')
+            .eq('tenant_id', tenant.id)
+            .eq('reservation_date', reservation_date)
+            .eq('reservation_time', reservation_time)
+            .not('status', 'in', '("cancelled","no_show","completed")');
+
+        const bookedSeats = existing
+            ? existing.reduce((sum, r) => sum + (r.party_size ?? 0), 0)
+            : 0;
+
+        if (bookedSeats + size > totalCapacity) {
+            const available = Math.max(0, totalCapacity - bookedSeats);
+            return NextResponse.json(
+                {
+                    error: available > 0
+                        ? `Solo quedan ${available} lugares disponibles para este horario`
+                        : 'No hay disponibilidad para este horario. Por favor elige otro horario o fecha.',
+                },
+                { status: 409 }
+            );
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
         const { data, error } = await supabase
             .from('reservations')
             .insert({
@@ -70,12 +108,13 @@ export async function POST(
                 source: 'web' as ReservationSource,
                 status: 'pending' as ReservationStatus,
             })
-            .select('id, confirmation_code, reservation_date, reservation_time, party_size, status')
+            .select('id, confirmation_code, reservation_date, reservation_time, party_size, status, guest_name, guest_phone')
             .single();
 
         if (error) throw error;
 
         // Link reservation to a CRM contact (best-effort — never fails the reservation)
+        let waId: string | null = null;
         try {
             const phone = guest_phone?.trim() || null;
             const email = guest_email?.trim() || null;
@@ -83,14 +122,13 @@ export async function POST(
             if (phone || email) {
                 let contactId: string | null = null;
 
-                // Build OR filter for existing contact lookup
                 const orParts: string[] = [];
                 if (phone) orParts.push(`wa_id.eq.${phone}`);
                 if (email) orParts.push(`email.eq.${email}`);
 
                 const { data: existingContact } = await supabase
                     .from('contacts')
-                    .select('id')
+                    .select('id, wa_id')
                     .eq('tenant_id', tenant.id)
                     .or(orParts.join(','))
                     .limit(1)
@@ -98,6 +136,7 @@ export async function POST(
 
                 if (existingContact) {
                     contactId = existingContact.id;
+                    waId = existingContact.wa_id;
                 } else {
                     const { data: newContact } = await supabase
                         .from('contacts')
@@ -109,10 +148,13 @@ export async function POST(
                             source: 'web',
                             lead_score: 0,
                         })
-                        .select('id')
+                        .select('id, wa_id')
                         .single();
 
-                    if (newContact) contactId = newContact.id;
+                    if (newContact) {
+                        contactId = newContact.id;
+                        waId = newContact.wa_id;
+                    }
                 }
 
                 if (contactId) {
@@ -125,6 +167,41 @@ export async function POST(
         } catch (contactErr) {
             console.error('[POST /api/public/[slug]/reservations] contact linking failed', contactErr);
         }
+
+        // ── Fire reservation webhook (fire-and-forget) ────────────────────────
+        void (async () => {
+            try {
+                const { data: creds } = await supabase
+                    .from('tenant_credentials')
+                    .select('n8n_reservation_webhook')
+                    .eq('tenant_id', tenant.id)
+                    .maybeSingle();
+
+                const webhookUrl = creds?.n8n_reservation_webhook;
+                if (!webhookUrl) return;
+
+                await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'reservation_new',
+                        tenant_id: tenant.id,
+                        reservation_id: data.id,
+                        confirmation_code: data.confirmation_code,
+                        guest_name: data.guest_name,
+                        guest_phone: data.guest_phone ?? null,
+                        wa_id: waId ?? data.guest_phone ?? null,
+                        reservation_date: data.reservation_date,
+                        reservation_time: data.reservation_time,
+                        party_size: data.party_size,
+                        status: data.status,
+                    }),
+                });
+            } catch (webhookErr) {
+                console.error('[reservation webhook on new booking]', webhookErr);
+            }
+        })();
+        // ─────────────────────────────────────────────────────────────────────
 
         return NextResponse.json({ reservation: data }, { status: 201 });
     } catch (err) {

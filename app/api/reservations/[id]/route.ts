@@ -15,7 +15,6 @@ export async function PATCH(
             'reservation_date', 'reservation_time', 'party_size',
             'table_id', 'event_id', 'occasion', 'special_requests',
             'internal_notes', 'source', 'contact_id',
-            'reminded_at', 'confirmed_at',
         ];
 
         const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -23,13 +22,8 @@ export async function PATCH(
             if (body[key] !== undefined) update[key] = body[key];
         }
 
-        // Auto-set confirmed_at when status → confirmed
-        if (body.status === 'confirmed' && !update.confirmed_at) {
-            update.confirmed_at = new Date().toISOString();
-        }
-
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await getServerTenantId();
         const { data, error } = await supabase
             .from('reservations')
             .update(update)
@@ -40,26 +34,27 @@ export async function PATCH(
 
         if (error) throw error;
 
-        // Fire n8n webhook when status → confirmed (fire-and-forget)
-        if (body.status === 'confirmed') {
+        // ── Fire n8n webhook on status change ─────────────────────────────────
+        const newStatus = body.status;
+        if (newStatus === 'confirmed' || newStatus === 'cancelled') {
             void (async () => {
                 try {
                     const { data: creds } = await supabase
                         .from('tenant_credentials')
-                        .select('n8n_send_message_webhook')
+                        .select('n8n_reservation_webhook')
                         .eq('tenant_id', TENANT_ID)
-                        .single();
+                        .maybeSingle();
 
-                    const webhookUrl = creds?.n8n_send_message_webhook;
+                    const webhookUrl = creds?.n8n_reservation_webhook;
                     if (!webhookUrl) return;
 
-                    // Fetch reservation details for the webhook payload
-                    // Use unknown cast to avoid Supabase join type resolution issues
+                    // Get reservation + contact wa_id for the payload
                     const { data: rawRes } = await supabase
                         .from('reservations')
                         .select(`
                             guest_name,
                             guest_phone,
+                            confirmation_code,
                             reservation_date,
                             reservation_time,
                             party_size,
@@ -73,6 +68,7 @@ export async function PATCH(
                     type ResRow = {
                         guest_name: string;
                         guest_phone: string | null;
+                        confirmation_code: string | null;
                         reservation_date: string;
                         reservation_time: string;
                         party_size: number;
@@ -80,26 +76,32 @@ export async function PATCH(
                     };
                     const res = rawRes as unknown as ResRow;
 
+                    const action = newStatus === 'confirmed'
+                        ? 'reservation_confirmation'
+                        : 'reservation_cancellation';
+
                     await fetch(webhookUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            action: 'reservation_confirmation',
+                            action,
                             tenant_id: TENANT_ID,
                             reservation_id: id,
+                            confirmation_code: res.confirmation_code ?? null,
                             guest_name: res.guest_name,
                             guest_phone: res.guest_phone ?? null,
-                            wa_id: res.contacts?.wa_id ?? null,
+                            wa_id: res.contacts?.wa_id ?? res.guest_phone ?? null,
                             reservation_date: res.reservation_date,
                             reservation_time: res.reservation_time,
                             party_size: res.party_size,
                         }),
                     });
                 } catch (webhookErr) {
-                    console.error('[n8n webhook on status=confirmed]', webhookErr);
+                    console.error(`[n8n webhook on status=${newStatus}]`, webhookErr);
                 }
             })();
         }
+        // ─────────────────────────────────────────────────────────────────────
 
         return NextResponse.json(data);
     } catch (err) {

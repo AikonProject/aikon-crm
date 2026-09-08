@@ -76,6 +76,7 @@ export default function IntegrationsPage() {
     const [n8nBaseUrl, setN8nBaseUrl] = useState('');
     const [sendMsgWebhook, setSendMsgWebhook] = useState('');
     const [botWebhook, setBotWebhook] = useState('');
+    const [reservationWebhook, setReservationWebhook] = useState('');
     const [webhookSecret, setWebhookSecret] = useState('');
     const [savingN8n, setSavingN8n] = useState(false);
     const [savedN8n, setSavedN8n] = useState(false);
@@ -99,11 +100,13 @@ export default function IntegrationsPage() {
                 setPhoneNumberId(c.whatsapp?.phone_number_id ?? '');
                 setMetaToken(c.whatsapp?.meta_access_token ?? '');
                 setWebhookVerifyToken(c.whatsapp?.webhook_verify_token ?? '');
-                // n8n
-                setN8nBaseUrl(c.n8n?.base_url ?? '');
-                setSendMsgWebhook(c.n8n?.send_message_webhook ?? '');
-                setBotWebhook(c.n8n?.bot_webhook ?? '');
-                setWebhookSecret(c.n8n?.webhook_secret ?? '');
+                // n8n (flat column names from DB)
+                const flat = c as unknown as Record<string, string>;
+                setN8nBaseUrl(flat.n8n_base_url ?? '');
+                setSendMsgWebhook(flat.n8n_send_message_webhook ?? '');
+                setBotWebhook(flat.n8n_bot_webhook ?? '');
+                setReservationWebhook(flat.n8n_reservation_webhook ?? '');
+                setWebhookSecret(flat.n8n_webhook_secret ?? '');
                 // Google Calendar
                 setCalendarId(c.google_calendar?.calendar_id ?? '');
                 setServiceAccountJson(c.google_calendar?.service_account_json ?? '');
@@ -134,7 +137,13 @@ export default function IntegrationsPage() {
         await fetch('/api/settings/credentials', {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ provider: 'n8n', credentials: { base_url: n8nBaseUrl, send_message_webhook: sendMsgWebhook, bot_webhook: botWebhook, webhook_secret: webhookSecret } }),
+            body: JSON.stringify({
+                n8n_base_url: n8nBaseUrl,
+                n8n_send_message_webhook: sendMsgWebhook,
+                n8n_bot_webhook: botWebhook,
+                n8n_reservation_webhook: reservationWebhook,
+                n8n_webhook_secret: webhookSecret,
+            }),
         });
         setSavingN8n(false); setSavedN8n(true); setTimeout(() => setSavedN8n(false), 2500);
     }
@@ -206,6 +215,7 @@ export default function IntegrationsPage() {
                     <FieldRow label="n8n Base URL" value={n8nBaseUrl} onChange={setN8nBaseUrl} placeholder="https://mi-n8n.ejemplo.com" />
                     <FieldRow label="Send Message Webhook URL" value={sendMsgWebhook} onChange={setSendMsgWebhook} placeholder="https://mi-n8n.ejemplo.com/webhook/..." />
                     <FieldRow label="Bot Webhook URL" value={botWebhook} onChange={setBotWebhook} placeholder="https://mi-n8n.ejemplo.com/webhook/..." />
+                    <FieldRow label="Reservas Webhook URL" value={reservationWebhook} onChange={setReservationWebhook} placeholder="https://mi-n8n.ejemplo.com/webhook/reservas" />
                     <FieldRow label="Webhook Secret" value={webhookSecret} onChange={setWebhookSecret} type="password" placeholder="secreto compartido" />
                     <div className="flex items-center gap-3 flex-wrap">
                         <SaveButton onClick={saveN8n} saving={savingN8n} saved={savedN8n} />
