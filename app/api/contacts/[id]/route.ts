@@ -14,7 +14,7 @@ export async function PATCH(
         const allowed = [
             'nombre', 'email', 'wa_id', 'job_title', 'source',
             'funnel_stage_id', 'assigned_to', 'lead_score',
-            'is_blocked', 'avatar_url',
+            'is_blocked', 'avatar_url', 'ai_active',
         ];
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

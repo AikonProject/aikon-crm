@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { FunnelStageBadge } from '@/components/contacts/funnel-stage-badge';
 import { ContactDetailTabs } from '@/components/contacts/contact-detail-tabs';
 import { EditContactButton } from '@/components/contacts/edit-contact-button';
+import { AiToggleButton } from '@/components/contacts/ai-toggle-button';
 import { getInitials } from '@/lib/utils/format';
 import type { FunnelStage } from '@/lib/types/database';
 
@@ -25,7 +26,7 @@ async function getContactData(id: string) {
                 .from('contacts')
                 .select(
                     `
-          id, nombre, email, wa_id, job_title, source, lead_score,
+          id, nombre, email, wa_id, job_title, source, lead_score, ai_active,
           last_contacted_at, created_at, funnel_stage_id, assigned_to,
           funnel_stage:funnel_stages ( id, name, color, position ),
           contact_tags ( tag:tags ( id, name, color ) ),
@@ -99,6 +100,7 @@ type ContactDetail = {
     job_title: string | null;
     source: string;
     lead_score: number;
+    ai_active: boolean;
     last_contacted_at: string | null;
     created_at: string;
     funnel_stage_id: string | null;
@@ -225,7 +227,11 @@ export default async function ContactDetailPage({
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                        <AiToggleButton
+                            contactId={contact.id}
+                            initialAiActive={contact.ai_active}
+                        />
                         {contact.wa_id && (
                             <Button
                                 variant="outline"

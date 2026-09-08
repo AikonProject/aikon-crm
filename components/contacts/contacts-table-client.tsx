@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { Search, ChevronLeft, ChevronRight, Users, Filter, X } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Users, Filter, X, UserCheck } from 'lucide-react';
 import { FunnelStageBadge } from '@/components/contacts/funnel-stage-badge';
 import { getInitials, formatSmartDate } from '@/lib/utils/format';
 import type { ContactWithRelations } from '@/app/(dashboard)/contacts/page';
@@ -474,11 +474,25 @@ function ContactRow({ contact }: { contact: ContactWithRelations }) {
             {/* Name + Avatar */}
             <td className="px-5 py-3.5">
                 <Link href={`/contacts/${contact.id}`} className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#818CF8] to-[#A78BFA] flex items-center justify-center flex-shrink-0">
-                        <span className="text-white text-[11px] font-semibold">{initials}</span>
+                    <div className="relative flex-shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#818CF8] to-[#A78BFA] flex items-center justify-center">
+                            <span className="text-white text-[11px] font-semibold">{initials}</span>
+                        </div>
+                        {/* AI status dot */}
+                        <span
+                            className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white flex items-center justify-center ${
+                                contact.ai_active ? 'bg-emerald-400' : 'bg-amber-400'
+                            }`}
+                            title={contact.ai_active ? 'IA activa' : 'Control manual'}
+                        />
                     </div>
                     <div>
-                        <p className="text-[14px] font-medium text-[#1A1A2E]">{fullName}</p>
+                        <div className="flex items-center gap-1.5">
+                            <p className="text-[14px] font-medium text-[#1A1A2E]">{fullName}</p>
+                            {!contact.ai_active && (
+                                <UserCheck size={12} className="text-amber-500 flex-shrink-0" />
+                            )}
+                        </div>
                         <p className="text-[12px] text-[#9CA3AF] md:hidden">{contact.wa_id ?? contact.email ?? '—'}</p>
                     </div>
                 </Link>

@@ -23,7 +23,7 @@ async function getPageData() {
             .from('contacts')
             .select(
                 `
-        id, nombre, email, wa_id, source, lead_score,
+        id, nombre, email, wa_id, source, lead_score, ai_active,
         last_contacted_at, created_at, funnel_stage_id, assigned_to,
         funnel_stage:funnel_stages ( id, name, color, position ),
         contact_tags ( tag:tags ( id, name, color ) )
@@ -50,6 +50,7 @@ export type ContactWithRelations = {
     wa_id: string | null;
     source: string;
     lead_score: number;
+    ai_active: boolean;
     last_contacted_at: string | null;
     created_at: string;
     funnel_stage_id: string | null;

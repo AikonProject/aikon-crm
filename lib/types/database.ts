@@ -131,6 +131,7 @@ export type Contact = {
     source: ContactSource;
     lead_score: number;
     is_blocked: boolean;
+    ai_active: boolean; // When true, the AI bot (n8n) responds; false = agent has manual control
     last_contacted_at: string | null;
     last_incoming_at: string | null;
     created_at: string;
