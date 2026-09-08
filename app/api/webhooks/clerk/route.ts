@@ -97,19 +97,14 @@ export async function POST(req: Request) {
                 }, { onConflict: 'clerk_user_id' });
             }
 
-            // Upsert in users table (tenant_id will be set when membership is created)
-            // Use raw update to avoid required-field TS constraints (tenant_id/role set later via membership)
-            const { data: existingUser } = await supabase
-                .from('users')
-                .select('id')
-                .eq('clerk_user_id', user.id)
-                .maybeSingle();
-
-            if (existingUser) {
-                await supabase.from('users')
-                    .update({ full_name: fullName, email, avatar_url: user.image_url ?? null })
-                    .eq('clerk_user_id', user.id);
-            }
+            // Upsert user row — tenant_id and role are set later via membership events
+            await supabase.from('users').upsert({
+                clerk_user_id: user.id,
+                email,
+                full_name: fullName,
+                avatar_url: user.image_url ?? null,
+                is_active: true,
+            }, { onConflict: 'clerk_user_id' });
         }
 
         // ── Membership created → link user to tenant with role ────────────
@@ -127,9 +122,28 @@ export async function POST(req: Request) {
                 .single();
 
             if (tenant) {
-                await supabase.from('users')
-                    .update({ tenant_id: tenant.id, role })
-                    .eq('clerk_user_id', clerkUserId);
+                // Use upsert so this works even if user.created event was missed
+                const { data: existingUser } = await supabase
+                    .from('users')
+                    .select('id, email')
+                    .eq('clerk_user_id', clerkUserId)
+                    .maybeSingle();
+
+                if (existingUser) {
+                    await supabase.from('users')
+                        .update({ tenant_id: tenant.id, role, is_active: true })
+                        .eq('clerk_user_id', clerkUserId);
+                } else {
+                    // Fallback: fetch user from Clerk API is not available here,
+                    // insert a minimal row so membership is not lost
+                    await supabase.from('users').insert({
+                        clerk_user_id: clerkUserId,
+                        tenant_id: tenant.id,
+                        email: `${clerkUserId}@pending.clerk`,
+                        role,
+                        is_active: true,
+                    });
+                }
             }
         }
 
