@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
             .from('conversations')
             .select(`
                 *,
-                contact:contacts(
+                contact:contacts!conversations_contact_id_fkey(
                     id, nombre, wa_id, email, avatar_url,
                     funnel_stage_id,
                     funnel_stage:funnel_stages(id, name, color)
