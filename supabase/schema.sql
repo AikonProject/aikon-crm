@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
   chatwoot_conversation_id INTEGER,
   chatwoot_message_id INTEGER,
   content TEXT NOT NULL,
-  message_type TEXT NOT NULL DEFAULT 'text' CHECK (message_type IN ('text', 'image', 'audio', 'video', 'document')),
+  content_type TEXT NOT NULL DEFAULT 'text' CHECK (content_type IN ('text', 'image', 'audio', 'video', 'document')),
   direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
   sender_name TEXT,
   created_at TIMESTAMPTZ DEFAULT now()

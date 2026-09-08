@@ -273,7 +273,7 @@ export default function ConversationsPage() {
             contact_id: activeConversation.contact_id,
             conversation_id: activeConvId,
             content: text,
-            message_type: 'text',
+            content_type: 'text',
             direction: 'outbound',
             status: 'pending',
             delivery_status: 'sending',
@@ -299,7 +299,7 @@ export default function ConversationsPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     content: text,
-                    message_type: 'text',
+                    content_type: 'text',
                     sent_by_name: 'Agente',
                     is_note: isNoteMode,
                 }),

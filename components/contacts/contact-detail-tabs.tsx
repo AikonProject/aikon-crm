@@ -442,7 +442,7 @@ function ConversationsTab({ conversations }: { conversations: ConversationRow[] 
             contact_id: selectedConv?.id ?? '',
             conversation_id: selectedId,
             content: text,
-            message_type: 'text',
+            content_type: 'text',
             direction: 'outbound',
             status: 'pending',
             delivery_status: 'sending',
@@ -466,7 +466,7 @@ function ConversationsTab({ conversations }: { conversations: ConversationRow[] 
             const res = await fetch(`/api/conversations/${selectedId}/messages`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: text, message_type: 'text', sent_by_name: 'Agente', is_note: isNoteMode }),
+                body: JSON.stringify({ content: text, content_type: 'text', sent_by_name: 'Agente', is_note: isNoteMode }),
             });
             if (res.ok) {
                 const saved = await res.json();

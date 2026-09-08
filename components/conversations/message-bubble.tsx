@@ -55,7 +55,7 @@ function MessageContent({ message }: { message: Message & { is_note?: boolean } 
     const isOutbound = message.direction === 'outbound';
     const iconColor = isOutbound ? 'text-white/80' : 'text-[#9CA3AF]';
 
-    switch (message.message_type) {
+    switch (message.content_type) {
         case 'image':
             if (message.media_url) {
                 return (

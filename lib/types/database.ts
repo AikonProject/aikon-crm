@@ -235,7 +235,7 @@ export type Message = {
     conversation_id: string;
     contact_id: string;
     direction: MessageDirection;
-    message_type: MessageType;
+    content_type: MessageType;
     content: string | null;
     media_url: string | null;
     media_mime_type: string | null;
@@ -632,7 +632,7 @@ export type Database = {
             };
             messages: {
                 Row: Message;
-                Insert: Partial<WithoutJoins<Message>> & Pick<Message, 'tenant_id' | 'conversation_id' | 'contact_id' | 'direction' | 'message_type'>;
+                Insert: Partial<WithoutJoins<Message>> & Pick<Message, 'tenant_id' | 'conversation_id' | 'contact_id' | 'direction' | 'content_type'>;
                 Update: Partial<WithoutJoins<Message>>;
                 Relationships: never[];
             };

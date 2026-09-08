@@ -73,7 +73,7 @@ export async function POST(
                 conversation_id: id,
                 contact_id: conversation.contact_id,
                 content: body.content,
-                message_type: body.message_type ?? 'text',
+                content_type: body.content_type ?? 'text',
                 direction: 'outbound' as const,
                 status: 'sent' as const,
                 sender_type: 'human' as const,
@@ -119,7 +119,7 @@ export async function POST(
                             contact_id: contact?.id,
                             wa_id: contact?.wa_id,
                             message: body.content,
-                            message_type: body.message_type ?? 'text',
+                            content_type: body.content_type ?? 'text',
                         }),
                     });
                 }
