@@ -227,6 +227,7 @@ export type MessageType =
 export type MessageDirection = 'inbound' | 'outbound';
 export type MessageStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
 export type DeliveryStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
+export type SenderType = 'contact' | 'bot' | 'human';
 
 export type Message = {
     id: string;
@@ -244,6 +245,7 @@ export type Message = {
     wa_message_id: string | null;
     status: MessageStatus;
     delivery_status: DeliveryStatus | null; // WhatsApp delivery receipt, updated by n8n
+    sender_type: SenderType; // contact = customer, bot = n8n AI, human = CRM agent
     is_note: boolean;
     sent_by: string | null; // User.id for outbound
     sent_by_name: string | null;

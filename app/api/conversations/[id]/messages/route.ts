@@ -76,6 +76,7 @@ export async function POST(
                 message_type: body.message_type ?? 'text',
                 direction: 'outbound' as const,
                 status: 'sent' as const,
+                sender_type: 'human' as const,
                 sent_by_name: body.sent_by_name ?? 'Agente',
                 is_note: isNote,
             })
