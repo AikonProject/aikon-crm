@@ -46,9 +46,9 @@ function SenderLabel({ senderType, name }: { senderType: SenderType; name: strin
     return null;
 }
 
-// Outbound bubble color: bot → violet, human → indigo
+// Outbound bubble color: bot → violet, human → indigo-600
 function outboundBg(senderType: SenderType): string {
-    return senderType === 'bot' ? 'bg-[#7C3AED]' : 'bg-[#818CF8]';
+    return senderType === 'bot' ? 'bg-[#7C3AED]' : 'bg-[#4F46E5]';
 }
 
 function MessageContent({ message }: { message: Message & { is_note?: boolean } }) {
