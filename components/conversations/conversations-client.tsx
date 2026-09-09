@@ -399,13 +399,12 @@ export default function ConversationsClient({ initialConversations }: Conversati
                 }),
             });
 
-            if (res.ok) {
+            if (res.status === 201) {
+                // Note saved directly — replace optimistic with real record
                 const saved = await res.json();
-                // Replace optimistic message
                 setMessages((prev) =>
                     prev.map((m) => (m.id === optimisticMsg.id ? (saved as Message) : m))
                 );
-                // Update last_message_at in conversation list
                 setConversations((prev) =>
                     prev.map((c) =>
                         c.id === activeConvId
@@ -413,8 +412,12 @@ export default function ConversationsClient({ initialConversations }: Conversati
                             : c
                     )
                 );
+            } else if (res.status === 202) {
+                // Queued to WhatsApp via n8n — remove optimistic, real message
+                // arrives via realtime subscription once n8n inserts it
+                setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
             } else {
-                // Remove optimistic message on failure
+                // Error — remove optimistic message
                 setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
             }
         } catch {
