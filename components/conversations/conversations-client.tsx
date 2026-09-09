@@ -350,7 +350,11 @@ export default function ConversationsClient({ initialConversations }: Conversati
 
     // ── Send message ───────────────────────────────────────────────────────
     const handleSend = async () => {
-        if (!inputText.trim() || !activeConvId || !activeConversation || sending) return;
+        console.log('[handleSend] called', { inputText: inputText.trim(), activeConvId, hasConversation: !!activeConversation, sending });
+        if (!inputText.trim() || !activeConvId || !activeConversation || sending) {
+            console.warn('[handleSend] aborted — condition failed', { noText: !inputText.trim(), noConvId: !activeConvId, noConversation: !activeConversation, sending });
+            return;
+        }
 
         const text = inputText.trim();
         setInputText('');
