@@ -17,6 +17,9 @@ import {
     MessageSquare,
     CheckCheck,
     Bot,
+    Check,
+    X,
+    Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { FunnelStageBadge } from '@/components/contacts/funnel-stage-badge';
@@ -37,6 +40,7 @@ type ContactDetail = {
     nombre: string;
     email: string | null;
     wa_id: string | null;
+    job_title: string | null;
     source: string;
     lead_score: number;
     last_contacted_at: string | null;
@@ -135,22 +139,15 @@ export function ContactDetailTabs({
                 ))}
             </div>
 
-            {/* Tab: Información */}
             {activeTab === 'info' && (
                 <InfoTab contact={contact} stages={stages} contactId={contactId} />
             )}
-
-            {/* Tab: Conversaciones */}
             {activeTab === 'conversations' && (
                 <ConversationsTab conversations={conversations} />
             )}
-
-            {/* Tab: Reservas */}
             {activeTab === 'reservations' && (
                 <ReservationsTab reservations={reservations} />
             )}
-
-            {/* Tab: Notas */}
             {activeTab === 'notes' && (
                 <NotesTab
                     notes={notes}
@@ -160,9 +157,105 @@ export function ContactDetailTabs({
                     onAddNote={addNote}
                 />
             )}
-
-            {/* Tab: Actividad */}
             {activeTab === 'activity' && <ActivityTab activity={activity} />}
+        </div>
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Inline editable field
+// ---------------------------------------------------------------------------
+function InlineField({
+    label,
+    value,
+    fieldKey,
+    contactId,
+    type = 'text',
+    placeholder,
+}: {
+    label: string;
+    value: string | null;
+    fieldKey: string;
+    contactId: string;
+    type?: string;
+    placeholder?: string;
+}) {
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState(value ?? '');
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const router = useRouter();
+
+    useEffect(() => {
+        if (editing) inputRef.current?.focus();
+    }, [editing]);
+
+    async function save() {
+        if (draft === (value ?? '')) { setEditing(false); return; }
+        setSaving(true);
+        try {
+            await fetch(`/api/contacts/${contactId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ [fieldKey]: draft || null }),
+            });
+            setSaved(true);
+            setTimeout(() => { setSaved(false); router.refresh(); }, 1200);
+        } finally {
+            setSaving(false);
+            setEditing(false);
+        }
+    }
+
+    function cancel() {
+        setDraft(value ?? '');
+        setEditing(false);
+    }
+
+    return (
+        <div className="flex justify-between gap-4 group items-center">
+            <dt className="text-[13px] text-[#9CA3AF] flex-shrink-0 w-36">{label}</dt>
+            <dd className="text-[13px] text-[#1A1A2E] font-medium text-right flex items-center gap-1.5 flex-1 justify-end">
+                {editing ? (
+                    <div className="flex items-center gap-1.5 w-full justify-end">
+                        <input
+                            ref={inputRef}
+                            type={type}
+                            value={draft}
+                            onChange={(e) => setDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') save();
+                                if (e.key === 'Escape') cancel();
+                            }}
+                            onBlur={save}
+                            placeholder={placeholder}
+                            className="w-full max-w-[180px] px-2 py-1 text-[13px] border border-[#818CF8] rounded-lg focus:outline-none bg-white text-right"
+                        />
+                        {saving && (
+                            <div className="w-3 h-3 border border-[#818CF8] border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                        )}
+                    </div>
+                ) : (
+                    <>
+                        {saved ? (
+                            <span className="text-[#059669] text-[12px] flex items-center gap-1">
+                                <Check size={12} /> Guardado
+                            </span>
+                        ) : (
+                            <span className="truncate max-w-[180px]">
+                                {value || <span className="text-[#D1D5DB]">—</span>}
+                            </span>
+                        )}
+                        <button
+                            onClick={() => { setDraft(value ?? ''); setEditing(true); }}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-[#9CA3AF] hover:text-[#818CF8] flex-shrink-0"
+                        >
+                            <PencilIcon size={12} />
+                        </button>
+                    </>
+                )}
+            </dd>
         </div>
     );
 }
@@ -182,33 +275,45 @@ function InfoTab({
     const [selectedStageId, setSelectedStageId] = useState(contact.funnel_stage_id ?? '');
     const [saving, setSaving] = useState(false);
     const [fieldLabels, setFieldLabels] = useState<Record<string, string>>({});
+    const [fieldLabelsLoaded, setFieldLabelsLoaded] = useState(false);
+    const [allTags, setAllTags] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
+    const [contactTags, setContactTags] = useState(
+        contact.contact_tags.map((ct) => ct.tag).filter(Boolean) as { id: string; name: string; color: string | null }[]
+    );
+    const [showTagDropdown, setShowTagDropdown] = useState(false);
+    const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>(
+        Object.fromEntries(
+            contact.contact_field_values
+                .filter((cfv) => !!cfv.value)
+                .map((cfv) => [cfv.field_key, cfv.value!])
+        )
+    );
     const router = useRouter();
 
-    // Fetch custom field label definitions
+    // Fetch custom field definitions
     useEffect(() => {
         fetch('/api/settings/custom-fields')
             .then((r) => r.json())
             .then((d) => {
                 const map: Record<string, string> = {};
-                for (const f of d.fields ?? []) {
-                    map[f.field_key] = f.label;
-                }
+                for (const f of d.fields ?? []) map[f.field_key] = f.label;
                 setFieldLabels(map);
             })
+            .catch(() => {})
+            .finally(() => setFieldLabelsLoaded(true));
+    }, []);
+
+    // Fetch available tags
+    useEffect(() => {
+        fetch('/api/settings/tags')
+            .then((r) => r.json())
+            .then((d) => setAllTags(d.tags ?? d ?? []))
             .catch(() => {});
     }, []);
-    const tags = contact.contact_tags
-        .map((ct) => ct.tag)
-        .filter(Boolean) as { id: string; name: string; color: string | null }[];
-    const customFields = contact.contact_field_values.filter((cfv) => !!cfv.value);
 
     const sourceLabels: Record<string, string> = {
-        manual: 'Manual',
-        whatsapp: 'WhatsApp',
-        web: 'Web',
-        csv: 'CSV',
-        api: 'API',
-        referral: 'Referido',
+        manual: 'Manual', whatsapp: 'WhatsApp', web: 'Web',
+        csv: 'CSV', api: 'API', referral: 'Referido',
     };
 
     async function changeStage(stageId: string) {
@@ -226,7 +331,28 @@ function InfoTab({
         }
     }
 
+    async function addTag(tag: { id: string; name: string; color: string | null }) {
+        if (contactTags.some((t) => t.id === tag.id)) return;
+        setContactTags((prev) => [...prev, tag]);
+        setShowTagDropdown(false);
+        await fetch(`/api/contacts/${contactId}/tags`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tag_id: tag.id }),
+        });
+    }
+
+    async function removeTag(tagId: string) {
+        setContactTags((prev) => prev.filter((t) => t.id !== tagId));
+        await fetch(`/api/contacts/${contactId}/tags`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tag_id: tagId }),
+        });
+    }
+
     const currentStage = stages.find((s) => s.id === selectedStageId);
+    const availableTags = allTags.filter((t) => !contactTags.some((ct) => ct.id === t.id));
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -234,63 +360,58 @@ function InfoTab({
             <div className="lg:col-span-3 space-y-5">
                 {/* Contact fields */}
                 <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm p-6">
-                    <h3 className="text-[15px] font-semibold text-[#1A1A2E] mb-4">
-                        Datos del contacto
-                    </h3>
+                    <h3 className="text-[15px] font-semibold text-[#1A1A2E] mb-4">Datos del contacto</h3>
                     <dl className="space-y-3">
-                        {[
-                            ['Nombre', contact.nombre],
-                            ['Email', contact.email],
-                            ['Teléfono / WhatsApp', contact.wa_id],
-                            ['Fuente', sourceLabels[contact.source] ?? contact.source],
-                            ['Lead score', `${contact.lead_score} / 100`],
-                            ['Creado', formatDate(contact.created_at, 'dd MMM yyyy')],
-                        ].map(([label, value]) => (
-                            <div key={label as string} className="flex justify-between gap-4">
-                                <dt className="text-[13px] text-[#9CA3AF] flex-shrink-0">{label}</dt>
-                                <dd className="text-[13px] text-[#1A1A2E] font-medium text-right">
-                                    {value || '—'}
-                                </dd>
-                            </div>
-                        ))}
+                        <InlineField label="Nombre" value={contact.nombre} fieldKey="nombre" contactId={contactId} />
+                        <InlineField label="Email" value={contact.email} fieldKey="email" contactId={contactId} type="email" />
+                        <InlineField label="Teléfono / WhatsApp" value={contact.wa_id} fieldKey="wa_id" contactId={contactId} />
+                        <InlineField label="Cargo" value={contact.job_title} fieldKey="job_title" contactId={contactId} />
+                        <div className="flex justify-between gap-4">
+                            <dt className="text-[13px] text-[#9CA3AF] flex-shrink-0 w-36">Fuente</dt>
+                            <dd className="text-[13px] text-[#1A1A2E] font-medium">
+                                {sourceLabels[contact.source] ?? contact.source}
+                            </dd>
+                        </div>
+                        <InlineField label="Lead score" value={String(contact.lead_score)} fieldKey="lead_score" contactId={contactId} type="number" />
+                        <div className="flex justify-between gap-4">
+                            <dt className="text-[13px] text-[#9CA3AF] flex-shrink-0 w-36">Creado</dt>
+                            <dd className="text-[13px] text-[#1A1A2E] font-medium">
+                                {formatDate(contact.created_at, 'dd MMM yyyy')}
+                            </dd>
+                        </div>
                     </dl>
                 </div>
 
-                {/* Custom fields */}
-                {customFields.length > 0 && (
+                {/* Custom fields — only shown after definitions are loaded, and only if any exist */}
+                {fieldLabelsLoaded && Object.keys(fieldLabels).length > 0 && (
                     <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm p-6">
-                        <h3 className="text-[15px] font-semibold text-[#1A1A2E] mb-4">
-                            Campos personalizados
-                        </h3>
+                        <h3 className="text-[15px] font-semibold text-[#1A1A2E] mb-4">Campos personalizados</h3>
                         <dl className="space-y-3">
-                            {customFields.map((cfv) => (
-                                <div key={cfv.field_key} className="flex justify-between gap-4">
-                                    <dt className="text-[13px] text-[#9CA3AF] flex-shrink-0">
-                                        {fieldLabels[cfv.field_key] ?? cfv.field_key}
-                                    </dt>
-                                    <dd className="text-[13px] text-[#1A1A2E] font-medium text-right">
-                                        {cfv.value ?? '—'}
-                                    </dd>
-                                </div>
+                            {Object.entries(fieldLabels).map(([key, label]) => (
+                                <CustomFieldInline
+                                    key={key}
+                                    fieldKey={key}
+                                    label={label}
+                                    value={customFieldValues[key] ?? null}
+                                    contactId={contactId}
+                                    onSave={(val) =>
+                                        setCustomFieldValues((prev) => ({ ...prev, [key]: val }))
+                                    }
+                                />
                             ))}
                         </dl>
                     </div>
                 )}
             </div>
 
-            {/* Right: Stage selector + Tags + Assigned */}
+            {/* Right: Stage + Tags + Assigned */}
             <div className="lg:col-span-2 space-y-5">
                 {/* Funnel stage */}
                 <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm p-6">
-                    <h3 className="text-[15px] font-semibold text-[#1A1A2E] mb-3">
-                        Etapa del funnel
-                    </h3>
+                    <h3 className="text-[15px] font-semibold text-[#1A1A2E] mb-3">Etapa del funnel</h3>
                     {currentStage && (
                         <div className="mb-3">
-                            <FunnelStageBadge
-                                name={currentStage.name}
-                                color={currentStage.color}
-                            />
+                            <FunnelStageBadge name={currentStage.name} color={currentStage.color} />
                         </div>
                     )}
                     <select
@@ -301,25 +422,65 @@ function InfoTab({
                     >
                         <option value="">Sin etapa</option>
                         {stages.map((s) => (
-                            <option key={s.id} value={s.id}>
-                                {s.name}
-                            </option>
+                            <option key={s.id} value={s.id}>{s.name}</option>
                         ))}
                     </select>
-                    {saving && (
-                        <p className="text-[12px] text-[#9CA3AF] mt-1.5">Guardando...</p>
-                    )}
+                    {saving && <p className="text-[12px] text-[#9CA3AF] mt-1.5">Guardando...</p>}
                 </div>
 
                 {/* Tags */}
                 <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm p-6">
-                    <h3 className="text-[15px] font-semibold text-[#1A1A2E] mb-3">Tags</h3>
-                    {tags.length === 0 ? (
-                        <p className="text-[13px] text-[#D1D5DB]">Sin tags asignados.</p>
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-[15px] font-semibold text-[#1A1A2E]">Etiquetas</h3>
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowTagDropdown((v) => !v)}
+                                className="flex items-center gap-1 text-[12px] text-[#818CF8] hover:text-[#6366F1] font-medium"
+                            >
+                                <Plus size={13} /> Agregar
+                            </button>
+                            {showTagDropdown && availableTags.length > 0 && (
+                                <div className="absolute right-0 top-7 w-48 bg-white border border-[#E8E8EC] rounded-xl shadow-lg z-10 overflow-hidden">
+                                    <div className="max-h-48 overflow-y-auto">
+                                        {availableTags.map((tag) => (
+                                            <button
+                                                key={tag.id}
+                                                onClick={() => addTag(tag)}
+                                                className="w-full text-left px-3 py-2 hover:bg-[#F9FAFB] transition-colors flex items-center gap-2"
+                                            >
+                                                <div
+                                                    className="w-2 h-2 rounded-full flex-shrink-0"
+                                                    style={{ backgroundColor: tag.color ?? '#818CF8' }}
+                                                />
+                                                <span className="text-[13px] text-[#1A1A2E]">{tag.name}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    {contactTags.length === 0 ? (
+                        <p className="text-[13px] text-[#D1D5DB]">Sin etiquetas asignadas.</p>
                     ) : (
                         <div className="flex flex-wrap gap-2">
-                            {tags.map((tag) => (
-                                <TagPill key={tag.id} name={tag.name} color={tag.color} />
+                            {contactTags.map((tag) => (
+                                <span
+                                    key={tag.id}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-medium"
+                                    style={{
+                                        backgroundColor: `${tag.color ?? '#818CF8'}20`,
+                                        color: tag.color ?? '#818CF8',
+                                    }}
+                                >
+                                    {tag.name}
+                                    <button
+                                        onClick={() => removeTag(tag.id)}
+                                        className="hover:opacity-60 transition-opacity ml-0.5"
+                                    >
+                                        <X size={11} />
+                                    </button>
+                                </span>
                             ))}
                         </div>
                     )}
@@ -328,22 +489,101 @@ function InfoTab({
                 {/* Assigned to */}
                 {contact.assigned_to && (
                     <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm p-6">
-                        <h3 className="text-[15px] font-semibold text-[#1A1A2E] mb-3">
-                            Asignado a
-                        </h3>
+                        <h3 className="text-[15px] font-semibold text-[#1A1A2E] mb-3">Asignado a</h3>
                         <div className="flex items-center gap-3">
                             <div className="w-9 h-9 rounded-full bg-[#EEF0FF] flex items-center justify-center flex-shrink-0">
-                                <span className="text-[12px] font-semibold text-[#818CF8]">
-                                    —
-                                </span>
+                                <span className="text-[12px] font-semibold text-[#818CF8]">—</span>
                             </div>
-                            <span className="text-[14px] font-medium text-[#1A1A2E]">
-                                {contact.assigned_to}
-                            </span>
+                            <span className="text-[14px] font-medium text-[#1A1A2E]">{contact.assigned_to}</span>
                         </div>
                     </div>
                 )}
             </div>
+        </div>
+    );
+}
+
+// Inline editable custom field value
+function CustomFieldInline({
+    fieldKey,
+    label,
+    value,
+    contactId,
+    onSave,
+}: {
+    fieldKey: string;
+    label: string;
+    value: string | null;
+    contactId: string;
+    onSave: (val: string) => void;
+}) {
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState(value ?? '');
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
+
+    async function save() {
+        if (draft === (value ?? '')) { setEditing(false); return; }
+        setSaving(true);
+        try {
+            await fetch(`/api/contacts/${contactId}/custom-fields`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ field_key: fieldKey, value: draft }),
+            });
+            onSave(draft);
+            setSaved(true);
+            setTimeout(() => setSaved(false), 1200);
+        } finally {
+            setSaving(false);
+            setEditing(false);
+        }
+    }
+
+    return (
+        <div className="flex justify-between gap-4 group items-center">
+            <dt className="text-[13px] text-[#9CA3AF] flex-shrink-0 w-36">{label}</dt>
+            <dd className="text-[13px] text-[#1A1A2E] font-medium text-right flex items-center gap-1.5 flex-1 justify-end">
+                {editing ? (
+                    <div className="flex items-center gap-1.5 w-full justify-end">
+                        <input
+                            ref={inputRef}
+                            value={draft}
+                            onChange={(e) => setDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') save();
+                                if (e.key === 'Escape') { setDraft(value ?? ''); setEditing(false); }
+                            }}
+                            onBlur={save}
+                            className="w-full max-w-[180px] px-2 py-1 text-[13px] border border-[#818CF8] rounded-lg focus:outline-none bg-white text-right"
+                        />
+                        {saving && (
+                            <div className="w-3 h-3 border border-[#818CF8] border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                        )}
+                    </div>
+                ) : (
+                    <>
+                        {saved ? (
+                            <span className="text-[#059669] text-[12px] flex items-center gap-1">
+                                <Check size={12} /> Guardado
+                            </span>
+                        ) : (
+                            <span className="truncate max-w-[180px]">
+                                {value || <span className="text-[#D1D5DB]">—</span>}
+                            </span>
+                        )}
+                        <button
+                            onClick={() => { setDraft(value ?? ''); setEditing(true); }}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-[#9CA3AF] hover:text-[#818CF8] flex-shrink-0"
+                        >
+                            <PencilIcon size={12} />
+                        </button>
+                    </>
+                )}
+            </dd>
         </div>
     );
 }
@@ -396,7 +636,6 @@ function ConversationsTab({ conversations }: { conversations: ConversationRow[] 
 
     const selectedConv = conversations.find((c) => c.id === selectedId) ?? conversations[0];
 
-    // Fetch messages
     const fetchMessages = useCallback(async (convId: string) => {
         if (!convId) return;
         setLoadingMessages(true);
@@ -412,16 +651,13 @@ function ConversationsTab({ conversations }: { conversations: ConversationRow[] 
         if (selectedId) fetchMessages(selectedId);
     }, [selectedId, fetchMessages]);
 
-    // Auto-scroll
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-    // Realtime subscription
     useEffect(() => {
         if (!selectedId) return;
         if (msgSubRef.current) supabase.removeChannel(msgSubRef.current);
-
         const ch = supabase
             .channel(`contact-chat:${selectedId}`)
             .on('postgres_changes', {
@@ -432,12 +668,10 @@ function ConversationsTab({ conversations }: { conversations: ConversationRow[] 
                 setMessages((prev) => prev.some((m) => m.id === newMsg.id) ? prev : [...prev, newMsg]);
             })
             .subscribe();
-
         msgSubRef.current = ch;
         return () => { supabase.removeChannel(ch); };
     }, [selectedId, supabase]);
 
-    // Auto-resize textarea
     useEffect(() => {
         if (textareaRef.current) {
             textareaRef.current.style.height = 'auto';
@@ -454,7 +688,7 @@ function ConversationsTab({ conversations }: { conversations: ConversationRow[] 
         const optimistic: Message = {
             id: `opt-${Date.now()}`,
             tenant_id: '',
-            contact_id: selectedConv?.id ?? '',
+            contact_id: '',
             conversation_id: selectedId,
             content: text,
             content_type: 'text',
@@ -521,7 +755,6 @@ function ConversationsTab({ conversations }: { conversations: ConversationRow[] 
 
     return (
         <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm overflow-hidden flex flex-col" style={{ height: '520px' }}>
-            {/* Conversation selector (if multiple) */}
             {conversations.length > 1 && (
                 <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#E8E8EC] overflow-x-auto flex-shrink-0">
                     {conversations.map((conv) => {
@@ -538,17 +771,13 @@ function ConversationsTab({ conversations }: { conversations: ConversationRow[] 
                             >
                                 <MessageCircle size={12} />
                                 <span className="capitalize">{conv.channel.replace('_', ' ')}</span>
-                                <span
-                                    className="w-1.5 h-1.5 rounded-full"
-                                    style={{ backgroundColor: s.text }}
-                                />
+                                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.text }} />
                             </button>
                         );
                     })}
                 </div>
             )}
 
-            {/* Chat header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-[#E8E8EC] flex-shrink-0 bg-[#FAFAFE]">
                 <div className="flex items-center gap-2">
                     <MessageCircle size={15} className="text-[#818CF8]" />
@@ -582,7 +811,6 @@ function ConversationsTab({ conversations }: { conversations: ConversationRow[] 
                 </div>
             </div>
 
-            {/* Messages */}
             <div className="flex-1 overflow-y-auto py-3 bg-[#F8F8FA]">
                 {loadingMessages ? (
                     <div className="flex items-center justify-center h-full">
@@ -608,7 +836,6 @@ function ConversationsTab({ conversations }: { conversations: ConversationRow[] 
                 <div ref={messagesEndRef} />
             </div>
 
-            {/* Input */}
             <div className="bg-white border-t border-[#E8E8EC] px-3 py-2.5 flex-shrink-0">
                 {isNoteMode && (
                     <div className="flex items-center gap-1.5 mb-1.5 px-1">
@@ -683,8 +910,7 @@ function ReservationsTab({ reservations }: { reservations: ReservationRow[] }) {
             <div className="mb-4 flex items-center gap-2">
                 <UtensilsCrossed size={16} className="text-[#818CF8]" />
                 <span className="text-[14px] font-semibold text-[#1A1A2E]">
-                    {reservations.length} {reservations.length === 1 ? 'visita' : 'visitas'} al
-                    restaurante
+                    {reservations.length} {reservations.length === 1 ? 'visita' : 'visitas'} al restaurante
                 </span>
             </div>
             <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm overflow-hidden">
@@ -704,9 +930,7 @@ function ReservationsTab({ reservations }: { reservations: ReservationRow[] }) {
                         </thead>
                         <tbody>
                             {reservations.map((r) => {
-                                const style =
-                                    RESERVATION_STATUS_STYLES[r.status] ??
-                                    RESERVATION_STATUS_STYLES.pending;
+                                const style = RESERVATION_STATUS_STYLES[r.status] ?? RESERVATION_STATUS_STYLES.pending;
                                 return (
                                     <tr
                                         key={r.id}
@@ -718,19 +942,12 @@ function ReservationsTab({ reservations }: { reservations: ReservationRow[] }) {
                                         <td className="px-5 py-3.5 text-[13px] text-[#6B7280]">
                                             {r.reservation_time.slice(0, 5)}
                                         </td>
-                                        <td className="px-5 py-3.5 text-[13px] text-[#6B7280]">
-                                            {r.party_size}
-                                        </td>
-                                        <td className="px-5 py-3.5 text-[13px] text-[#6B7280]">
-                                            {r.table?.name ?? '—'}
-                                        </td>
+                                        <td className="px-5 py-3.5 text-[13px] text-[#6B7280]">{r.party_size}</td>
+                                        <td className="px-5 py-3.5 text-[13px] text-[#6B7280]">{r.table?.name ?? '—'}</td>
                                         <td className="px-5 py-3.5">
                                             <span
                                                 className="px-2.5 py-1 rounded-full text-[11px] font-medium"
-                                                style={{
-                                                    backgroundColor: style.bg,
-                                                    color: style.text,
-                                                }}
+                                                style={{ backgroundColor: style.bg, color: style.text }}
                                             >
                                                 {style.label}
                                             </span>
@@ -764,7 +981,6 @@ function NotesTab({
 }) {
     return (
         <div className="space-y-5">
-            {/* Add note */}
             <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm p-5">
                 <textarea
                     rows={3}
@@ -784,8 +1000,6 @@ function NotesTab({
                     </Button>
                 </div>
             </div>
-
-            {/* Notes list */}
             {notes.length === 0 ? (
                 <EmptySection
                     icon={<FileText size={22} className="text-[#818CF8]" />}
@@ -795,22 +1009,15 @@ function NotesTab({
             ) : (
                 <div className="space-y-3">
                     {notes.map((note) => (
-                        <div
-                            key={note.id}
-                            className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm p-5"
-                        >
+                        <div key={note.id} className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm p-5">
                             <p className="text-[14px] text-[#1A1A2E] leading-relaxed whitespace-pre-wrap">
                                 {note.content}
                             </p>
                             <div className="flex items-center gap-3 mt-3">
                                 {note.user && (
-                                    <span className="text-[12px] text-[#6B7280] font-medium">
-                                        {note.user.full_name}
-                                    </span>
+                                    <span className="text-[12px] text-[#6B7280] font-medium">{note.user.full_name}</span>
                                 )}
-                                <span className="text-[12px] text-[#9CA3AF]">
-                                    {formatSmartDate(note.created_at)}
-                                </span>
+                                <span className="text-[12px] text-[#9CA3AF]">{formatSmartDate(note.created_at)}</span>
                             </div>
                         </div>
                     ))}
@@ -904,6 +1111,9 @@ function TagPill({ name, color }: { name: string; color: string | null }) {
         </span>
     );
 }
+
+// Keep TagPill export for backward compat (used in page.tsx)
+export { TagPill };
 
 function EmptySection({
     icon,

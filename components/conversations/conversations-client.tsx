@@ -13,13 +13,14 @@ import {
     FileText,
     MessageSquare,
     CheckCheck,
-    ChevronRight,
     X,
     PanelRight,
     StickyNote,
     UserCheck,
     Tag,
     CalendarCheck,
+    Pencil as PencilIcon,
+    Plus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getInitials } from '@/lib/utils/format';
@@ -51,6 +52,16 @@ const STATUS_COLORS: Record<string, string> = {
     resolved: 'bg-[#F3F4F6] text-[#6B7280]',
     snoozed: 'bg-blue-100 text-blue-700',
 };
+
+// ── Common emojis for picker ───────────────────────────────────────────────────
+const COMMON_EMOJIS = [
+    '😀','😂','😍','🥰','😎','🤔','😅','😭','🙏','👍',
+    '👎','❤️','🔥','✅','⭐','🎉','💪','😊','🤝','👋',
+    '😁','🥳','😢','😡','💯','🚀','💡','📌','⚠️','✨',
+    '🌟','💬','📞','📧','🏠','🍕','☕','🎂','🎁','💰',
+    '📊','📈','🔍','✏️','📝','🔔','💎','🌈','🦋','🐝',
+    '🌺','🍀','💐','🌙','☀️','⛅','🌊',
+];
 
 function DateSeparator({ date }: { date: string }) {
     const d = new Date(date);
@@ -99,9 +110,11 @@ export default function ConversationsClient({ initialConversations }: Conversati
     const [showTemplates, setShowTemplates] = useState(false);
     const [showCanned, setShowCanned] = useState(false);
     const [sending, setSending] = useState(false);
+    const [showEmoji, setShowEmoji] = useState(false);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const convSubscriptionRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
     const msgSubscriptionRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
     // Skip the initial fetch on mount — data already loaded server-side
@@ -271,6 +284,69 @@ export default function ConversationsClient({ initialConversations }: Conversati
             textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
         }
     }, [inputText]);
+
+    // ── Emoji insert at cursor ─────────────────────────────────────────────
+    function insertEmoji(emoji: string) {
+        const ta = textareaRef.current;
+        if (!ta) {
+            setInputText((v) => v + emoji);
+            return;
+        }
+        const start = ta.selectionStart ?? inputText.length;
+        const end = ta.selectionEnd ?? inputText.length;
+        const newVal = inputText.slice(0, start) + emoji + inputText.slice(end);
+        setInputText(newVal);
+        setShowEmoji(false);
+        setTimeout(() => {
+            ta.focus();
+            ta.setSelectionRange(start + emoji.length, start + emoji.length);
+        }, 0);
+    }
+
+    // ── File upload ────────────────────────────────────────────────────────
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !activeConvId) return;
+
+        const isImage = file.type.startsWith('image/');
+        const contentType = isImage ? 'image' : 'document';
+        const path = `${activeConvId}/${Date.now()}-${file.name}`;
+
+        setSending(true);
+        try {
+            const supabaseClient = createClient();
+            const { error: uploadError } = await supabaseClient.storage
+                .from('chat-media')
+                .upload(path, file, { upsert: true });
+
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabaseClient.storage.from('chat-media').getPublicUrl(path);
+
+            const res = await fetch(`/api/conversations/${activeConvId}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    content: file.name,
+                    content_type: contentType,
+                    media_url: publicUrl,
+                    media_filename: file.name,
+                    media_mime_type: file.type,
+                    sent_by_name: 'Agente',
+                    is_note: false,
+                }),
+            });
+            if (res.ok) {
+                const saved = await res.json();
+                setMessages((prev) => [...prev, saved as Message]);
+            }
+        } catch (err) {
+            console.error('File upload failed:', err);
+        } finally {
+            setSending(false);
+            if (e.target) e.target.value = '';
+        }
+    };
 
     // ── Send message ───────────────────────────────────────────────────────
     const handleSend = async () => {
@@ -574,31 +650,72 @@ export default function ConversationsClient({ initialConversations }: Conversati
                                     ? 'border-amber-300 bg-amber-50'
                                     : 'border-[#E8E8EC] bg-white'
                             )}>
-                                {/* Emoji */}
-                                <button className="text-[#9CA3AF] hover:text-[#6B7280] transition-colors p-1" title="Emoji">
-                                    <Smile size={20} />
-                                </button>
-                                {/* Attach */}
-                                <button className="text-[#9CA3AF] hover:text-[#6B7280] transition-colors p-1" title="Adjuntar archivo">
-                                    <Paperclip size={20} />
-                                </button>
+                                {/* Emoji picker */}
+                                <div className="relative">
+                                    <button
+                                        onClick={() => setShowEmoji((v) => !v)}
+                                        className="text-[#9CA3AF] hover:text-[#6B7280] transition-colors p-1"
+                                        title="Emoji"
+                                    >
+                                        <Smile size={20} />
+                                    </button>
+                                    {showEmoji && (
+                                        <div className="absolute bottom-10 left-0 w-72 bg-white border border-[#E8E8EC] rounded-xl shadow-lg z-20 p-2">
+                                            <div className="flex items-center justify-between px-1 mb-2">
+                                                <span className="text-[11px] font-semibold text-[#9CA3AF]">Emojis</span>
+                                                <button onClick={() => setShowEmoji(false)}>
+                                                    <X size={13} className="text-[#9CA3AF]" />
+                                                </button>
+                                            </div>
+                                            <div className="grid grid-cols-10 gap-0.5">
+                                                {COMMON_EMOJIS.map((emoji) => (
+                                                    <button
+                                                        key={emoji}
+                                                        onClick={() => insertEmoji(emoji)}
+                                                        className="w-7 h-7 flex items-center justify-center text-[18px] hover:bg-[#F3F4F6] rounded-lg transition-colors"
+                                                    >
+                                                        {emoji}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Attach file */}
+                                <>
+                                    <button
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="text-[#9CA3AF] hover:text-[#6B7280] transition-colors p-1"
+                                        title="Adjuntar archivo"
+                                    >
+                                        <Paperclip size={20} />
+                                    </button>
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        accept="image/*,video/*,application/pdf,.doc,.docx"
+                                        className="hidden"
+                                        onChange={handleFileUpload}
+                                    />
+                                </>
 
                                 {/* Textarea */}
                                 <textarea
                                     ref={textareaRef}
                                     value={inputText}
                                     onChange={(e) => {
-                                    const val = e.target.value;
-                                    setInputText(val);
-                                    // Auto-open canned responses when user types // at start
-                                    if (val === '//') {
-                                        setShowCanned(true);
-                                        setShowTemplates(false);
-                                    } else if (!val.startsWith('//')) {
-                                        // Close canned if user clears the //
-                                        if (val === '') setShowCanned(false);
-                                    }
-                                }}
+                                        const val = e.target.value;
+                                        setInputText(val);
+                                        // Auto-open canned responses when user types // at start
+                                        if (val === '//') {
+                                            setShowCanned(true);
+                                            setShowTemplates(false);
+                                        } else if (!val.startsWith('//')) {
+                                            // Close canned if user clears the //
+                                            if (val === '') setShowCanned(false);
+                                        }
+                                    }}
                                     onKeyDown={handleKeyDown}
                                     rows={1}
                                     placeholder={isNoteMode ? 'Escribe una nota interna...' : 'Escribe un mensaje...'}
@@ -718,7 +835,8 @@ export default function ConversationsClient({ initialConversations }: Conversati
                     contactName={contactName}
                     waId={activeContact.wa_id ?? null}
                     email={activeContact.email ?? null}
-                    funnelStage={activeContact.funnel_stage as { name: string; color: string | null } | null | undefined}
+                    funnelStageId={(activeContact as { funnel_stage_id?: string | null }).funnel_stage_id ?? null}
+                    funnelStage={activeContact.funnel_stage as { id?: string; name: string; color: string | null } | null | undefined}
                     onClose={() => setShowRightPanel(false)}
                 />
             )}
@@ -727,7 +845,7 @@ export default function ConversationsClient({ initialConversations }: Conversati
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ContactPanel — rich ManyChat-style right panel
+// ContactPanel — rich ManyChat-style right panel (editable)
 // ─────────────────────────────────────────────────────────────────────────────
 type ContactPanelData = {
     tags: Array<{ tag: { id: string; name: string; color: string | null } | null }>;
@@ -769,6 +887,7 @@ function ContactPanel({
     contactName,
     waId,
     email,
+    funnelStageId,
     funnelStage,
     onClose,
 }: {
@@ -776,18 +895,56 @@ function ContactPanel({
     contactName: string;
     waId: string | null;
     email: string | null;
-    funnelStage: { name: string; color: string | null } | null | undefined;
+    funnelStageId: string | null;
+    funnelStage: { id?: string; name: string; color: string | null } | null | undefined;
     onClose: () => void;
 }) {
     const [data, setData] = useState<ContactPanelData | null>(null);
     const [loading, setLoading] = useState(true);
 
+    // Editable fields state
+    const [editingField, setEditingField] = useState<string | null>(null);
+    const [fieldDrafts, setFieldDrafts] = useState({
+        nombre: contactName,
+        wa_id: waId ?? '',
+        email: email ?? '',
+    });
+    const [contactData, setContactData] = useState({
+        nombre: contactName,
+        wa_id: waId,
+        email,
+    });
+
+    // Tags
+    const [contactTags, setContactTags] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
+    const [allTags, setAllTags] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
+    const [showAddTag, setShowAddTag] = useState(false);
+
+    // Funnel stages
+    const [stages, setStages] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
+    const [currentStageId, setCurrentStageId] = useState<string | null>(
+        funnelStageId ?? (funnelStage as { id?: string } | null | undefined)?.id ?? null
+    );
+
+    // Reset editable state when contactId changes
+    useEffect(() => {
+        setFieldDrafts({ nombre: contactName, wa_id: waId ?? '', email: email ?? '' });
+        setContactData({ nombre: contactName, wa_id: waId, email });
+        setCurrentStageId(funnelStageId ?? (funnelStage as { id?: string } | null | undefined)?.id ?? null);
+        setEditingField(null);
+        setShowAddTag(false);
+    }, [contactId, contactName, waId, email, funnelStageId, funnelStage]);
+
     useEffect(() => {
         setLoading(true);
         setData(null);
-        fetch(`/api/contacts/${contactId}`)
-            .then((r) => r.json())
-            .then((d) => {
+
+        Promise.all([
+            fetch(`/api/contacts/${contactId}`).then((r) => r.json()),
+            fetch('/api/settings/tags').then((r) => r.json()),
+            fetch('/api/funnel-stages').then((r) => r.json()),
+        ])
+            .then(([d, tagsRes, stagesRes]) => {
                 setData({
                     tags: d.tags ?? [],
                     custom_fields: d.custom_fields ?? [],
@@ -795,12 +952,67 @@ function ContactPanel({
                     notes: d.notes ?? [],
                     activity: d.activity ?? [],
                 });
+                const rawTags = (d.tags ?? [])
+                    .map((ct: { tag: { id: string; name: string; color: string | null } | null }) => ct.tag)
+                    .filter(Boolean) as Array<{ id: string; name: string; color: string | null }>;
+                setContactTags(rawTags);
+                setAllTags(tagsRes.tags ?? tagsRes ?? []);
+                setStages(stagesRes.stages ?? stagesRes ?? []);
             })
-            .catch(() => setData({ tags: [], custom_fields: [], reservations: [], notes: [], activity: [] }))
+            .catch(() => {
+                setData({ tags: [], custom_fields: [], reservations: [], notes: [], activity: [] });
+            })
             .finally(() => setLoading(false));
     }, [contactId]);
 
-    const tags = data?.tags.map((ct) => ct.tag).filter(Boolean) as Array<{ id: string; name: string; color: string | null }> ?? [];
+    // ── Save individual field ──────────────────────────────────────────────
+    async function saveField(key: string, value: string) {
+        setEditingField(null);
+        await fetch(`/api/contacts/${contactId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ [key]: value || null }),
+        });
+        setContactData((prev) => ({ ...prev, [key]: value }));
+    }
+
+    // ── Save funnel stage ──────────────────────────────────────────────────
+    async function saveStage(stageId: string) {
+        setCurrentStageId(stageId);
+        await fetch(`/api/contacts/${contactId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ funnel_stage_id: stageId || null }),
+        });
+    }
+
+    // ── Remove tag from contact ────────────────────────────────────────────
+    async function removeTag(tagId: string) {
+        setContactTags((prev) => prev.filter((t) => t.id !== tagId));
+        await fetch(`/api/contacts/${contactId}/tags`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tag_id: tagId }),
+        });
+    }
+
+    // ── Add tag to contact ────────────────────────────────────────────────
+    async function addTag(tag: { id: string; name: string; color: string | null }) {
+        if (contactTags.some((t) => t.id === tag.id)) {
+            setShowAddTag(false);
+            return;
+        }
+        setContactTags((prev) => [...prev, tag]);
+        setShowAddTag(false);
+        await fetch(`/api/contacts/${contactId}/tags`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tag_id: tag.id }),
+        });
+    }
+
+    const availableTags = allTags.filter((t) => !contactTags.some((ct) => ct.id === t.id));
+    const currentStage = stages.find((s) => s.id === currentStageId) ?? funnelStage ?? null;
 
     return (
         <div className="w-[300px] flex-shrink-0 bg-white border-l border-[#E8E8EC] flex flex-col h-full overflow-y-auto">
@@ -814,11 +1026,98 @@ function ContactPanel({
                 </div>
                 <div className="flex flex-col items-center text-center">
                     <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#818CF8] to-[#A78BFA] flex items-center justify-center mb-3">
-                        <span className="text-white text-[18px] font-bold">{getInitials(contactName)}</span>
+                        <span className="text-white text-[18px] font-bold">{getInitials(contactData.nombre)}</span>
                     </div>
-                    <h3 className="text-[15px] font-bold text-[#1A1A2E]">{contactName}</h3>
-                    {waId && <p className="text-[12px] text-[#9CA3AF] mt-0.5">{waId}</p>}
-                    {email && <p className="text-[11px] text-[#C4C4CE] mt-0.5 truncate max-w-full">{email}</p>}
+
+                    {/* Editable name */}
+                    <div className="group relative w-full">
+                        {editingField === 'nombre' ? (
+                            <input
+                                autoFocus
+                                value={fieldDrafts.nombre}
+                                onChange={(e) => setFieldDrafts((p) => ({ ...p, nombre: e.target.value }))}
+                                onBlur={() => saveField('nombre', fieldDrafts.nombre)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') saveField('nombre', fieldDrafts.nombre);
+                                    if (e.key === 'Escape') {
+                                        setFieldDrafts((p) => ({ ...p, nombre: contactData.nombre }));
+                                        setEditingField(null);
+                                    }
+                                }}
+                                className="text-[15px] font-bold text-[#1A1A2E] bg-transparent border-b border-[#818CF8] focus:outline-none w-full text-center"
+                            />
+                        ) : (
+                            <div
+                                className="flex items-center justify-center gap-1 cursor-pointer"
+                                onClick={() => setEditingField('nombre')}
+                            >
+                                <h3 className="text-[15px] font-bold text-[#1A1A2E] hover:text-[#818CF8] transition-colors">
+                                    {contactData.nombre}
+                                </h3>
+                                <PencilIcon size={11} className="text-[#C4C4CE] opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Editable wa_id */}
+                    <div className="group relative w-full mt-0.5">
+                        {editingField === 'wa_id' ? (
+                            <input
+                                autoFocus
+                                value={fieldDrafts.wa_id}
+                                onChange={(e) => setFieldDrafts((p) => ({ ...p, wa_id: e.target.value }))}
+                                onBlur={() => saveField('wa_id', fieldDrafts.wa_id)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') saveField('wa_id', fieldDrafts.wa_id);
+                                    if (e.key === 'Escape') {
+                                        setFieldDrafts((p) => ({ ...p, wa_id: contactData.wa_id ?? '' }));
+                                        setEditingField(null);
+                                    }
+                                }}
+                                className="text-[12px] text-[#9CA3AF] bg-transparent border-b border-[#818CF8] focus:outline-none w-full text-center"
+                            />
+                        ) : (
+                            <div
+                                className="flex items-center justify-center gap-1 cursor-pointer"
+                                onClick={() => setEditingField('wa_id')}
+                            >
+                                <p className="text-[12px] text-[#9CA3AF] hover:text-[#818CF8] transition-colors">
+                                    {contactData.wa_id || <span className="italic text-[#C4C4CE]">Sin teléfono</span>}
+                                </p>
+                                <PencilIcon size={10} className="text-[#C4C4CE] opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Editable email */}
+                    <div className="group relative w-full mt-0.5">
+                        {editingField === 'email' ? (
+                            <input
+                                autoFocus
+                                value={fieldDrafts.email}
+                                onChange={(e) => setFieldDrafts((p) => ({ ...p, email: e.target.value }))}
+                                onBlur={() => saveField('email', fieldDrafts.email)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') saveField('email', fieldDrafts.email);
+                                    if (e.key === 'Escape') {
+                                        setFieldDrafts((p) => ({ ...p, email: contactData.email ?? '' }));
+                                        setEditingField(null);
+                                    }
+                                }}
+                                className="text-[11px] text-[#9CA3AF] bg-transparent border-b border-[#818CF8] focus:outline-none w-full text-center"
+                            />
+                        ) : (
+                            <div
+                                className="flex items-center justify-center gap-1 cursor-pointer"
+                                onClick={() => setEditingField('email')}
+                            >
+                                <p className="text-[11px] text-[#C4C4CE] truncate max-w-full hover:text-[#818CF8] transition-colors">
+                                    {contactData.email || <span className="italic">Sin email</span>}
+                                </p>
+                                <PencilIcon size={10} className="text-[#C4C4CE] opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {/* Quick actions */}
@@ -846,32 +1145,96 @@ function ContactPanel({
                 </div>
             ) : (
                 <>
-                    {/* Funnel stage */}
-                    {funnelStage && (
-                        <div className="px-4 py-3 border-b border-[#F3F4F6]">
-                            <p className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-1.5">Etapa del funnel</p>
-                            <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: funnelStage.color ?? '#818CF8' }} />
-                                <span className="text-[12px] text-[#1A1A2E] font-medium">{funnelStage.name}</span>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Tags */}
-                    {tags.length > 0 && (
-                        <div className="px-4 py-3 border-b border-[#F3F4F6]">
-                            <p className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                                <Tag size={10} /> Etiquetas
-                            </p>
-                            <div className="flex flex-wrap gap-1">
-                                {tags.map((tag) => (
-                                    <span key={tag.id} className="px-2 py-0.5 rounded-full text-[10px] font-medium" style={{ backgroundColor: `${tag.color ?? '#818CF8'}20`, color: tag.color ?? '#818CF8' }}>
-                                        {tag.name}
-                                    </span>
+                    {/* Funnel stage — editable select */}
+                    <div className="px-4 py-3 border-b border-[#F3F4F6]">
+                        <p className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-1.5">Etapa del funnel</p>
+                        {stages.length > 0 ? (
+                            <select
+                                value={currentStageId ?? ''}
+                                onChange={(e) => saveStage(e.target.value)}
+                                className="w-full text-[12px] text-[#1A1A2E] bg-[#F9FAFB] border border-[#E8E8EC] rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#818CF8]/30 cursor-pointer"
+                            >
+                                <option value="">Sin etapa</option>
+                                {stages.map((s) => (
+                                    <option key={s.id} value={s.id}>
+                                        {s.name}
+                                    </option>
                                 ))}
+                            </select>
+                        ) : currentStage ? (
+                            <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: currentStage.color ?? '#818CF8' }} />
+                                <span className="text-[12px] text-[#1A1A2E] font-medium">{currentStage.name}</span>
+                            </div>
+                        ) : (
+                            <p className="text-[12px] text-[#C4C4CE] italic">Sin etapa</p>
+                        )}
+                    </div>
+
+                    {/* Tags — editable */}
+                    <div className="px-4 py-3 border-b border-[#F3F4F6]">
+                        <p className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                            <Tag size={10} /> Etiquetas
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                            {contactTags.map((tag) => (
+                                <span
+                                    key={tag.id}
+                                    className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
+                                    style={{ backgroundColor: `${tag.color ?? '#818CF8'}20`, color: tag.color ?? '#818CF8' }}
+                                >
+                                    {tag.name}
+                                    <button
+                                        onClick={() => removeTag(tag.id)}
+                                        className="hover:opacity-70 transition-opacity leading-none"
+                                        title="Quitar etiqueta"
+                                    >
+                                        <X size={9} />
+                                    </button>
+                                </span>
+                            ))}
+
+                            {/* Add tag button */}
+                            <div className="relative">
+                                <button
+                                    onClick={() => setShowAddTag((v) => !v)}
+                                    className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium border border-dashed border-[#C4C4CE] text-[#9CA3AF] hover:border-[#818CF8] hover:text-[#818CF8] transition-colors"
+                                    title="Agregar etiqueta"
+                                >
+                                    <Plus size={9} /> Agregar
+                                </button>
+                                {showAddTag && (
+                                    <div className="absolute top-6 left-0 z-20 w-44 bg-white border border-[#E8E8EC] rounded-xl shadow-lg overflow-hidden">
+                                        <div className="px-2 py-1.5 border-b border-[#F3F4F6] flex items-center justify-between">
+                                            <span className="text-[10px] font-semibold text-[#9CA3AF]">Etiquetas</span>
+                                            <button onClick={() => setShowAddTag(false)}>
+                                                <X size={11} className="text-[#9CA3AF]" />
+                                            </button>
+                                        </div>
+                                        <div className="max-h-40 overflow-y-auto py-1">
+                                            {availableTags.length === 0 ? (
+                                                <p className="text-[11px] text-[#9CA3AF] px-3 py-2">Sin etiquetas disponibles</p>
+                                            ) : (
+                                                availableTags.map((tag) => (
+                                                    <button
+                                                        key={tag.id}
+                                                        onClick={() => addTag(tag)}
+                                                        className="w-full text-left px-3 py-1.5 hover:bg-[#F9FAFB] transition-colors flex items-center gap-2"
+                                                    >
+                                                        <div
+                                                            className="w-2 h-2 rounded-full flex-shrink-0"
+                                                            style={{ backgroundColor: tag.color ?? '#818CF8' }}
+                                                        />
+                                                        <span className="text-[11px] text-[#1A1A2E]">{tag.name}</span>
+                                                    </button>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
-                    )}
+                    </div>
 
                     {/* Custom fields */}
                     {data && data.custom_fields.length > 0 && (
@@ -950,7 +1313,7 @@ function ContactPanel({
                         </div>
                     )}
 
-                    {data && data.tags.length === 0 && data.custom_fields.length === 0 && data.reservations.length === 0 && data.notes.length === 0 && data.activity.length === 0 && (
+                    {data && contactTags.length === 0 && data.custom_fields.length === 0 && data.reservations.length === 0 && data.notes.length === 0 && data.activity.length === 0 && (
                         <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
                             <p className="text-[12px] text-[#9CA3AF]">No hay más información de este contacto.</p>
                             <Link href={`/contacts/${contactId}`} className="mt-2 text-[12px] text-[#818CF8] hover:underline">
