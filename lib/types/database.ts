@@ -18,6 +18,11 @@ export type Tenant = {
     slug: string;
     logo_url: string | null;
     primary_color: string | null;
+    booking_bg_color: string | null;
+    booking_bg_image_url: string | null;
+    corporate_events_enabled: boolean;
+    corporate_min_party_size: number;
+    corporate_contact_link: string | null;
     plan: 'starter' | 'professional' | 'enterprise';
     is_active: boolean;
     max_agents: number | null;
@@ -451,6 +456,7 @@ export type RestaurantTable = {
     capacity: number;
     location: string | null;
     is_active: boolean;
+    allow_customer_selection: boolean;
     position: number;
     created_at: string;
     updated_at: string;

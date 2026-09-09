@@ -113,13 +113,16 @@ export async function POST(
                     await fetch(webhookUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
+                        signal: AbortSignal.timeout(4000),
                         body: JSON.stringify({
                             tenant_id: TENANT_ID,
                             conversation_id: id,
                             contact_id: contact?.id,
                             wa_id: contact?.wa_id,
+                            contact_name: contact?.nombre ?? null,
                             message: body.content,
                             content_type: body.content_type ?? 'text',
+                            sent_by_name: body.sent_by_name ?? 'Agente',
                         }),
                     });
                 }

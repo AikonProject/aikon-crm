@@ -13,6 +13,11 @@ type TenantPublic = {
   slug: string;
   logo_url: string | null;
   primary_color?: string | null;
+  booking_bg_color?: string | null;
+  booking_bg_image_url?: string | null;
+  corporate_events_enabled?: boolean;
+  corporate_min_party_size?: number;
+  corporate_contact_link?: string | null;
 };
 type ScheduleRow = {
   id: string;
@@ -152,6 +157,11 @@ export default function PublicBookingPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   const accent = tenant?.primary_color || '#C8961C';
+  const bgColor = tenant?.booking_bg_color || '#0D0D0D';
+  const bgImageUrl = tenant?.booking_bg_image_url || null;
+  const corporateEnabled = tenant?.corporate_events_enabled ?? false;
+  const corporateMinSize = tenant?.corporate_min_party_size ?? 10;
+  const corporateLink = tenant?.corporate_contact_link ?? null;
 
   // Fetch tenant data
   useEffect(() => {
@@ -200,7 +210,7 @@ export default function PublicBookingPage() {
     switch (step) {
       case 1: return selectedDate !== '';
       case 2: return selectedTime !== '';
-      case 3: return partySize >= 1 && partySize <= 20;
+      case 3: return partySize >= 1 && partySize <= 20 && !(corporateEnabled && corporateLink && partySize >= corporateMinSize);
       case 4: return guestName.trim().length > 0;
       case 5: return guestPhone.trim().length > 0 || guestEmail.trim().length > 0;
       case 6: return true;
@@ -324,8 +334,12 @@ export default function PublicBookingPage() {
     return (
       <div
         className="min-h-screen bg-[#0D0D0D] flex flex-col items-center justify-center px-4"
-        style={{
-          background: `radial-gradient(ellipse at bottom right, ${accent}15 0%, #0D0D0D 70%)`,
+        style={bgImageUrl ? {
+          backgroundImage: `url(${bgImageUrl})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        } : {
+          background: `radial-gradient(ellipse at bottom right, ${accent}15 0%, ${bgColor} 70%)`,
         }}
       >
         <style>{marqueeCSS}</style>
@@ -387,8 +401,12 @@ export default function PublicBookingPage() {
   return (
     <div
       className="min-h-screen bg-[#0D0D0D] flex flex-col text-white"
-      style={{
-        background: `radial-gradient(ellipse at bottom right, ${accent}15 0%, #0D0D0D 70%)`,
+      style={bgImageUrl ? {
+        backgroundImage: `url(${bgImageUrl})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      } : {
+        background: `radial-gradient(ellipse at bottom right, ${accent}15 0%, ${bgColor} 70%)`,
       }}
     >
       <style>{marqueeCSS}</style>
@@ -427,6 +445,13 @@ export default function PublicBookingPage() {
 
         {/* Center: restaurant name + step title */}
         <div className="text-center flex-1">
+          {tenant.logo_url && (
+            <img
+              src={tenant.logo_url}
+              alt={tenant.name}
+              className="h-8 object-contain mx-auto mb-1"
+            />
+          )}
           <p className="text-[11px] uppercase tracking-[0.15em] text-white/40 mb-0.5">
             {tenant.name}
           </p>
@@ -601,6 +626,24 @@ export default function PublicBookingPage() {
                   );
                 })}
               </div>
+
+              {/* Corporate events notice */}
+              {corporateEnabled && corporateLink && partySize >= corporateMinSize && (
+                <div className="w-full max-w-[520px] bg-[#1C1C1C] rounded-2xl border border-white/10 p-5 text-center mt-4">
+                  <p className="text-white/70 text-sm mb-3">
+                    Para grupos de {corporateMinSize}+ personas, contáctanos directamente para una atención personalizada.
+                  </p>
+                  <a
+                    href={corporateLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block w-full py-3 rounded-xl text-base font-bold transition-opacity hover:opacity-90"
+                    style={{ backgroundColor: accent, color: '#0D0D0D' }}
+                  >
+                    Contactar para evento corporativo
+                  </a>
+                </div>
+              )}
             </div>
           )}
 

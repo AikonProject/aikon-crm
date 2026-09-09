@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Trash2, Edit2, Check, X, ExternalLink, Globe, Copy } from 'lucide-react';
+import { Plus, Trash2, Edit2, Check, X, ExternalLink, Globe, Copy, Palette } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import type {
 } from '@/lib/types/database';
 
 // ---- Tab type ----
-type Tab = 'mesas' | 'horarios' | 'eventos' | 'menus';
+type Tab = 'mesas' | 'horarios' | 'eventos' | 'menus' | 'booking';
 
 // ---- Shared label/input classes ----
 const labelClass = 'block text-[12px] font-semibold text-[#6B7280] mb-1';
@@ -32,6 +32,8 @@ type TableFormState = {
     location: string;
     is_active: boolean;
 };
+
+type TableWithSelection = RestaurantTable & { allow_customer_selection?: boolean };
 
 function MesasTab({ tables: initialTables }: { tables: RestaurantTable[] }) {
     const router = useRouter();
@@ -115,6 +117,19 @@ function MesasTab({ tables: initialTables }: { tables: RestaurantTable[] }) {
         }
     }
 
+    async function handleToggleSelection(id: string, value: boolean) {
+        setTables((prev) => prev.map((t) => t.id === id ? { ...t, allow_customer_selection: value } as TableWithSelection : t));
+        try {
+            await fetch(`/api/restaurant/tables/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ allow_customer_selection: value }),
+            });
+        } catch {
+            toast.error('Error al actualizar la mesa');
+        }
+    }
+
     return (
         <div>
             <div className="flex justify-end mb-4">
@@ -193,48 +208,57 @@ function MesasTab({ tables: initialTables }: { tables: RestaurantTable[] }) {
                 </div>
             )}
 
-            <div className="bg-white rounded-2xl border border-[#E8E8EC] overflow-hidden">
-                <table className="w-full text-sm">
-                    <thead>
-                        <tr className="border-b border-[#E8E8EC] bg-[#F8F8FA]">
-                            <th className="text-left text-[11px] font-semibold text-[#9CA3AF] uppercase tracking-wide px-4 py-3">Nombre</th>
-                            <th className="text-left text-[11px] font-semibold text-[#9CA3AF] uppercase tracking-wide px-4 py-3">Capacidad</th>
-                            <th className="text-left text-[11px] font-semibold text-[#9CA3AF] uppercase tracking-wide px-4 py-3 hidden sm:table-cell">Ubicacion</th>
-                            <th className="text-left text-[11px] font-semibold text-[#9CA3AF] uppercase tracking-wide px-4 py-3">Estado</th>
-                            <th className="px-4 py-3 w-20" />
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#F3F4F6]">
-                        {tables.map((t) => (
-                            <tr key={t.id} className="hover:bg-[#F8F8FA] transition-colors">
-                                <td className="px-4 py-3 text-[13px] font-medium text-[#1A1A2E]">{t.name}</td>
-                                <td className="px-4 py-3 text-[13px] text-[#6B7280]">{t.capacity} pers.</td>
-                                <td className="px-4 py-3 text-[12px] text-[#9CA3AF] hidden sm:table-cell">{t.location ?? '—'}</td>
-                                <td className="px-4 py-3">
-                                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${t.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                                        {t.is_active ? 'Activa' : 'Inactiva'}
-                                    </span>
-                                </td>
-                                <td className="px-4 py-3">
-                                    <div className="flex items-center gap-1 justify-end">
-                                        <button onClick={() => openEdit(t)} className="p-1.5 rounded-lg hover:bg-[#F3F4F6] text-[#9CA3AF] hover:text-[#6B7280] transition-colors">
-                                            <Edit2 size={13} />
-                                        </button>
-                                        <button onClick={() => handleDelete(t.id)} className="p-1.5 rounded-lg hover:bg-[#FEF2F2] text-[#9CA3AF] hover:text-[#EF4444] transition-colors">
-                                            <Trash2 size={13} />
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-                {tables.length === 0 && (
-                    <div className="flex items-center justify-center py-12 text-[13px] text-[#9CA3AF]">
-                        No hay mesas configuradas
-                    </div>
-                )}
-            </div>
+            {tables.length === 0 ? (
+                <div className="flex items-center justify-center py-12 text-[13px] text-[#9CA3AF] bg-white rounded-2xl border border-[#E8E8EC]">
+                    No hay mesas configuradas
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {tables.map((t) => (
+                        <div
+                            key={t.id}
+                            className={`bg-white rounded-2xl border p-4 flex flex-col gap-3 ${t.is_active ? 'border-[#E8E8EC]' : 'border-[#F3F4F6] opacity-60'}`}
+                        >
+                            {/* Header */}
+                            <div className="flex items-start justify-between gap-2">
+                                <div>
+                                    <p className="text-[15px] font-bold text-[#1A1A2E]">{t.name}</p>
+                                    {t.location && <p className="text-[11px] text-[#9CA3AF] mt-0.5">{t.location}</p>}
+                                </div>
+                                <div className="flex items-center gap-1 flex-shrink-0">
+                                    <button onClick={() => openEdit(t)} className="p-1.5 rounded-lg hover:bg-[#F3F4F6] text-[#9CA3AF] hover:text-[#6B7280] transition-colors">
+                                        <Edit2 size={13} />
+                                    </button>
+                                    <button onClick={() => handleDelete(t.id)} className="p-1.5 rounded-lg hover:bg-[#FEF2F2] text-[#9CA3AF] hover:text-[#EF4444] transition-colors">
+                                        <Trash2 size={13} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Capacity badge */}
+                            <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium bg-[#EEF0FF] text-[#818CF8]">
+                                    {t.capacity} pers.
+                                </span>
+                                <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${t.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {t.is_active ? 'Activa' : 'Inactiva'}
+                                </span>
+                            </div>
+
+                            {/* Customer selection toggle */}
+                            <div className="flex items-center justify-between pt-2 border-t border-[#F3F4F6]">
+                                <span className="text-[11px] text-[#9CA3AF]">Cliente puede elegir</span>
+                                <button
+                                    onClick={() => handleToggleSelection(t.id, !(t as TableWithSelection).allow_customer_selection)}
+                                    className={`relative w-9 h-5 rounded-full transition-colors ${(t as TableWithSelection).allow_customer_selection ? 'bg-[#818CF8]' : 'bg-[#E8E8EC]'}`}
+                                >
+                                    <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${(t as TableWithSelection).allow_customer_selection ? 'left-4' : 'left-0.5'}`} />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
@@ -703,6 +727,226 @@ function MenusTab({ menus: initialMenus }: { menus: RestaurantMenu[] }) {
 }
 
 // ============================================================
+// BOOKING TAB
+// ============================================================
+
+type BookingSettings = {
+    primary_color: string;
+    booking_bg_color: string;
+    booking_bg_image_url: string;
+    logo_url: string;
+    corporate_events_enabled: boolean;
+    corporate_min_party_size: number;
+    corporate_contact_link: string;
+};
+
+function BookingTab({ slug }: { slug: string }) {
+    const router = useRouter();
+    const [settings, setSettings] = useState<BookingSettings>({
+        primary_color: '#C8961C',
+        booking_bg_color: '#0D0D0D',
+        booking_bg_image_url: '',
+        logo_url: '',
+        corporate_events_enabled: false,
+        corporate_min_party_size: 10,
+        corporate_contact_link: '',
+    });
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        fetch('/api/settings/general')
+            .then((r) => r.json())
+            .then((d) => {
+                const t = d.tenant ?? {};
+                setSettings({
+                    primary_color: t.primary_color ?? '#C8961C',
+                    booking_bg_color: t.booking_bg_color ?? '#0D0D0D',
+                    booking_bg_image_url: t.booking_bg_image_url ?? '',
+                    logo_url: t.logo_url ?? '',
+                    corporate_events_enabled: t.corporate_events_enabled ?? false,
+                    corporate_min_party_size: t.corporate_min_party_size ?? 10,
+                    corporate_contact_link: t.corporate_contact_link ?? '',
+                });
+                setLoading(false);
+            })
+            .catch(() => setLoading(false));
+    }, []);
+
+    async function handleSave() {
+        setSaving(true);
+        try {
+            await fetch('/api/settings/general', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    primary_color: settings.primary_color,
+                    booking_bg_color: settings.booking_bg_color,
+                    booking_bg_image_url: settings.booking_bg_image_url || null,
+                    logo_url: settings.logo_url || null,
+                    corporate_events_enabled: settings.corporate_events_enabled,
+                    corporate_min_party_size: settings.corporate_min_party_size,
+                    corporate_contact_link: settings.corporate_contact_link || null,
+                }),
+            });
+            toast.success('Configuracion guardada');
+            router.refresh();
+        } catch {
+            toast.error('Error al guardar');
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    if (loading) return <div className="py-8 text-center text-[#9CA3AF] text-[14px]">Cargando...</div>;
+
+    return (
+        <div className="space-y-6 max-w-xl">
+            {/* Preview link */}
+            {slug && (
+                <a
+                    href={`/${slug}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-[13px] text-[#818CF8] hover:underline"
+                >
+                    <ExternalLink size={13} />
+                    Ver página de reservas
+                </a>
+            )}
+
+            {/* Branding */}
+            <div className="bg-white rounded-2xl border border-[#E8E8EC] p-5 space-y-4">
+                <h3 className="text-[14px] font-semibold text-[#1A1A2E]">Marca</h3>
+
+                <div>
+                    <label className={labelClass}>Color principal</label>
+                    <div className="flex items-center gap-3">
+                        <input
+                            type="color"
+                            value={settings.primary_color}
+                            onChange={(e) => setSettings((s) => ({ ...s, primary_color: e.target.value }))}
+                            className="w-10 h-10 rounded-lg border border-[#E8E8EC] cursor-pointer"
+                        />
+                        <input
+                            type="text"
+                            value={settings.primary_color}
+                            onChange={(e) => setSettings((s) => ({ ...s, primary_color: e.target.value }))}
+                            placeholder="#C8961C"
+                            className={inputClass + ' flex-1'}
+                        />
+                    </div>
+                </div>
+
+                <div>
+                    <label className={labelClass}>URL del logo</label>
+                    <input
+                        type="text"
+                        value={settings.logo_url}
+                        onChange={(e) => setSettings((s) => ({ ...s, logo_url: e.target.value }))}
+                        placeholder="https://..."
+                        className={inputClass}
+                    />
+                </div>
+            </div>
+
+            {/* Background */}
+            <div className="bg-white rounded-2xl border border-[#E8E8EC] p-5 space-y-4">
+                <h3 className="text-[14px] font-semibold text-[#1A1A2E]">Fondo de la página</h3>
+
+                <div>
+                    <label className={labelClass}>Color de fondo</label>
+                    <div className="flex items-center gap-3">
+                        <input
+                            type="color"
+                            value={settings.booking_bg_color}
+                            onChange={(e) => setSettings((s) => ({ ...s, booking_bg_color: e.target.value }))}
+                            className="w-10 h-10 rounded-lg border border-[#E8E8EC] cursor-pointer"
+                        />
+                        <input
+                            type="text"
+                            value={settings.booking_bg_color}
+                            onChange={(e) => setSettings((s) => ({ ...s, booking_bg_color: e.target.value }))}
+                            placeholder="#0D0D0D"
+                            className={inputClass + ' flex-1'}
+                        />
+                    </div>
+                </div>
+
+                <div>
+                    <label className={labelClass}>URL de imagen de fondo (reemplaza color)</label>
+                    <input
+                        type="text"
+                        value={settings.booking_bg_image_url}
+                        onChange={(e) => setSettings((s) => ({ ...s, booking_bg_image_url: e.target.value }))}
+                        placeholder="https://..."
+                        className={inputClass}
+                    />
+                    <p className="text-[11px] text-[#9CA3AF] mt-1">Si se ingresa una imagen, reemplaza el color de fondo</p>
+                </div>
+            </div>
+
+            {/* Corporate events */}
+            <div className="bg-white rounded-2xl border border-[#E8E8EC] p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                    <h3 className="text-[14px] font-semibold text-[#1A1A2E]">Eventos corporativos</h3>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <span className="text-[12px] text-[#6B7280]">{settings.corporate_events_enabled ? 'Activado' : 'Desactivado'}</span>
+                        <div
+                            onClick={() => setSettings((s) => ({ ...s, corporate_events_enabled: !s.corporate_events_enabled }))}
+                            className={`relative w-10 h-5 rounded-full transition-colors cursor-pointer ${settings.corporate_events_enabled ? 'bg-[#818CF8]' : 'bg-[#E8E8EC]'}`}
+                        >
+                            <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${settings.corporate_events_enabled ? 'left-5' : 'left-0.5'}`} />
+                        </div>
+                    </label>
+                </div>
+
+                {settings.corporate_events_enabled && (
+                    <>
+                        <div>
+                            <label className={labelClass}>Mostrar cuando el grupo sea mayor o igual a</label>
+                            <div className="flex items-center gap-3">
+                                <input
+                                    type="number"
+                                    min={2}
+                                    max={200}
+                                    value={settings.corporate_min_party_size}
+                                    onChange={(e) => setSettings((s) => ({ ...s, corporate_min_party_size: Number(e.target.value) }))}
+                                    className={inputClass + ' w-32'}
+                                />
+                                <span className="text-[13px] text-[#6B7280]">personas</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className={labelClass}>Link de contacto corporativo (WhatsApp, formulario, etc.)</label>
+                            <input
+                                type="text"
+                                value={settings.corporate_contact_link}
+                                onChange={(e) => setSettings((s) => ({ ...s, corporate_contact_link: e.target.value }))}
+                                placeholder="https://wa.me/..."
+                                className={inputClass}
+                            />
+                        </div>
+                    </>
+                )}
+            </div>
+
+            <div className="flex justify-end">
+                <Button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="gap-2 rounded-[10px] bg-[#818CF8] hover:bg-[#6366F1] text-white"
+                >
+                    <Check size={15} />
+                    {saving ? 'Guardando...' : 'Guardar configuracion'}
+                </Button>
+            </div>
+        </div>
+    );
+}
+
+// ============================================================
 // BOOKING LINK BANNER
 // ============================================================
 
@@ -794,6 +1038,7 @@ export function RestaurantSettingsClient({
         { key: 'horarios', label: 'Horarios' },
         { key: 'eventos', label: 'Eventos' },
         { key: 'menus', label: 'Menus' },
+        { key: 'booking', label: 'Página de reservas' },
     ];
 
     return (
@@ -827,6 +1072,7 @@ export function RestaurantSettingsClient({
             {tab === 'horarios' && <HorariosTab schedules={initialSchedules} />}
             {tab === 'eventos' && <EventosTab events={initialEvents} />}
             {tab === 'menus' && <MenusTab menus={initialMenus} />}
+            {tab === 'booking' && <BookingTab slug={slug} />}
         </>
     );
 }

@@ -181,7 +181,22 @@ function InfoTab({
 }) {
     const [selectedStageId, setSelectedStageId] = useState(contact.funnel_stage_id ?? '');
     const [saving, setSaving] = useState(false);
+    const [fieldLabels, setFieldLabels] = useState<Record<string, string>>({});
     const router = useRouter();
+
+    // Fetch custom field label definitions
+    useEffect(() => {
+        fetch('/api/settings/custom-fields')
+            .then((r) => r.json())
+            .then((d) => {
+                const map: Record<string, string> = {};
+                for (const f of d.fields ?? []) {
+                    map[f.field_key] = f.label;
+                }
+                setFieldLabels(map);
+            })
+            .catch(() => {});
+    }, []);
     const tags = contact.contact_tags
         .map((ct) => ct.tag)
         .filter(Boolean) as { id: string; name: string; color: string | null }[];
@@ -251,7 +266,7 @@ function InfoTab({
                             {customFields.map((cfv) => (
                                 <div key={cfv.field_key} className="flex justify-between gap-4">
                                     <dt className="text-[13px] text-[#9CA3AF] flex-shrink-0">
-                                        {cfv.field_key}
+                                        {fieldLabels[cfv.field_key] ?? cfv.field_key}
                                     </dt>
                                     <dd className="text-[13px] text-[#1A1A2E] font-medium text-right">
                                         {cfv.value ?? '—'}

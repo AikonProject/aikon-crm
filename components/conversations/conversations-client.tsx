@@ -24,6 +24,7 @@ import {
 import { cn } from '@/lib/utils';
 import { getInitials } from '@/lib/utils/format';
 import { createClient } from '@/lib/supabase/client';
+import { useSidebar } from '@/components/layout/sidebar-provider';
 import { ConversationListItem } from '@/components/conversations/conversation-list-item';
 import { MessageBubble } from '@/components/conversations/message-bubble';
 import type { Conversation, Message, MessageTemplate, CannedResponse, ConversationStatus } from '@/lib/types/database';
@@ -79,6 +80,7 @@ interface ConversationsClientProps {
 
 export default function ConversationsClient({ initialConversations }: ConversationsClientProps) {
     const supabase = createClient();
+    const { collapsed } = useSidebar();
 
     // State
     const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
@@ -250,13 +252,14 @@ export default function ConversationsClient({ initialConversations }: Conversati
     // ── Fetch templates and canned responses ───────────────────────────────
     useEffect(() => {
         async function fetchMeta() {
-            const supabaseAdmin = createClient();
+            const supabaseClient = createClient();
             const [tRes, cRes] = await Promise.all([
-                supabaseAdmin.from('message_templates').select('*').eq('is_active', true).limit(20),
-                supabaseAdmin.from('canned_responses').select('*').limit(20),
+                supabaseClient.from('message_templates').select('*').eq('is_active', true).limit(20),
+                fetch('/api/settings/canned-responses').then((r) => r.json()),
             ]);
             if (tRes.data) setTemplates(tRes.data as MessageTemplate[]);
-            if (cRes.data) setCannedResponses(cRes.data as CannedResponse[]);
+            const cannedData = cRes?.responses ?? cRes ?? [];
+            if (Array.isArray(cannedData)) setCannedResponses(cannedData as CannedResponse[]);
         }
         fetchMeta();
     }, []);
@@ -385,7 +388,7 @@ export default function ConversationsClient({ initialConversations }: Conversati
     // ─────────────────────────────────────────────────────────────────────────
     return (
         <div
-            className="fixed inset-0 lg:left-[260px] flex bg-[#F8F8FA]"
+            className={`fixed inset-0 flex bg-[#F8F8FA] transition-all duration-300 ${collapsed ? "lg:left-[72px]" : "lg:left-[260px]"}`}
             style={{ top: 0, bottom: 0 }}
         >
             {/* ── LEFT PANEL: Conversation list ────────────────────────────── */}
@@ -584,7 +587,18 @@ export default function ConversationsClient({ initialConversations }: Conversati
                                 <textarea
                                     ref={textareaRef}
                                     value={inputText}
-                                    onChange={(e) => setInputText(e.target.value)}
+                                    onChange={(e) => {
+                                    const val = e.target.value;
+                                    setInputText(val);
+                                    // Auto-open canned responses when user types // at start
+                                    if (val === '//') {
+                                        setShowCanned(true);
+                                        setShowTemplates(false);
+                                    } else if (!val.startsWith('//')) {
+                                        // Close canned if user clears the //
+                                        if (val === '') setShowCanned(false);
+                                    }
+                                }}
                                     onKeyDown={handleKeyDown}
                                     rows={1}
                                     placeholder={isNoteMode ? 'Escribe una nota interna...' : 'Escribe un mensaje...'}
@@ -699,94 +713,252 @@ export default function ConversationsClient({ initialConversations }: Conversati
 
             {/* ── RIGHT PANEL: Contact info ────────────────────────────────── */}
             {showRightPanel && activeConversation && activeContact && (
-                <div className="w-[300px] flex-shrink-0 bg-white border-l border-[#E8E8EC] flex flex-col h-full overflow-y-auto">
-                    <div className="p-5 border-b border-[#E8E8EC]">
-                        <div className="flex items-center justify-between mb-4">
-                            <span className="text-[12px] font-semibold text-[#9CA3AF] uppercase tracking-wider">Contacto</span>
-                            <button
-                                onClick={() => setShowRightPanel(false)}
-                                className="text-[#9CA3AF] hover:text-[#6B7280]"
-                            >
-                                <X size={16} />
-                            </button>
-                        </div>
-                        <div className="flex flex-col items-center text-center">
-                            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#818CF8] to-[#A78BFA] flex items-center justify-center mb-3">
-                                <span className="text-white text-[20px] font-bold">{getInitials(contactName)}</span>
-                            </div>
-                            <h3 className="text-[16px] font-bold text-[#1A1A2E]">{contactName}</h3>
-                            {activeContact.wa_id && (
-                                <p className="text-[13px] text-[#9CA3AF] mt-0.5">{activeContact.wa_id}</p>
-                            )}
-                            {activeContact.email && (
-                                <p className="text-[12px] text-[#C4C4CE] mt-0.5 truncate max-w-full">{activeContact.email}</p>
-                            )}
-                        </div>
-                    </div>
+                <ContactPanel
+                    contactId={activeContact.id}
+                    contactName={contactName}
+                    waId={activeContact.wa_id ?? null}
+                    email={activeContact.email ?? null}
+                    funnelStage={activeContact.funnel_stage as { name: string; color: string | null } | null | undefined}
+                    onClose={() => setShowRightPanel(false)}
+                />
+            )}
+        </div>
+    );
+}
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ContactPanel — rich ManyChat-style right panel
+// ─────────────────────────────────────────────────────────────────────────────
+type ContactPanelData = {
+    tags: Array<{ tag: { id: string; name: string; color: string | null } | null }>;
+    custom_fields: Array<{ field_key: string; value: string | null; custom_field: { label: string; field_type: string } | null }>;
+    reservations: Array<{ id: string; reservation_date: string; reservation_time: string; party_size: number; status: string; occasion: string | null }>;
+    notes: Array<{ id: string; content: string; created_at: string; user: { full_name: string } | null }>;
+    activity: Array<{ id: string; activity_type: string; description: string | null; created_at: string; performed_by_name: string | null }>;
+};
+
+const RESERVATION_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+    pending:   { bg: '#FFFBEB', text: '#D97706' },
+    confirmed: { bg: '#EFF6FF', text: '#2563EB' },
+    seated:    { bg: '#ECFDF5', text: '#059669' },
+    completed: { bg: '#F3F4F6', text: '#6B7280' },
+    cancelled: { bg: '#FEF2F2', text: '#DC2626' },
+    no_show:   { bg: '#FFF7ED', text: '#EA580C' },
+};
+
+const RESERVATION_STATUS_LABELS: Record<string, string> = {
+    pending: 'Pendiente', confirmed: 'Confirmada', seated: 'En mesa',
+    completed: 'Completada', cancelled: 'Cancelada', no_show: 'No asistió',
+};
+
+function formatSmartDateShort(dateStr: string): string {
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 60) return `hace ${diffMin}m`;
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 24) return `hace ${diffH}h`;
+    const diffD = Math.floor(diffH / 24);
+    if (diffD < 7) return `hace ${diffD}d`;
+    return d.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
+}
+
+function ContactPanel({
+    contactId,
+    contactName,
+    waId,
+    email,
+    funnelStage,
+    onClose,
+}: {
+    contactId: string;
+    contactName: string;
+    waId: string | null;
+    email: string | null;
+    funnelStage: { name: string; color: string | null } | null | undefined;
+    onClose: () => void;
+}) {
+    const [data, setData] = useState<ContactPanelData | null>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        setLoading(true);
+        setData(null);
+        fetch(`/api/contacts/${contactId}`)
+            .then((r) => r.json())
+            .then((d) => {
+                setData({
+                    tags: d.tags ?? [],
+                    custom_fields: d.custom_fields ?? [],
+                    reservations: d.reservations ?? [],
+                    notes: d.notes ?? [],
+                    activity: d.activity ?? [],
+                });
+            })
+            .catch(() => setData({ tags: [], custom_fields: [], reservations: [], notes: [], activity: [] }))
+            .finally(() => setLoading(false));
+    }, [contactId]);
+
+    const tags = data?.tags.map((ct) => ct.tag).filter(Boolean) as Array<{ id: string; name: string; color: string | null }> ?? [];
+
+    return (
+        <div className="w-[300px] flex-shrink-0 bg-white border-l border-[#E8E8EC] flex flex-col h-full overflow-y-auto">
+            {/* Header */}
+            <div className="p-5 border-b border-[#E8E8EC] flex-shrink-0">
+                <div className="flex items-center justify-between mb-4">
+                    <span className="text-[12px] font-semibold text-[#9CA3AF] uppercase tracking-wider">Contacto</span>
+                    <button onClick={onClose} className="text-[#9CA3AF] hover:text-[#6B7280]">
+                        <X size={16} />
+                    </button>
+                </div>
+                <div className="flex flex-col items-center text-center">
+                    <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#818CF8] to-[#A78BFA] flex items-center justify-center mb-3">
+                        <span className="text-white text-[18px] font-bold">{getInitials(contactName)}</span>
+                    </div>
+                    <h3 className="text-[15px] font-bold text-[#1A1A2E]">{contactName}</h3>
+                    {waId && <p className="text-[12px] text-[#9CA3AF] mt-0.5">{waId}</p>}
+                    {email && <p className="text-[11px] text-[#C4C4CE] mt-0.5 truncate max-w-full">{email}</p>}
+                </div>
+
+                {/* Quick actions */}
+                <div className="flex gap-2 mt-3">
+                    <Link
+                        href={`/contacts/${contactId}`}
+                        className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border border-[#E8E8EC] hover:bg-[#F9FAFB] text-[11px] font-medium text-[#6B7280] transition-colors"
+                    >
+                        <UserCheck size={12} className="text-[#818CF8]" />
+                        Perfil completo
+                    </Link>
+                    <Link
+                        href={`/reservations`}
+                        className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border border-[#E8E8EC] hover:bg-[#F9FAFB] text-[11px] font-medium text-[#6B7280] transition-colors"
+                    >
+                        <CalendarCheck size={12} className="text-[#818CF8]" />
+                        Reservas
+                    </Link>
+                </div>
+            </div>
+
+            {loading ? (
+                <div className="flex items-center justify-center h-32">
+                    <div className="w-5 h-5 border-2 border-[#818CF8] border-t-transparent rounded-full animate-spin" />
+                </div>
+            ) : (
+                <>
                     {/* Funnel stage */}
-                    {activeContact.funnel_stage && (
-                        <div className="px-5 py-4 border-b border-[#E8E8EC]">
-                            <p className="text-[11px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-2">Etapa del funnel</p>
+                    {funnelStage && (
+                        <div className="px-4 py-3 border-b border-[#F3F4F6]">
+                            <p className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-1.5">Etapa del funnel</p>
                             <div className="flex items-center gap-2">
-                                <div
-                                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                                    style={{ backgroundColor: activeContact.funnel_stage.color ?? '#818CF8' }}
-                                />
-                                <span className="text-[13px] text-[#1A1A2E] font-medium">
-                                    {activeContact.funnel_stage.name}
-                                </span>
+                                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: funnelStage.color ?? '#818CF8' }} />
+                                <span className="text-[12px] text-[#1A1A2E] font-medium">{funnelStage.name}</span>
                             </div>
                         </div>
                     )}
 
                     {/* Tags */}
-                    {Array.isArray(activeContact.tags) && activeContact.tags.length > 0 && (
-                        <div className="px-5 py-4 border-b border-[#E8E8EC]">
-                            <p className="text-[11px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-2 flex items-center gap-1">
-                                <Tag size={11} />
-                                Etiquetas
+                    {tags.length > 0 && (
+                        <div className="px-4 py-3 border-b border-[#F3F4F6]">
+                            <p className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                                <Tag size={10} /> Etiquetas
                             </p>
-                            <div className="flex flex-wrap gap-1.5">
-                                {(activeContact.tags as Array<{ name: string } | string>).map((tag, i) => {
-                                    const label = typeof tag === 'string' ? tag : tag.name;
+                            <div className="flex flex-wrap gap-1">
+                                {tags.map((tag) => (
+                                    <span key={tag.id} className="px-2 py-0.5 rounded-full text-[10px] font-medium" style={{ backgroundColor: `${tag.color ?? '#818CF8'}20`, color: tag.color ?? '#818CF8' }}>
+                                        {tag.name}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Custom fields */}
+                    {data && data.custom_fields.length > 0 && (
+                        <div className="px-4 py-3 border-b border-[#F3F4F6]">
+                            <p className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-2">Campos personalizados</p>
+                            <dl className="space-y-1.5">
+                                {data.custom_fields.map((cf) => (
+                                    <div key={cf.field_key} className="flex justify-between gap-2">
+                                        <dt className="text-[11px] text-[#9CA3AF] flex-shrink-0">{cf.custom_field?.label ?? cf.field_key}</dt>
+                                        <dd className="text-[11px] text-[#1A1A2E] font-medium text-right truncate">{cf.value}</dd>
+                                    </div>
+                                ))}
+                            </dl>
+                        </div>
+                    )}
+
+                    {/* Reservations */}
+                    {data && data.reservations.length > 0 && (
+                        <div className="px-4 py-3 border-b border-[#F3F4F6]">
+                            <p className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-2 flex items-center gap-1">
+                                <CalendarCheck size={10} /> Reservas ({data.reservations.length})
+                            </p>
+                            <div className="space-y-2">
+                                {data.reservations.map((r) => {
+                                    const sc = RESERVATION_STATUS_COLORS[r.status] ?? RESERVATION_STATUS_COLORS.pending;
                                     return (
-                                        <span key={i} className="px-2 py-0.5 bg-[#F3F4FF] text-[#818CF8] text-[11px] font-medium rounded-full">
-                                            {label}
-                                        </span>
+                                        <div key={r.id} className="flex items-center justify-between gap-2">
+                                            <div className="min-w-0">
+                                                <p className="text-[11px] font-medium text-[#1A1A2E] truncate">
+                                                    {r.reservation_date} · {r.reservation_time.slice(0, 5)}
+                                                </p>
+                                                <p className="text-[10px] text-[#9CA3AF]">{r.party_size} pers. {r.occasion ? `· ${r.occasion}` : ''}</p>
+                                            </div>
+                                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ backgroundColor: sc.bg, color: sc.text }}>
+                                                {RESERVATION_STATUS_LABELS[r.status] ?? r.status}
+                                            </span>
+                                        </div>
                                     );
                                 })}
                             </div>
                         </div>
                     )}
 
-                    {/* Quick links */}
-                    <div className="px-5 py-4">
-                        <p className="text-[11px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-3">Acciones rápidas</p>
-                        <div className="space-y-2">
-                            <Link
-                                href={`/contacts/${activeContact.id}`}
-                                className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-[#E8E8EC] hover:bg-[#F9FAFB] transition-colors text-[13px] text-[#1A1A2E] font-medium"
-                            >
-                                <div className="flex items-center gap-2">
-                                    <UserCheck size={15} className="text-[#818CF8]" />
-                                    Ver perfil completo
-                                </div>
-                                <ChevronRight size={14} className="text-[#9CA3AF]" />
-                            </Link>
-                            <Link
-                                href={`/reservations?contact=${activeContact.id}`}
-                                className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-[#E8E8EC] hover:bg-[#F9FAFB] transition-colors text-[13px] text-[#1A1A2E] font-medium"
-                            >
-                                <div className="flex items-center gap-2">
-                                    <CalendarCheck size={15} className="text-[#818CF8]" />
-                                    Ver reservas
-                                </div>
-                                <ChevronRight size={14} className="text-[#9CA3AF]" />
+                    {/* Notes */}
+                    {data && data.notes.length > 0 && (
+                        <div className="px-4 py-3 border-b border-[#F3F4F6]">
+                            <p className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-2 flex items-center gap-1">
+                                <StickyNote size={10} /> Notas ({data.notes.length})
+                            </p>
+                            <div className="space-y-2">
+                                {data.notes.slice(0, 3).map((note) => (
+                                    <div key={note.id} className="bg-amber-50 rounded-lg px-2.5 py-2">
+                                        <p className="text-[11px] text-[#1A1A2E] line-clamp-2">{note.content}</p>
+                                        <p className="text-[10px] text-[#9CA3AF] mt-0.5">{formatSmartDateShort(note.created_at)}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Activity */}
+                    {data && data.activity.length > 0 && (
+                        <div className="px-4 py-3">
+                            <p className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-2">Actividad reciente</p>
+                            <div className="space-y-2">
+                                {data.activity.slice(0, 5).map((item) => (
+                                    <div key={item.id} className="flex gap-2">
+                                        <div className="w-1 flex-shrink-0 rounded-full bg-[#E8E8EC] self-stretch min-h-[16px]" />
+                                        <div className="min-w-0">
+                                            <p className="text-[11px] text-[#1A1A2E] leading-tight">{item.description ?? item.activity_type.replace(/_/g, ' ')}</p>
+                                            <p className="text-[10px] text-[#9CA3AF] mt-0.5">{formatSmartDateShort(item.created_at)}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {data && data.tags.length === 0 && data.custom_fields.length === 0 && data.reservations.length === 0 && data.notes.length === 0 && data.activity.length === 0 && (
+                        <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+                            <p className="text-[12px] text-[#9CA3AF]">No hay más información de este contacto.</p>
+                            <Link href={`/contacts/${contactId}`} className="mt-2 text-[12px] text-[#818CF8] hover:underline">
+                                Ver perfil completo →
                             </Link>
                         </div>
-                    </div>
-                </div>
+                    )}
+                </>
             )}
         </div>
     );

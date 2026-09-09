@@ -285,9 +285,18 @@ export function ReservationsPageClient({
             if (!map.has(d)) map.set(d, []);
             map.get(d)!.push(r);
         }
-        // Sort dates descending
-        return Array.from(map.entries()).sort(([a], [b]) => b.localeCompare(a));
-    }, [filtered]);
+        return Array.from(map.entries()).sort(([a], [b]) => {
+            const aIsToday = a === today;
+            const bIsToday = b === today;
+            if (aIsToday && !bIsToday) return -1;
+            if (!aIsToday && bIsToday) return 1;
+            const aIsFuture = a >= today;
+            const bIsFuture = b >= today;
+            if (aIsFuture && bIsFuture) return a.localeCompare(b);   // ascending for future
+            if (!aIsFuture && !bIsFuture) return b.localeCompare(a); // descending for past
+            return aIsFuture ? -1 : 1; // future before past
+        });
+    }, [filtered, today]);
 
     // ---- Handlers ----
     async function handleStatusUpdate(id: string, status: ReservationStatus) {

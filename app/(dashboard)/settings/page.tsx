@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import {
     Save, Globe, Users as UsersIcon, Tag as TagIcon, Sliders, MessageSquare,
-    Plus, Loader2, X, Pencil, Check, ExternalLink
+    Plus, Loader2, X, Pencil, Check, ExternalLink, Kanban
 } from 'lucide-react';
 import type { Tenant, User, Tag, CustomField, CannedResponse } from '@/lib/types/database';
 import Link from 'next/link';
@@ -18,6 +18,7 @@ const tabs = [
     { id: 'tags', label: 'Etiquetas', icon: TagIcon },
     { id: 'custom_fields', label: 'Campos personalizados', icon: Sliders },
     { id: 'canned', label: 'Respuestas rápidas', icon: MessageSquare },
+    { id: 'funnel', label: 'Etapas del Funnel', icon: Kanban },
 ];
 
 const ROLE_BADGE: Record<string, string> = {
@@ -530,6 +531,130 @@ function CannedResponsesTab() {
     );
 }
 
+// ─── Funnel Stages Tab ──────────────────────────────────────────────────────
+const STAGE_COLORS = ['#818CF8', '#34D399', '#F97316', '#F59E0B', '#F87171', '#60A5FA', '#A78BFA', '#14B8A6', '#EC4899', '#6EE7B7'];
+
+type FunnelStage = {
+    id: string;
+    name: string;
+    color: string | null;
+    position: number;
+    is_default: boolean;
+    is_won: boolean;
+    is_lost: boolean;
+};
+
+function FunnelStagesTab() {
+    const [stages, setStages] = useState<FunnelStage[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [showForm, setShowForm] = useState(false);
+    const [newName, setNewName] = useState('');
+    const [newColor, setNewColor] = useState(STAGE_COLORS[0]);
+    const [adding, setAdding] = useState(false);
+
+    const loadStages = useCallback(async () => {
+        const res = await fetch('/api/funnel-stages');
+        const d = await res.json();
+        setStages(Array.isArray(d) ? d : []);
+        setLoading(false);
+    }, []);
+
+    useEffect(() => { loadStages(); }, [loadStages]);
+
+    async function handleAdd() {
+        if (!newName.trim()) return;
+        setAdding(true);
+        await fetch('/api/funnel-stages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: newName.trim(), color: newColor }),
+        });
+        setNewName('');
+        await loadStages();
+        setAdding(false);
+        setShowForm(false);
+    }
+
+    async function handleDelete(id: string) {
+        if (!confirm('¿Eliminar esta etapa?')) return;
+        await fetch(`/api/funnel-stages/${id}`, { method: 'DELETE' });
+        setStages((prev) => prev.filter((s) => s.id !== id));
+    }
+
+    if (loading) return <div className="p-8 text-center text-[#9CA3AF] text-[14px]">Cargando etapas…</div>;
+
+    return (
+        <div className="max-w-xl space-y-4">
+            <div className="flex items-center justify-between">
+                <p className="text-[13px] text-[#6B7280]">Etapas del pipeline de ventas de tus contactos</p>
+                <Button onClick={() => setShowForm((v) => !v)} className="gap-2 rounded-xl bg-[#818CF8] hover:bg-[#6366F1] text-white text-[13px] py-2">
+                    <Plus size={14} /> Nueva etapa
+                </Button>
+            </div>
+
+            {showForm && (
+                <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm p-5 space-y-3">
+                    <h3 className="text-[14px] font-semibold text-[#1A1A2E]">Nueva etapa</h3>
+                    <div className="flex gap-2">
+                        <input
+                            type="text"
+                            value={newName}
+                            onChange={(e) => setNewName(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+                            placeholder="Nombre de la etapa"
+                            className="flex-1 px-3 py-2 text-[14px] bg-white border border-[#E8E8EC] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20 focus:border-[#818CF8]"
+                        />
+                        <Button onClick={handleAdd} disabled={adding || !newName.trim()} className="gap-1.5 rounded-xl bg-[#818CF8] hover:bg-[#6366F1] text-white px-3">
+                            {adding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                        </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {STAGE_COLORS.map((c) => (
+                            <button
+                                key={c}
+                                onClick={() => setNewColor(c)}
+                                className={`w-7 h-7 rounded-full border-2 transition-all ${newColor === c ? 'border-[#1A1A2E] scale-110' : 'border-transparent'}`}
+                                style={{ backgroundColor: c }}
+                            />
+                        ))}
+                    </div>
+                    <Button variant="outline" onClick={() => setShowForm(false)} className="rounded-xl border-[#E8E8EC] text-[#6B7280] text-[13px]">Cancelar</Button>
+                </div>
+            )}
+
+            <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm overflow-hidden">
+                {stages.length === 0 ? (
+                    <div className="p-8 text-center text-[#9CA3AF] text-[14px]">No hay etapas del funnel.</div>
+                ) : (
+                    <ul>
+                        {stages.map((stage, idx) => (
+                            <li key={stage.id} className="flex items-center gap-3 px-5 py-3.5 border-b border-[#F3F4F6] last:border-0">
+                                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: stage.color ?? '#818CF8' }} />
+                                <span className="flex-1 text-[14px] text-[#1A1A2E]">{stage.name}</span>
+                                <span className="text-[11px] text-[#9CA3AF]">Pos. {idx + 1}</span>
+                                {stage.is_default && (
+                                    <span className="text-[11px] bg-[#EEF0FF] text-[#818CF8] px-2 py-0.5 rounded-full font-medium">Default</span>
+                                )}
+                                {stage.is_won && (
+                                    <span className="text-[11px] bg-[#ECFDF5] text-[#059669] px-2 py-0.5 rounded-full font-medium">Ganado</span>
+                                )}
+                                {stage.is_lost && (
+                                    <span className="text-[11px] bg-[#FEF2F2] text-[#DC2626] px-2 py-0.5 rounded-full font-medium">Perdido</span>
+                                )}
+                                {!stage.is_default && (
+                                    <button onClick={() => handleDelete(stage.id)} className="p-1.5 rounded-lg hover:bg-[#FEF2F2] text-[#9CA3AF] hover:text-[#DC2626]">
+                                        <X size={14} />
+                                    </button>
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+        </div>
+    );
+}
+
 // ─── Main Settings Page ──────────────────────────────────────────────────────
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState('general');
@@ -560,6 +685,7 @@ export default function SettingsPage() {
             {activeTab === 'tags' && <TagsTab />}
             {activeTab === 'custom_fields' && <CustomFieldsTab />}
             {activeTab === 'canned' && <CannedResponsesTab />}
+            {activeTab === 'funnel' && <FunnelStagesTab />}
         </>
     );
 }

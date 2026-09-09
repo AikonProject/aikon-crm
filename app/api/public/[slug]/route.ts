@@ -12,7 +12,7 @@ export async function GET(
         // Look up tenant by slug
         const { data: tenant, error: tenantError } = await supabase
             .from('tenants')
-            .select('id, name, slug, logo_url, primary_color, plan, is_active')
+            .select('id, name, slug, logo_url, primary_color, booking_bg_color, booking_bg_image_url, corporate_events_enabled, corporate_min_party_size, corporate_contact_link, plan, is_active')
             .eq('slug', slug)
             .eq('is_active', true)
             .single();
@@ -57,7 +57,18 @@ export async function GET(
         ]);
 
         return NextResponse.json({
-            tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug, logo_url: tenant.logo_url, primary_color: tenant.primary_color ?? '#C8961C' },
+            tenant: {
+                id: tenant.id,
+                name: tenant.name,
+                slug: tenant.slug,
+                logo_url: tenant.logo_url,
+                primary_color: tenant.primary_color ?? '#C8961C',
+                booking_bg_color: tenant.booking_bg_color ?? '#0D0D0D',
+                booking_bg_image_url: tenant.booking_bg_image_url ?? null,
+                corporate_events_enabled: tenant.corporate_events_enabled ?? false,
+                corporate_min_party_size: tenant.corporate_min_party_size ?? 10,
+                corporate_contact_link: tenant.corporate_contact_link ?? null,
+            },
             schedules: schedulesRes.data ?? [],
             events: eventsRes.data ?? [],
             menus: menusRes.data ?? [],

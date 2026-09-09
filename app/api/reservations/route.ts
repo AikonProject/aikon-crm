@@ -88,6 +88,44 @@ export async function POST(request: Request) {
             .single();
 
         if (error) throw error;
+
+        // Fire reservation webhook (non-fatal)
+        try {
+            const { data: creds } = await supabase
+                .from('tenant_credentials')
+                .select('n8n_reservation_webhook')
+                .eq('tenant_id', TENANT_ID)
+                .maybeSingle();
+
+            const webhookUrl = creds?.n8n_reservation_webhook ?? undefined;
+            if (webhookUrl) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const row = data as any;
+                await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: AbortSignal.timeout(4000),
+                    body: JSON.stringify({
+                        action: 'reservation_new',
+                        tenant_id: TENANT_ID,
+                        reservation_id: row.id,
+                        confirmation_code: row.confirmation_code ?? null,
+                        guest_name: guest_name,
+                        guest_phone: guest_phone || null,
+                        guest_email: guest_email || null,
+                        wa_id: guest_phone || null,
+                        reservation_date,
+                        reservation_time,
+                        party_size: Number(party_size),
+                        status: 'pending',
+                        source: 'crm',
+                    }),
+                });
+            }
+        } catch (webhookErr) {
+            console.warn('[POST /api/reservations] webhook failed (non-fatal):', webhookErr);
+        }
+
         return NextResponse.json(data, { status: 201 });
     } catch (err) {
         console.error('[POST /api/reservations]', err);

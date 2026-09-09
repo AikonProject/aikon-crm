@@ -24,7 +24,17 @@ export async function GET() {
 export async function PATCH(req: NextRequest) {
     try {
         const body = await req.json();
-        const { name, slug, logo_url } = body;
+        const {
+            name,
+            slug,
+            logo_url,
+            primary_color,
+            booking_bg_color,
+            booking_bg_image_url,
+            corporate_events_enabled,
+            corporate_min_party_size,
+            corporate_contact_link,
+        } = body;
 
         const supabase = createAdminClient();
     const TENANT_ID = await getServerTenantId();
@@ -34,6 +44,12 @@ export async function PATCH(req: NextRequest) {
                 ...(name !== undefined && { name }),
                 ...(slug !== undefined && { slug }),
                 ...(logo_url !== undefined && { logo_url }),
+                ...(primary_color !== undefined && { primary_color }),
+                ...(booking_bg_color !== undefined && { booking_bg_color }),
+                ...(booking_bg_image_url !== undefined && { booking_bg_image_url }),
+                ...(corporate_events_enabled !== undefined && { corporate_events_enabled }),
+                ...(corporate_min_party_size !== undefined && { corporate_min_party_size }),
+                ...(corporate_contact_link !== undefined && { corporate_contact_link }),
                 updated_at: new Date().toISOString(),
             })
             .eq('id', TENANT_ID)

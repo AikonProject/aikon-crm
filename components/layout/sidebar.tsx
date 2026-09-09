@@ -16,10 +16,13 @@ import {
     ChevronLeft,
     Menu,
     UtensilsCrossed,
+    ShieldCheck,
 } from 'lucide-react';
 import { UserButton, useUser } from '@clerk/nextjs';
 import { cn } from '@/lib/utils';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSidebar } from './sidebar-provider';
+import { createClient } from '@/lib/supabase/client';
 
 const mainMenuItems = [
     { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -36,13 +39,49 @@ const configMenuItems = [
     { label: 'Restaurante', href: '/settings/restaurant', icon: UtensilsCrossed },
     { label: 'Plantillas', href: '/settings/templates', icon: FileText },
     { label: 'Integraciones', href: '/settings/integrations', icon: Puzzle },
+    { label: 'Admin', href: '/admin', icon: ShieldCheck },
 ];
 
-export function Sidebar() {
+export function Sidebar({ plan = 'professional' }: { plan?: 'starter' | 'professional' | 'enterprise' }) {
     const pathname = usePathname();
-    const [collapsed, setCollapsed] = useState(false);
+    const { collapsed, setCollapsed } = useSidebar();
+
+    const canAccess = (feature: string): boolean => {
+        if (plan === 'professional' || plan === 'enterprise') return true;
+        // starter: only reservations and settings
+        const starterAllowed = ['/reservations', '/settings'];
+        return starterAllowed.some((p) => feature.startsWith(p));
+    };
+
+    const visibleMainItems = mainMenuItems.filter((item) => canAccess(item.href));
+    const visibleConfigItems = configMenuItems.filter((item) => canAccess(item.href));
     const [mobileOpen, setMobileOpen] = useState(false);
     const { user } = useUser();
+    const [unreadCount, setUnreadCount] = useState(0);
+    const supabase = createClient();
+
+    useEffect(() => {
+        async function fetchUnread() {
+            const { data } = await supabase
+                .from('conversations')
+                .select('unread_count')
+                .gt('unread_count', 0);
+            const total = data?.reduce((sum, c) => sum + (c.unread_count ?? 0), 0) ?? 0;
+            setUnreadCount(total);
+        }
+        fetchUnread();
+
+        const channel = supabase
+            .channel('sidebar-unread')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'conversations',
+            }, fetchUnread)
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
+    }, [supabase]);
 
     const isActive = (href: string) => {
         if (href === '/dashboard') return pathname === '/dashboard';
@@ -81,7 +120,7 @@ export function Sidebar() {
                     <p className="crm-section-label px-3 mb-2">Menú principal</p>
                 )}
                 <nav className="space-y-1">
-                    {mainMenuItems.map((item) => {
+                    {visibleMainItems.map((item) => {
                         const active = isActive(item.href);
                         return (
                             <Link
@@ -105,9 +144,9 @@ export function Sidebar() {
                                 {!collapsed && (
                                     <>
                                         <span>{item.label}</span>
-                                        {item.badge && (
-                                            <span className="ml-auto bg-[#1A1A2E] text-white text-[11px] font-semibold rounded-full w-5 h-5 flex items-center justify-center">
-                                                ·
+                                        {item.badge && unreadCount > 0 && (
+                                            <span className="ml-auto bg-[#EF4444] text-white text-[11px] font-semibold rounded-full min-w-[20px] h-5 px-1 flex items-center justify-center">
+                                                {unreadCount > 99 ? '99+' : unreadCount}
                                             </span>
                                         )}
                                     </>
@@ -123,7 +162,7 @@ export function Sidebar() {
                         <p className="crm-section-label px-3 mb-2">Configuración</p>
                     )}
                     <nav className="space-y-1">
-                        {configMenuItems.map((item) => {
+                        {visibleConfigItems.map((item) => {
                             const active = isActive(item.href);
                             return (
                                 <Link
@@ -150,6 +189,17 @@ export function Sidebar() {
                         })}
                     </nav>
                 </div>
+            </div>
+
+            {/* Plan badge */}
+            <div className={`mx-3 mb-3 px-3 py-1.5 rounded-lg text-center ${!collapsed ? 'block' : 'hidden'}`}>
+                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                    plan === 'enterprise' ? 'bg-amber-100 text-amber-700' :
+                    plan === 'professional' ? 'bg-[#EEF0FF] text-[#818CF8]' :
+                    'bg-[#F3F4F6] text-[#6B7280]'
+                }`}>
+                    {plan}
+                </span>
             </div>
 
             {/* User section — Clerk */}
