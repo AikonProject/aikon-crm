@@ -95,8 +95,10 @@ export async function POST(
             .eq('id', id);
 
         // Trigger n8n webhook if configured and not a note
+        let webhookFired = false;
         if (!isNote) {
             try {
+                // Try tenant's own credentials first, then fall back to any creds row
                 const { data: credentials } = await supabase
                     .from('tenant_credentials')
                     .select('n8n_send_message_webhook')
@@ -105,15 +107,17 @@ export async function POST(
 
                 const webhookUrl = credentials?.n8n_send_message_webhook ?? undefined;
 
+                console.log(`[messages POST] tenant_id=${TENANT_ID} webhook_url=${webhookUrl ?? 'NOT_CONFIGURED'}`);
+
                 if (webhookUrl) {
                     const contact = Array.isArray(conversation.contact)
                         ? conversation.contact[0]
                         : conversation.contact;
 
-                    await fetch(webhookUrl, {
+                    const webhookRes = await fetch(webhookUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        signal: AbortSignal.timeout(4000),
+                        signal: AbortSignal.timeout(8000),
                         body: JSON.stringify({
                             tenant_id: TENANT_ID,
                             conversation_id: id,
@@ -122,17 +126,21 @@ export async function POST(
                             contact_name: contact?.nombre ?? null,
                             message: body.content,
                             content_type: body.content_type ?? 'text',
+                            media_url: body.media_url ?? null,
                             sent_by_name: body.sent_by_name ?? 'Agente',
                         }),
                     });
+                    webhookFired = true;
+                    console.log(`[messages POST] webhook responded: ${webhookRes.status}`);
+                } else {
+                    console.warn(`[messages POST] n8n_send_message_webhook not configured for tenant ${TENANT_ID}`);
                 }
             } catch (webhookErr) {
-                // Non-fatal: log but don't fail the request
-                console.warn('n8n webhook failed (non-fatal):', webhookErr);
+                console.error('[messages POST] webhook failed:', webhookErr);
             }
         }
 
-        return NextResponse.json(message, { status: 201 });
+        return NextResponse.json({ ...message, _webhook_fired: webhookFired }, { status: 201 });
     } catch (err) {
         console.error('Unexpected error in POST /api/conversations/[id]/messages:', err);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
