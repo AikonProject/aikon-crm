@@ -58,12 +58,13 @@ export async function POST(
         };
         const convQueryResult = await (supabase
             .from('conversations')
-            .select('id, tenant_id, contact_id, contact:contacts(id, nombre, wa_id)')
+            .select('id, tenant_id, contact_id, contact:contacts!conversations_contact_id_fkey(id, nombre, wa_id)')
             .eq('id', id)
             .single() as unknown as Promise<{ data: ConvWithContact | null; error: unknown }>);
         const { data: conversation, error: convError } = convQueryResult;
 
         if (convError || !conversation) {
+            console.error('[messages POST] conversation lookup failed:', convError, 'id:', id);
             return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
         }
 
