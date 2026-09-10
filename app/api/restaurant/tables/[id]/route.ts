@@ -9,7 +9,7 @@ export async function PATCH(
     try {
         const { id } = await params;
         const body = await request.json();
-        const allowed = ['name', 'capacity', 'zone', 'is_active', 'status'];
+        const allowed = ['name', 'capacity', 'location', 'is_active', 'allow_customer_selection'];
         const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
         for (const key of allowed) {
             if (body[key] !== undefined) update[key] = body[key];

@@ -23,6 +23,8 @@ export type Tenant = {
     corporate_events_enabled: boolean;
     corporate_min_party_size: number;
     corporate_contact_link: string | null;
+    table_selection_enabled: boolean;
+    table_spaces: string[];
     plan: 'starter' | 'professional' | 'enterprise';
     is_active: boolean;
     max_agents: number | null;

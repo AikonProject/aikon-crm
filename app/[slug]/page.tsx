@@ -18,6 +18,14 @@ type TenantPublic = {
   corporate_events_enabled?: boolean;
   corporate_min_party_size?: number;
   corporate_contact_link?: string | null;
+  table_selection_enabled?: boolean;
+  table_spaces?: string[];
+};
+type TableRow = {
+  id: string;
+  name: string;
+  capacity: number;
+  location: string | null;
 };
 type ScheduleRow = {
   id: string;
@@ -51,7 +59,7 @@ const MONTH_NAMES = [
 ];
 const DAY_HEADERS = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do'];
 const QUICK_SIZES = [1, 2, 3, 4, 5, 6, 8, 10, 12];
-const TOTAL_STEPS = 6;
+type StepId = 'date' | 'time' | 'partysize' | 'table' | 'name' | 'contact' | 'confirm';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -134,6 +142,7 @@ export default function PublicBookingPage() {
   const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [menus, setMenus] = useState<MenuRow[]>([]);
+  const [tables, setTables] = useState<TableRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
@@ -142,6 +151,8 @@ export default function PublicBookingPage() {
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
   const [partySize, setPartySize] = useState(2);
+  const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  const [selectedSpace, setSelectedSpace] = useState<string | null>(null);
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
@@ -162,6 +173,25 @@ export default function PublicBookingPage() {
   const corporateEnabled = tenant?.corporate_events_enabled ?? false;
   const corporateMinSize = tenant?.corporate_min_party_size ?? 10;
   const corporateLink = tenant?.corporate_contact_link ?? null;
+  const tableSelectionEnabled = !!(tenant?.table_selection_enabled) && tables.length > 0;
+  const tableSpaces = tenant?.table_spaces ?? [];
+
+  // Build dynamic step sequence
+  const stepIds: StepId[] = useMemo(() => {
+    const ids: StepId[] = ['date', 'time', 'partysize'];
+    if (tableSelectionEnabled) ids.push('table');
+    ids.push('name', 'contact', 'confirm');
+    return ids;
+  }, [tableSelectionEnabled]);
+
+  const TOTAL_STEPS = stepIds.length;
+  const currentStepId = stepIds[step - 1] as StepId | undefined;
+
+  // Filtered tables by selected space
+  const filteredTables = useMemo(() => {
+    if (!selectedSpace) return tables;
+    return tables.filter((t) => t.location === selectedSpace);
+  }, [tables, selectedSpace]);
 
   // Fetch tenant data
   useEffect(() => {
@@ -180,6 +210,7 @@ export default function PublicBookingPage() {
         setSchedules(data.schedules ?? []);
         setEvents(data.events ?? []);
         setMenus(data.menus ?? []);
+        setTables(data.tables ?? []);
       })
       .finally(() => setLoading(false));
   }, [slug]);
@@ -195,28 +226,31 @@ export default function PublicBookingPage() {
 
   const today = todayStr();
 
-  // Step titles
-  const stepTitles: Record<number, string> = {
-    1: 'Elige tu fecha',
-    2: 'Selecciona el horario',
-    3: '¿Cuantos son?',
-    4: 'Tu nombre',
-    5: 'Tu contacto',
-    6: 'Confirmación',
+  // Step titles (based on step ID)
+  const stepTitleMap: Record<StepId, string> = {
+    date: 'Elige tu fecha',
+    time: 'Selecciona el horario',
+    partysize: '¿Cuantos son?',
+    table: 'Elige tu mesa',
+    name: 'Tu nombre',
+    contact: 'Tu contacto',
+    confirm: 'Confirmación',
   };
+  const currentStepTitle = currentStepId ? stepTitleMap[currentStepId] : '';
 
   // Can continue?
   const canContinue = useCallback((): boolean => {
-    switch (step) {
-      case 1: return selectedDate !== '';
-      case 2: return selectedTime !== '';
-      case 3: return partySize >= 1 && partySize <= 20 && !(corporateEnabled && corporateLink && partySize >= corporateMinSize);
-      case 4: return guestName.trim().length > 0;
-      case 5: return guestPhone.trim().length > 0 || guestEmail.trim().length > 0;
-      case 6: return true;
+    switch (currentStepId) {
+      case 'date': return selectedDate !== '';
+      case 'time': return selectedTime !== '';
+      case 'partysize': return partySize >= 1 && partySize <= 20 && !(corporateEnabled && corporateLink && partySize >= corporateMinSize);
+      case 'table': return selectedTableId !== null;
+      case 'name': return guestName.trim().length > 0;
+      case 'contact': return guestPhone.trim().length > 0 || guestEmail.trim().length > 0;
+      case 'confirm': return true;
       default: return false;
     }
-  }, [step, selectedDate, selectedTime, partySize, guestName, guestPhone, guestEmail]);
+  }, [currentStepId, selectedDate, selectedTime, partySize, selectedTableId, guestName, guestPhone, guestEmail, corporateEnabled, corporateLink, corporateMinSize]);
 
   // Navigation
   function goBack() {
@@ -255,6 +289,7 @@ export default function PublicBookingPage() {
           reservation_date: selectedDate,
           reservation_time: selectedTime,
           party_size: partySize,
+          table_id: selectedTableId || null,
         }),
       });
       const data = await res.json();
@@ -273,6 +308,8 @@ export default function PublicBookingPage() {
     setSelectedDate('');
     setSelectedTime('');
     setPartySize(2);
+    setSelectedTableId(null);
+    setSelectedSpace(null);
     setGuestName('');
     setGuestPhone('');
     setGuestEmail('');
@@ -377,11 +414,30 @@ export default function PublicBookingPage() {
               <span className="text-white/40">Personas</span>
               <span className="text-white">{partySize}</span>
             </div>
+            {selectedTableId && (
+              <div className="flex justify-between">
+                <span className="text-white/40">Mesa</span>
+                <span className="text-white">{tables.find((t) => t.id === selectedTableId)?.name ?? '—'}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-white/40">Nombre</span>
               <span className="text-white">{guestName}</span>
             </div>
           </div>
+
+          {/* Menu link */}
+          {menus.length > 0 && menus.find((m) => m.menu_url)?.menu_url && (
+            <a
+              href={menus.find((m) => m.menu_url)!.menu_url!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-4 rounded-2xl text-base font-bold text-center transition-opacity hover:opacity-90 border flex items-center justify-center gap-2"
+              style={{ borderColor: `${accent}60`, color: accent }}
+            >
+              Ver el menú
+            </a>
+          )}
 
           <button
             onClick={resetWizard}
@@ -455,7 +511,7 @@ export default function PublicBookingPage() {
           <p className="text-[11px] uppercase tracking-[0.15em] text-white/40 mb-0.5">
             {tenant.name}
           </p>
-          <h1 className="text-lg font-bold text-white">{stepTitles[step]}</h1>
+          <h1 className="text-lg font-bold text-white">{currentStepTitle}</h1>
         </div>
 
         {/* Right side: menu button or step counter */}
@@ -479,8 +535,8 @@ export default function PublicBookingPage() {
       {/* Content area */}
       <div className="flex-1 flex items-center justify-center px-5 py-4 overflow-y-auto">
         <div className="w-full max-w-[520px]">
-          {/* Step 1: Calendar */}
-          {step === 1 && (
+          {/* Step: Date calendar */}
+          {currentStepId === 'date' && (
             <div className="bg-[#1C1C1C] rounded-2xl border border-white/10 p-5">
               {/* Month/year header */}
               <div className="flex items-center justify-between mb-5">
@@ -549,8 +605,8 @@ export default function PublicBookingPage() {
             </div>
           )}
 
-          {/* Step 2: Time slots */}
-          {step === 2 && (
+          {/* Step: Time slots */}
+          {currentStepId === 'time' && (
             <div>
               {timeSlots.length === 0 ? (
                 <div className="bg-[#1C1C1C] rounded-2xl border border-white/10 p-8 text-center">
@@ -582,8 +638,8 @@ export default function PublicBookingPage() {
             </div>
           )}
 
-          {/* Step 3: Party size */}
-          {step === 3 && (
+          {/* Step: Party size */}
+          {currentStepId === 'partysize' && (
             <div className="flex flex-col items-center gap-8">
               {/* Big counter */}
               <div className="flex items-center gap-8">
@@ -647,8 +703,76 @@ export default function PublicBookingPage() {
             </div>
           )}
 
-          {/* Step 4: Name */}
-          {step === 4 && (
+          {/* Step: Table selection */}
+          {currentStepId === 'table' && (
+            <div className="flex flex-col gap-4">
+              {/* Space selector (if spaces configured) */}
+              {tableSpaces.length > 0 && (
+                <div className="flex flex-wrap gap-2 justify-center">
+                  <button
+                    onClick={() => setSelectedSpace(null)}
+                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all border ${
+                      selectedSpace === null
+                        ? 'border-transparent text-[#0D0D0D] font-bold'
+                        : 'border-white/10 bg-[#1C1C1C] text-white hover:border-white/20'
+                    }`}
+                    style={selectedSpace === null ? { backgroundColor: accent } : undefined}
+                  >
+                    Todos
+                  </button>
+                  {tableSpaces.map((space) => (
+                    <button
+                      key={space}
+                      onClick={() => { setSelectedSpace(space); setSelectedTableId(null); }}
+                      className={`px-4 py-2 rounded-full text-sm font-medium transition-all border ${
+                        selectedSpace === space
+                          ? 'border-transparent text-[#0D0D0D] font-bold'
+                          : 'border-white/10 bg-[#1C1C1C] text-white hover:border-white/20'
+                      }`}
+                      style={selectedSpace === space ? { backgroundColor: accent } : undefined}
+                    >
+                      {space}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Tables grid */}
+              {filteredTables.length === 0 ? (
+                <div className="bg-[#1C1C1C] rounded-2xl border border-white/10 p-8 text-center">
+                  <p className="text-white/40 text-base">No hay mesas disponibles</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {filteredTables.map((t) => {
+                    const isSelected = t.id === selectedTableId;
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => setSelectedTableId(t.id)}
+                        className={`p-4 rounded-2xl text-left transition-all border ${
+                          isSelected
+                            ? 'border-transparent'
+                            : 'border-white/10 bg-[#1C1C1C] hover:border-white/20'
+                        }`}
+                        style={isSelected ? { backgroundColor: accent } : undefined}
+                      >
+                        <p className={`text-base font-bold ${isSelected ? 'text-[#0D0D0D]' : 'text-white'}`}>
+                          {t.name}
+                        </p>
+                        <p className={`text-xs mt-0.5 ${isSelected ? 'text-[#0D0D0D]/70' : 'text-white/40'}`}>
+                          {t.capacity} personas{t.location ? ` · ${t.location}` : ''}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step: Name */}
+          {currentStepId === 'name' && (
             <div className="flex flex-col items-center gap-4">
               <label className="text-white/40 text-base">¿Como te llamamos?</label>
               <input
@@ -663,8 +787,8 @@ export default function PublicBookingPage() {
             </div>
           )}
 
-          {/* Step 5: Contact */}
-          {step === 5 && (
+          {/* Step: Contact */}
+          {currentStepId === 'contact' && (
             <div className="flex flex-col gap-4">
               <div>
                 <label className="text-white/40 text-sm mb-2 block">Telefono</label>
@@ -699,8 +823,8 @@ export default function PublicBookingPage() {
             </div>
           )}
 
-          {/* Step 6: Confirmation */}
-          {step === 6 && (
+          {/* Step: Confirmation */}
+          {currentStepId === 'confirm' && (
             <div className="flex flex-col gap-5">
               <div className="bg-[#1C1C1C] rounded-2xl border border-white/10 p-5 space-y-4">
                 <div className="flex justify-between text-sm">
@@ -715,6 +839,14 @@ export default function PublicBookingPage() {
                   <span className="text-white/40">Personas</span>
                   <span className="text-white font-medium">{partySize}</span>
                 </div>
+                {selectedTableId && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-white/40">Mesa</span>
+                    <span className="text-white font-medium">
+                      {tables.find((t) => t.id === selectedTableId)?.name ?? '—'}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm">
                   <span className="text-white/40">Nombre</span>
                   <span className="text-white font-medium">{guestName}</span>
@@ -758,7 +890,7 @@ export default function PublicBookingPage() {
 
       {/* Continue / Confirm button */}
       <div className="px-5 pb-6">
-        {step < TOTAL_STEPS ? (
+        {currentStepId !== 'confirm' ? (
           <button
             onClick={goNext}
             disabled={!canContinue()}

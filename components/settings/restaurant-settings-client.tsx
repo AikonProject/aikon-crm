@@ -33,8 +33,6 @@ type TableFormState = {
     is_active: boolean;
 };
 
-type TableWithSelection = RestaurantTable & { allow_customer_selection?: boolean };
-
 function MesasTab({ tables: initialTables }: { tables: RestaurantTable[] }) {
     const router = useRouter();
     const [tables, setTables] = useState(initialTables);
@@ -47,6 +45,64 @@ function MesasTab({ tables: initialTables }: { tables: RestaurantTable[] }) {
         is_active: true,
     });
     const [loading, setLoading] = useState(false);
+
+    // Global table selection settings
+    const [tableSelectionEnabled, setTableSelectionEnabled] = useState(false);
+    const [tableSpaces, setTableSpaces] = useState<string[]>([]);
+    const [newSpaceName, setNewSpaceName] = useState('');
+
+    useEffect(() => {
+        fetch('/api/settings/general')
+            .then((r) => r.json())
+            .then((d) => {
+                const t = d.tenant ?? {};
+                setTableSelectionEnabled(t.table_selection_enabled ?? false);
+                setTableSpaces(t.table_spaces ?? []);
+            })
+            .catch(() => {});
+    }, []);
+
+    async function saveTableSettings(enabled: boolean, spaces: string[]) {
+        await fetch('/api/settings/general', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ table_selection_enabled: enabled, table_spaces: spaces }),
+        });
+    }
+
+    async function handleToggleTableSelection(value: boolean) {
+        setTableSelectionEnabled(value);
+        try {
+            await saveTableSettings(value, tableSpaces);
+            toast.success(value ? 'Selección de mesa activada' : 'Selección de mesa desactivada');
+        } catch {
+            setTableSelectionEnabled(!value);
+            toast.error('Error al guardar');
+        }
+    }
+
+    async function handleAddSpace() {
+        const name = newSpaceName.trim();
+        if (!name || tableSpaces.includes(name)) return;
+        const updated = [...tableSpaces, name];
+        setTableSpaces(updated);
+        setNewSpaceName('');
+        try {
+            await saveTableSettings(tableSelectionEnabled, updated);
+        } catch {
+            toast.error('Error al guardar el espacio');
+        }
+    }
+
+    async function handleRemoveSpace(name: string) {
+        const updated = tableSpaces.filter((s) => s !== name);
+        setTableSpaces(updated);
+        try {
+            await saveTableSettings(tableSelectionEnabled, updated);
+        } catch {
+            toast.error('Error al guardar');
+        }
+    }
 
     function openNew() {
         setForm({ name: '', capacity: '4', location: '', is_active: true });
@@ -117,22 +173,73 @@ function MesasTab({ tables: initialTables }: { tables: RestaurantTable[] }) {
         }
     }
 
-    async function handleToggleSelection(id: string, value: boolean) {
-        setTables((prev) => prev.map((t) => t.id === id ? { ...t, allow_customer_selection: value } as TableWithSelection : t));
-        try {
-            await fetch(`/api/restaurant/tables/${id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ allow_customer_selection: value }),
-            });
-        } catch {
-            toast.error('Error al actualizar la mesa');
-        }
-    }
-
     return (
-        <div>
-            <div className="flex justify-end mb-4">
+        <div className="space-y-5">
+            {/* Global table selection toggle */}
+            <div className="bg-white rounded-2xl border border-[#E8E8EC] p-5">
+                <div className="flex items-center justify-between mb-1">
+                    <div>
+                        <p className="text-[14px] font-semibold text-[#1A1A2E]">Selección de mesa</p>
+                        <p className="text-[12px] text-[#9CA3AF] mt-0.5">
+                            Permite que los clientes elijan su mesa al hacer una reserva
+                        </p>
+                    </div>
+                    <button
+                        onClick={() => handleToggleTableSelection(!tableSelectionEnabled)}
+                        className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${tableSelectionEnabled ? 'bg-[#818CF8]' : 'bg-[#E8E8EC]'}`}
+                    >
+                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${tableSelectionEnabled ? 'left-6' : 'left-1'}`} />
+                    </button>
+                </div>
+
+                {/* Spaces management */}
+                {tableSelectionEnabled && (
+                    <div className="mt-4 pt-4 border-t border-[#F3F4F6]">
+                        <p className="text-[12px] font-semibold text-[#6B7280] mb-2">Espacios / Zonas</p>
+                        <p className="text-[11px] text-[#9CA3AF] mb-3">
+                            Define los espacios del restaurante (ej: Terraza, Salón, Balcón). Las mesas se pueden asignar a un espacio.
+                        </p>
+                        <div className="flex flex-wrap gap-2 mb-3">
+                            {tableSpaces.map((space) => (
+                                <span
+                                    key={space}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium bg-[#EEF0FF] text-[#818CF8]"
+                                >
+                                    {space}
+                                    <button
+                                        onClick={() => handleRemoveSpace(space)}
+                                        className="text-[#9CA3AF] hover:text-[#EF4444] transition-colors"
+                                    >
+                                        <X size={11} />
+                                    </button>
+                                </span>
+                            ))}
+                            {tableSpaces.length === 0 && (
+                                <span className="text-[12px] text-[#9CA3AF]">Sin espacios configurados</span>
+                            )}
+                        </div>
+                        <div className="flex gap-2">
+                            <input
+                                value={newSpaceName}
+                                onChange={(e) => setNewSpaceName(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleAddSpace()}
+                                placeholder="Terraza, Balcón, Interior..."
+                                className={inputClass + ' flex-1'}
+                            />
+                            <Button
+                                onClick={handleAddSpace}
+                                disabled={!newSpaceName.trim()}
+                                className="rounded-[10px] bg-[#818CF8] hover:bg-[#6366F1] text-white gap-1"
+                            >
+                                <Plus size={14} /> Agregar
+                            </Button>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Table list header */}
+            <div className="flex justify-end">
                 <Button
                     onClick={openNew}
                     className="gap-2 rounded-[10px] bg-[#818CF8] hover:bg-[#6366F1] text-white"
@@ -143,7 +250,7 @@ function MesasTab({ tables: initialTables }: { tables: RestaurantTable[] }) {
             </div>
 
             {showForm && (
-                <div className="bg-[#F8F8FA] rounded-xl border border-[#E8E8EC] p-4 mb-4">
+                <div className="bg-[#F8F8FA] rounded-xl border border-[#E8E8EC] p-4">
                     <h4 className="text-[13px] font-semibold text-[#1A1A2E] mb-3">
                         {editingId ? 'Editar mesa' : 'Nueva mesa'}
                     </h4>
@@ -168,13 +275,26 @@ function MesasTab({ tables: initialTables }: { tables: RestaurantTable[] }) {
                             />
                         </div>
                         <div>
-                            <label className={labelClass}>Zona / Ubicacion</label>
-                            <input
-                                value={form.location}
-                                onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
-                                placeholder="Interior, Terraza..."
-                                className={inputClass}
-                            />
+                            <label className={labelClass}>Espacio / Zona</label>
+                            {tableSpaces.length > 0 ? (
+                                <select
+                                    value={form.location}
+                                    onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
+                                    className={inputClass}
+                                >
+                                    <option value="">Sin espacio</option>
+                                    {tableSpaces.map((s) => (
+                                        <option key={s} value={s}>{s}</option>
+                                    ))}
+                                </select>
+                            ) : (
+                                <input
+                                    value={form.location}
+                                    onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
+                                    placeholder="Interior, Terraza..."
+                                    className={inputClass}
+                                />
+                            )}
                         </div>
                     </div>
                     <div className="flex items-center gap-4">
@@ -219,7 +339,6 @@ function MesasTab({ tables: initialTables }: { tables: RestaurantTable[] }) {
                             key={t.id}
                             className={`bg-white rounded-2xl border p-4 flex flex-col gap-3 ${t.is_active ? 'border-[#E8E8EC]' : 'border-[#F3F4F6] opacity-60'}`}
                         >
-                            {/* Header */}
                             <div className="flex items-start justify-between gap-2">
                                 <div>
                                     <p className="text-[15px] font-bold text-[#1A1A2E]">{t.name}</p>
@@ -234,8 +353,6 @@ function MesasTab({ tables: initialTables }: { tables: RestaurantTable[] }) {
                                     </button>
                                 </div>
                             </div>
-
-                            {/* Capacity badge */}
                             <div className="flex items-center gap-2">
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium bg-[#EEF0FF] text-[#818CF8]">
                                     {t.capacity} pers.
@@ -243,17 +360,6 @@ function MesasTab({ tables: initialTables }: { tables: RestaurantTable[] }) {
                                 <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${t.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                                     {t.is_active ? 'Activa' : 'Inactiva'}
                                 </span>
-                            </div>
-
-                            {/* Customer selection toggle */}
-                            <div className="flex items-center justify-between pt-2 border-t border-[#F3F4F6]">
-                                <span className="text-[11px] text-[#9CA3AF]">Cliente puede elegir</span>
-                                <button
-                                    onClick={() => handleToggleSelection(t.id, !(t as TableWithSelection).allow_customer_selection)}
-                                    className={`relative w-9 h-5 rounded-full transition-colors ${(t as TableWithSelection).allow_customer_selection ? 'bg-[#818CF8]' : 'bg-[#E8E8EC]'}`}
-                                >
-                                    <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${(t as TableWithSelection).allow_customer_selection ? 'left-4' : 'left-0.5'}`} />
-                                </button>
                             </div>
                         </div>
                     ))}

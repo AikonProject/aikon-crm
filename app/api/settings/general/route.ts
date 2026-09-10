@@ -34,6 +34,8 @@ export async function PATCH(req: NextRequest) {
             corporate_events_enabled,
             corporate_min_party_size,
             corporate_contact_link,
+            table_selection_enabled,
+            table_spaces,
         } = body;
 
         const supabase = createAdminClient();
@@ -50,6 +52,8 @@ export async function PATCH(req: NextRequest) {
                 ...(corporate_events_enabled !== undefined && { corporate_events_enabled }),
                 ...(corporate_min_party_size !== undefined && { corporate_min_party_size }),
                 ...(corporate_contact_link !== undefined && { corporate_contact_link }),
+                ...(table_selection_enabled !== undefined && { table_selection_enabled }),
+                ...(table_spaces !== undefined && { table_spaces }),
                 updated_at: new Date().toISOString(),
             })
             .eq('id', TENANT_ID)

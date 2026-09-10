@@ -22,7 +22,7 @@ export async function GET() {
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { name, capacity, zone, is_active } = body;
+        const { name, capacity, location, is_active } = body;
 
         if (!name) return NextResponse.json({ error: 'name is required' }, { status: 400 });
 
@@ -34,9 +34,8 @@ export async function POST(request: Request) {
                 tenant_id: TENANT_ID,
                 name,
                 capacity: Number(capacity) || 4,
-                zone: zone || null,
+                location: location || null,
                 is_active: is_active !== false,
-                status: 'available',
             })
             .select()
             .single();
