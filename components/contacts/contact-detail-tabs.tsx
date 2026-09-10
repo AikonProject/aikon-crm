@@ -63,13 +63,14 @@ interface ContactDetailTabsProps {
     activity: ActivityRow[];
     stages: FunnelStage[];
     contactId: string;
+    plan?: 'starter' | 'professional' | 'enterprise';
 }
 
 type TabKey = 'info' | 'conversations' | 'reservations' | 'notes' | 'activity';
 
-const TABS: { key: TabKey; label: string }[] = [
+const ALL_TABS: { key: TabKey; label: string; proOnly?: boolean }[] = [
     { key: 'info', label: 'Información' },
-    { key: 'conversations', label: 'Conversaciones' },
+    { key: 'conversations', label: 'Conversaciones', proOnly: true },
     { key: 'reservations', label: 'Reservas' },
     { key: 'notes', label: 'Notas' },
     { key: 'activity', label: 'Actividad' },
@@ -83,7 +84,10 @@ export function ContactDetailTabs({
     activity,
     stages,
     contactId,
+    plan = 'professional',
 }: ContactDetailTabsProps) {
+    const isPro = plan === 'professional' || plan === 'enterprise';
+    const TABS = ALL_TABS.filter((t) => !t.proOnly || isPro);
     const [activeTab, setActiveTab] = useState<TabKey>('info');
     const [notes, setNotes] = useState(initialNotes);
     const [noteText, setNoteText] = useState('');
