@@ -48,9 +48,11 @@ export function Sidebar({ plan = 'professional' }: { plan?: 'starter' | 'profess
 
     const canAccess = (feature: string): boolean => {
         if (plan === 'professional' || plan === 'enterprise') return true;
-        // starter: only reservations and settings
-        const starterAllowed = ['/reservations', '/settings'];
-        return starterAllowed.some((p) => feature.startsWith(p));
+        // starter: reservations, contacts, funnel, dashboard, reports
+        //          settings + restaurant + integrations (reservation webhook only)
+        //          NO: conversations, campaigns, templates
+        const starterBlocked = ['/conversations', '/campaigns', '/settings/templates'];
+        return !starterBlocked.some((p) => feature.startsWith(p));
     };
 
     const visibleMainItems = mainMenuItems.filter((item) => canAccess(item.href));

@@ -1,9 +1,14 @@
+import { redirect } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getServerTenantId } from '@/lib/tenant';
+import { getTenantPlan } from '@/lib/tenant-plan';
 import ConversationsClient from '@/components/conversations/conversations-client';
 import type { Conversation } from '@/lib/types/database';
 
 export default async function ConversationsPage() {
+    const plan = await getTenantPlan();
+    if (plan === 'starter') redirect('/reservations');
+
     const supabase = createAdminClient();
     const TENANT_ID = await getServerTenantId();
 
