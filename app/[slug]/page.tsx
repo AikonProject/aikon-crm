@@ -372,7 +372,7 @@ export default function PublicBookingPage() {
       <div
         className="min-h-screen bg-[#0D0D0D] flex flex-col items-center justify-center px-4"
         style={bgImageUrl ? {
-          backgroundImage: `url(${bgImageUrl})`,
+          backgroundImage: `linear-gradient(rgba(0,0,0,0.65), rgba(0,0,0,0.65)), url(${bgImageUrl})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
         } : {
@@ -458,7 +458,7 @@ export default function PublicBookingPage() {
     <div
       className="min-h-screen bg-[#0D0D0D] flex flex-col text-white"
       style={bgImageUrl ? {
-        backgroundImage: `url(${bgImageUrl})`,
+        backgroundImage: `linear-gradient(rgba(0,0,0,0.65), rgba(0,0,0,0.65)), url(${bgImageUrl})`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
       } : {
