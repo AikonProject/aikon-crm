@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { requireSuperAdmin, TenantError } from '@/lib/tenant';
 
 export async function PATCH(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        await requireSuperAdmin();
         const { id } = await params;
         const body = await request.json();
         const supabase = createAdminClient();
@@ -21,6 +23,9 @@ export async function PATCH(
         if (error) throw error;
         return NextResponse.json({ ok: true });
     } catch (err) {
+        if (err instanceof TenantError) {
+            return NextResponse.json({ error: err.message }, { status: err.status });
+        }
         console.error('[PATCH /api/admin/users/[id]]', err);
         return NextResponse.json({ error: 'Failed to update user' }, { status: 500 });
     }

@@ -5,6 +5,7 @@ import { Save, Loader2, Check, RefreshCw, Wifi } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { PageHeader } from '@/components/layout/page-header';
+import { toast } from 'sonner';
 import Link from 'next/link';
 
 type CredMap = Record<string, Record<string, string>>;
@@ -58,8 +59,7 @@ function SaveButton({ onClick, saving, saved }: { onClick: () => void; saving: b
     );
 }
 
-export default function IntegrationsClient({ plan = 'professional' }: { plan?: 'starter' | 'professional' | 'enterprise' }) {
-    const isPro = plan === 'professional' || plan === 'enterprise';
+export default function IntegrationsClient() {
     const [creds, setCreds] = useState<CredMap>({});
     const [loading, setLoading] = useState(true);
 
@@ -117,12 +117,16 @@ export default function IntegrationsClient({ plan = 'professional' }: { plan?: '
 
     async function saveMeta() {
         setSavingMeta(true);
-        await fetch('/api/settings/credentials', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ provider: 'whatsapp', credentials: { waba_id: wabaId, phone_number_id: phoneNumberId, meta_access_token: metaToken, webhook_verify_token: webhookVerifyToken } }),
-        });
-        setSavingMeta(false); setSavedMeta(true); setTimeout(() => setSavedMeta(false), 2500);
+        try {
+            const res = await fetch('/api/settings/credentials', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider: 'whatsapp', credentials: { waba_id: wabaId, phone_number_id: phoneNumberId, meta_access_token: metaToken, webhook_verify_token: webhookVerifyToken } }),
+            });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Error al guardar credenciales de WhatsApp'); setSavingMeta(false); return; }
+            setSavedMeta(true); setTimeout(() => setSavedMeta(false), 2500);
+        } catch { toast.error('Error de conexión al guardar WhatsApp'); }
+        setSavingMeta(false);
     }
 
     async function handleSync() {
@@ -135,18 +139,22 @@ export default function IntegrationsClient({ plan = 'professional' }: { plan?: '
 
     async function saveN8n() {
         setSavingN8n(true);
-        await fetch('/api/settings/credentials', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                n8n_base_url: n8nBaseUrl,
-                n8n_send_message_webhook: sendMsgWebhook,
-                n8n_bot_webhook: botWebhook,
-                n8n_reservation_webhook: reservationWebhook,
-                n8n_webhook_secret: webhookSecret,
-            }),
-        });
-        setSavingN8n(false); setSavedN8n(true); setTimeout(() => setSavedN8n(false), 2500);
+        try {
+            const res = await fetch('/api/settings/credentials', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    n8n_base_url: n8nBaseUrl,
+                    n8n_send_message_webhook: sendMsgWebhook,
+                    n8n_bot_webhook: botWebhook,
+                    n8n_reservation_webhook: reservationWebhook,
+                    n8n_webhook_secret: webhookSecret,
+                }),
+            });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Error al guardar configuración n8n'); setSavingN8n(false); return; }
+            setSavedN8n(true); setTimeout(() => setSavedN8n(false), 2500);
+        } catch { toast.error('Error de conexión al guardar n8n'); }
+        setSavingN8n(false);
     }
 
     async function testN8n() {
@@ -163,12 +171,16 @@ export default function IntegrationsClient({ plan = 'professional' }: { plan?: '
 
     async function saveGcal() {
         setSavingGcal(true);
-        await fetch('/api/settings/credentials', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ provider: 'google_calendar', credentials: { calendar_id: calendarId, service_account_json: serviceAccountJson } }),
-        });
-        setSavingGcal(false); setSavedGcal(true); setTimeout(() => setSavedGcal(false), 2500);
+        try {
+            const res = await fetch('/api/settings/credentials', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider: 'google_calendar', credentials: { calendar_id: calendarId, service_account_json: serviceAccountJson } }),
+            });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Error al guardar Google Calendar'); setSavingGcal(false); return; }
+            setSavedGcal(true); setTimeout(() => setSavedGcal(false), 2500);
+        } catch { toast.error('Error de conexión al guardar Google Calendar'); }
+        setSavingGcal(false);
     }
 
     if (loading) return (
@@ -186,7 +198,7 @@ export default function IntegrationsClient({ plan = 'professional' }: { plan?: '
 
             <div className="max-w-2xl space-y-6">
                 {/* WhatsApp / Meta — professional+ only */}
-                {isPro && (
+                {(
                     <SectionCard title="WhatsApp / Meta" subtitle="Conecta tu cuenta de WhatsApp Business para enviar mensajes y campañas">
                         <FieldRow label="WABA ID" value={wabaId} onChange={setWabaId} placeholder="123456789012345" />
                         <FieldRow label="Phone Number ID" value={phoneNumberId} onChange={setPhoneNumberId} placeholder="123456789012346" />
@@ -213,44 +225,33 @@ export default function IntegrationsClient({ plan = 'professional' }: { plan?: '
                     </SectionCard>
                 )}
 
-                {/* n8n — starter only sees reservation webhook */}
                 <SectionCard
                     title="n8n"
-                    subtitle={isPro ? 'Automatización de workflows y mensajes del bot de IA' : 'Webhook para notificaciones de reservas'}
+                    subtitle="Automatización de workflows y mensajes del bot de IA"
                 >
-                    {isPro && (
-                        <>
-                            <FieldRow label="n8n Base URL" value={n8nBaseUrl} onChange={setN8nBaseUrl} placeholder="https://mi-n8n.ejemplo.com" />
-                            <FieldRow label="Send Message Webhook URL" value={sendMsgWebhook} onChange={setSendMsgWebhook} placeholder="https://mi-n8n.ejemplo.com/webhook/..." />
-                            <FieldRow label="Bot Webhook URL" value={botWebhook} onChange={setBotWebhook} placeholder="https://mi-n8n.ejemplo.com/webhook/..." />
-                        </>
-                    )}
+                    <FieldRow label="n8n Base URL" value={n8nBaseUrl} onChange={setN8nBaseUrl} placeholder="https://mi-n8n.ejemplo.com" />
+                    <FieldRow label="Send Message Webhook URL" value={sendMsgWebhook} onChange={setSendMsgWebhook} placeholder="https://mi-n8n.ejemplo.com/webhook/..." />
+                    <FieldRow label="Bot Webhook URL" value={botWebhook} onChange={setBotWebhook} placeholder="https://mi-n8n.ejemplo.com/webhook/..." />
                     <FieldRow label="Reservas Webhook URL" value={reservationWebhook} onChange={setReservationWebhook} placeholder="https://mi-n8n.ejemplo.com/webhook/reservas" />
-                    {isPro && (
-                        <FieldRow label="Webhook Secret" value={webhookSecret} onChange={setWebhookSecret} type="password" placeholder="secreto compartido" />
-                    )}
+                    <FieldRow label="Webhook Secret" value={webhookSecret} onChange={setWebhookSecret} type="password" placeholder="secreto compartido" />
                     <div className="flex items-center gap-3 flex-wrap">
                         <SaveButton onClick={saveN8n} saving={savingN8n} saved={savedN8n} />
-                        {isPro && (
-                            <>
-                                <Button
-                                    variant="outline"
-                                    onClick={testN8n}
-                                    disabled={testingN8n || !n8nBaseUrl}
-                                    className="gap-2 rounded-xl border-[#E8E8EC] text-[#6B7280]"
-                                >
-                                    {testingN8n ? <Loader2 size={14} className="animate-spin" /> : <Wifi size={14} />}
-                                    Probar conexión
-                                </Button>
-                                {testResult === 'ok' && <span className="text-[12px] text-[#059669] font-medium flex items-center gap-1"><Check size={13} /> Conectado</span>}
-                                {testResult === 'fail' && <span className="text-[12px] text-[#DC2626] font-medium">No se pudo conectar</span>}
-                            </>
-                        )}
+                        <Button
+                            variant="outline"
+                            onClick={testN8n}
+                            disabled={testingN8n || !n8nBaseUrl}
+                            className="gap-2 rounded-xl border-[#E8E8EC] text-[#6B7280]"
+                        >
+                            {testingN8n ? <Loader2 size={14} className="animate-spin" /> : <Wifi size={14} />}
+                            Probar conexión
+                        </Button>
+                        {testResult === 'ok' && <span className="text-[12px] text-[#059669] font-medium flex items-center gap-1"><Check size={13} /> Conectado</span>}
+                        {testResult === 'fail' && <span className="text-[12px] text-[#DC2626] font-medium">No se pudo conectar</span>}
                     </div>
                 </SectionCard>
 
                 {/* Google Calendar — professional+ only */}
-                {isPro && (
+                {(
                     <SectionCard title="Google Calendar" subtitle="Sincroniza reservas con tu calendario de Google">
                         <FieldRow label="Calendar ID" value={calendarId} onChange={setCalendarId} placeholder="example@gmail.com" />
                         <FieldRow label="Service Account JSON" value={serviceAccountJson} onChange={setServiceAccountJson} type="textarea" placeholder='{"type": "service_account", ...}' />

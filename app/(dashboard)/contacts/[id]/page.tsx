@@ -3,7 +3,6 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, Phone, Mail as MailIcon } from 'lucide-react';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getServerTenantId } from '@/lib/tenant';
-import { getTenantPlan } from '@/lib/tenant-plan';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { FunnelStageBadge } from '@/components/contacts/funnel-stage-badge';
@@ -158,7 +157,7 @@ export default async function ContactDetailPage({
     params: Promise<{ id: string }>;
 }) {
     const { id } = await params;
-    const [data, plan] = await Promise.all([getContactData(id), getTenantPlan()]);
+    const data = await getContactData(id);
 
     if (!data) notFound();
 
@@ -277,7 +276,6 @@ export default async function ContactDetailPage({
                 activity={activity}
                 stages={stages}
                 contactId={id}
-                plan={plan}
             />
         </>
     );

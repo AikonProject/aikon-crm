@@ -1,7 +1,7 @@
-import { getTenantPlan } from '@/lib/tenant-plan';
+import { getTenantConfig } from '@/lib/tenant-plan';
 import DashboardClient from './dashboard-client';
 
 export default async function DashboardPage() {
-    const plan = await getTenantPlan();
-    return <DashboardClient plan={plan} />;
+    const config = await getTenantConfig();
+    return <DashboardClient plan={config.plan} businessType={config.businessType} />;
 }

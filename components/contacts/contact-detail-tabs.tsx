@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { FunnelStageBadge } from '@/components/contacts/funnel-stage-badge';
 import { formatSmartDate, formatDate } from '@/lib/utils/format';
 import { createClient } from '@/lib/supabase/client';
+import { useTenantId } from '@/components/providers/tenant-provider';
 import { MessageBubble } from '@/components/conversations/message-bubble';
 import type {
     ConversationRow,
@@ -63,14 +64,13 @@ interface ContactDetailTabsProps {
     activity: ActivityRow[];
     stages: FunnelStage[];
     contactId: string;
-    plan?: 'starter' | 'professional' | 'enterprise';
 }
 
 type TabKey = 'info' | 'conversations' | 'reservations' | 'notes' | 'activity';
 
-const ALL_TABS: { key: TabKey; label: string; proOnly?: boolean }[] = [
+const TABS: { key: TabKey; label: string }[] = [
     { key: 'info', label: 'Información' },
-    { key: 'conversations', label: 'Conversaciones', proOnly: true },
+    { key: 'conversations', label: 'Conversaciones' },
     { key: 'reservations', label: 'Reservas' },
     { key: 'notes', label: 'Notas' },
     { key: 'activity', label: 'Actividad' },
@@ -84,10 +84,7 @@ export function ContactDetailTabs({
     activity,
     stages,
     contactId,
-    plan = 'professional',
 }: ContactDetailTabsProps) {
-    const isPro = plan === 'professional' || plan === 'enterprise';
-    const TABS = ALL_TABS.filter((t) => !t.proOnly || isPro);
     const [activeTab, setActiveTab] = useState<TabKey>('info');
     const [notes, setNotes] = useState(initialNotes);
     const [noteText, setNoteText] = useState('');
@@ -625,6 +622,7 @@ function DateSeparator({ date }: { date: string }) {
 
 function ConversationsTab({ conversations }: { conversations: ConversationRow[] }) {
     const supabase = createClient();
+    const tenantId = useTenantId();
     const [selectedId, setSelectedId] = useState<string>(conversations[0]?.id ?? '');
     const [messages, setMessages] = useState<Message[]>([]);
     const [loadingMessages, setLoadingMessages] = useState(false);
@@ -736,7 +734,7 @@ function ConversationsTab({ conversations }: { conversations: ConversationRow[] 
 
     const handleResolve = async () => {
         if (!selectedId) return;
-        await supabase.from('conversations').update({ status: 'resolved' }).eq('id', selectedId);
+        await supabase.from('conversations').update({ status: 'resolved' }).eq('id', selectedId).eq('tenant_id', tenantId);
         setConvStatuses((prev) => ({ ...prev, [selectedId]: 'resolved' }));
     };
 

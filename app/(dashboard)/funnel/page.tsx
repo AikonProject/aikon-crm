@@ -13,11 +13,21 @@ type ContactRow = {
     contact_tags: { tag: { id: string; name: string; color: string | null } | null }[];
 };
 
+export type DealRow = {
+    id: string;
+    contact_id: string;
+    name: string;
+    price: number | null;
+    currency: string | null;
+    status: string;
+    contact: { id: string; nombre: string; funnel_stage_id: string | null } | null;
+};
+
 async function getPageData() {
     const supabase = createAdminClient();
     const TENANT_ID = await getServerTenantId();
 
-    const [stagesRes, contactsRes] = await Promise.all([
+    const [stagesRes, contactsRes, dealsRes] = await Promise.all([
         supabase
             .from('funnel_stages')
             .select('*')
@@ -31,21 +41,29 @@ async function getPageData() {
             )
             .eq('tenant_id', TENANT_ID)
             .order('created_at', { ascending: false }),
+        supabase
+            .from('deals')
+            .select('id, contact_id, name, price, currency, status, contact:contacts ( id, nombre, funnel_stage_id )')
+            .eq('tenant_id', TENANT_ID)
+            .in('status', ['pending', 'paid'])
+            .order('created_at', { ascending: false })
+            .limit(500),
     ]);
 
     return {
         stages: (stagesRes.data ?? []) as FunnelStage[],
         contacts: (contactsRes.data ?? []) as ContactRow[],
+        deals: (dealsRes.data ?? []) as DealRow[],
     };
 }
 
 export default async function FunnelPage() {
-    const { stages, contacts } = await getPageData();
+    const { stages, contacts, deals } = await getPageData();
 
     return (
         <>
             <Breadcrumb />
-            <FunnelPageClient stages={stages} contacts={contacts} />
+            <FunnelPageClient stages={stages} contacts={contacts} deals={deals} />
         </>
     );
 }

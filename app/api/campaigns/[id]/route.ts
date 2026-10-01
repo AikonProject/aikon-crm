@@ -24,6 +24,7 @@ export async function GET(
             .from('campaign_messages')
             .select('*, contact:contacts(id, first_name, last_name, phone)')
             .eq('campaign_id', id)
+            .eq('tenant_id', TENANT_ID)
             .order('created_at', { ascending: false })
             .limit(100);
 

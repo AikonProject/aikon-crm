@@ -23,9 +23,11 @@ import {
     Plus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import { getInitials } from '@/lib/utils/format';
 import { createClient } from '@/lib/supabase/client';
 import { useSidebar } from '@/components/layout/sidebar-provider';
+import { useTenantId } from '@/components/providers/tenant-provider';
 import { ConversationListItem } from '@/components/conversations/conversation-list-item';
 import { MessageBubble } from '@/components/conversations/message-bubble';
 import type { Conversation, Message, MessageTemplate, CannedResponse, ConversationStatus } from '@/lib/types/database';
@@ -92,6 +94,7 @@ interface ConversationsClientProps {
 export default function ConversationsClient({ initialConversations }: ConversationsClientProps) {
     const supabase = createClient();
     const { collapsed } = useSidebar();
+    const tenantId = useTenantId();
 
     // State
     const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
@@ -247,6 +250,7 @@ export default function ConversationsClient({ initialConversations }: Conversati
                     event: '*',
                     schema: 'public',
                     table: 'conversations',
+                    filter: `tenant_id=eq.${tenantId}`,
                 },
                 () => {
                     // Refresh the list on any conversation change
@@ -260,14 +264,14 @@ export default function ConversationsClient({ initialConversations }: Conversati
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [supabase, fetchConversations]);
+    }, [supabase, tenantId, fetchConversations]);
 
     // ── Fetch templates and canned responses ───────────────────────────────
     useEffect(() => {
         async function fetchMeta() {
             const supabaseClient = createClient();
             const [tRes, cRes] = await Promise.all([
-                supabaseClient.from('message_templates').select('*').eq('is_active', true).limit(20),
+                supabaseClient.from('message_templates').select('*').eq('tenant_id', tenantId).eq('is_active', true).limit(20),
                 fetch('/api/settings/canned-responses').then((r) => r.json()),
             ]);
             if (tRes.data) setTemplates(tRes.data as MessageTemplate[]);
@@ -342,6 +346,7 @@ export default function ConversationsClient({ initialConversations }: Conversati
             }
         } catch (err) {
             console.error('File upload failed:', err);
+            toast.error('Error al subir el archivo');
         } finally {
             setSending(false);
             if (e.target) e.target.value = '';
@@ -418,9 +423,12 @@ export default function ConversationsClient({ initialConversations }: Conversati
                 setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
             } else {
                 // Error — remove optimistic message
+                const errData = await res.json().catch(() => ({}));
+                toast.error(errData.error || 'Error al enviar mensaje');
                 setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
             }
         } catch {
+            toast.error('Error de conexión al enviar mensaje');
             setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
         } finally {
             setSending(false);
@@ -457,9 +465,12 @@ export default function ConversationsClient({ initialConversations }: Conversati
         const { error } = await supabase
             .from('conversations')
             .update({ status: 'resolved' })
-            .eq('id', activeConvId);
+            .eq('id', activeConvId)
+            .eq('tenant_id', tenantId);
 
-        if (!error) {
+        if (error) {
+            toast.error('Error al resolver conversación: ' + error.message);
+        } else {
             setConversations((prev) =>
                 prev.map((c) => (c.id === activeConvId ? { ...c, status: 'resolved' } : c))
             );
@@ -844,6 +855,13 @@ export default function ConversationsClient({ initialConversations }: Conversati
                     email={activeContact.email ?? null}
                     funnelStageId={(activeContact as { funnel_stage_id?: string | null }).funnel_stage_id ?? null}
                     funnelStage={activeContact.funnel_stage as { id?: string; name: string; color: string | null } | null | undefined}
+                    conversationId={activeConversation.id}
+                    assignedTo={activeConversation.assigned_to}
+                    onAssign={(userId) => {
+                        setConversations((prev) =>
+                            prev.map((c) => c.id === activeConversation.id ? { ...c, assigned_to: userId } : c)
+                        );
+                    }}
                     onClose={() => setShowRightPanel(false)}
                 />
             )}
@@ -896,6 +914,9 @@ function ContactPanel({
     email,
     funnelStageId,
     funnelStage,
+    conversationId,
+    assignedTo,
+    onAssign,
     onClose,
 }: {
     contactId: string;
@@ -904,6 +925,9 @@ function ContactPanel({
     email: string | null;
     funnelStageId: string | null;
     funnelStage: { id?: string; name: string; color: string | null } | null | undefined;
+    conversationId: string;
+    assignedTo: string | null;
+    onAssign: (userId: string | null) => void;
     onClose: () => void;
 }) {
     const [data, setData] = useState<ContactPanelData | null>(null);
@@ -933,14 +957,19 @@ function ContactPanel({
         funnelStageId ?? (funnelStage as { id?: string } | null | undefined)?.id ?? null
     );
 
+    // Team members for assignment
+    const [teamMembers, setTeamMembers] = useState<Array<{ id: string; full_name: string }>>([]);
+    const [currentAssignedTo, setCurrentAssignedTo] = useState<string | null>(assignedTo);
+
     // Reset editable state when contactId changes
     useEffect(() => {
         setFieldDrafts({ nombre: contactName, wa_id: waId ?? '', email: email ?? '' });
         setContactData({ nombre: contactName, wa_id: waId, email });
         setCurrentStageId(funnelStageId ?? (funnelStage as { id?: string } | null | undefined)?.id ?? null);
+        setCurrentAssignedTo(assignedTo);
         setEditingField(null);
         setShowAddTag(false);
-    }, [contactId, contactName, waId, email, funnelStageId, funnelStage]);
+    }, [contactId, contactName, waId, email, funnelStageId, funnelStage, assignedTo]);
 
     useEffect(() => {
         setLoading(true);
@@ -950,8 +979,9 @@ function ContactPanel({
             fetch(`/api/contacts/${contactId}`).then((r) => r.json()),
             fetch('/api/settings/tags').then((r) => r.json()),
             fetch('/api/funnel-stages').then((r) => r.json()),
+            fetch('/api/settings/team').then((r) => r.json()),
         ])
-            .then(([d, tagsRes, stagesRes]) => {
+            .then(([d, tagsRes, stagesRes, teamRes]) => {
                 setData({
                     tags: d.tags ?? [],
                     custom_fields: d.custom_fields ?? [],
@@ -965,6 +995,7 @@ function ContactPanel({
                 setContactTags(rawTags);
                 setAllTags(tagsRes.tags ?? tagsRes ?? []);
                 setStages(stagesRes.stages ?? stagesRes ?? []);
+                setTeamMembers(teamRes.members ?? teamRes ?? []);
             })
             .catch(() => {
                 setData({ tags: [], custom_fields: [], reservations: [], notes: [], activity: [] });
@@ -975,22 +1006,42 @@ function ContactPanel({
     // ── Save individual field ──────────────────────────────────────────────
     async function saveField(key: string, value: string) {
         setEditingField(null);
-        await fetch(`/api/contacts/${contactId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ [key]: value || null }),
-        });
-        setContactData((prev) => ({ ...prev, [key]: value }));
+        try {
+            const res = await fetch(`/api/contacts/${contactId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ [key]: value || null }),
+            });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Error al guardar campo'); return; }
+            setContactData((prev) => ({ ...prev, [key]: value }));
+        } catch { toast.error('Error de conexión al guardar campo'); }
     }
 
     // ── Save funnel stage ──────────────────────────────────────────────────
     async function saveStage(stageId: string) {
         setCurrentStageId(stageId);
-        await fetch(`/api/contacts/${contactId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ funnel_stage_id: stageId || null }),
-        });
+        try {
+            const res = await fetch(`/api/contacts/${contactId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ funnel_stage_id: stageId || null }),
+            });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Error al cambiar etapa'); }
+        } catch { toast.error('Error de conexión al cambiar etapa'); }
+    }
+
+    // ── Save agent assignment ─────────────────────────────────────────────
+    async function saveAssignment(userId: string | null) {
+        setCurrentAssignedTo(userId);
+        onAssign(userId);
+        try {
+            const res = await fetch(`/api/conversations/${conversationId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ assigned_to: userId }),
+            });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Error al asignar agente'); }
+        } catch { toast.error('Error de conexión al asignar agente'); }
     }
 
     // ── Remove tag from contact ────────────────────────────────────────────
@@ -1176,6 +1227,23 @@ function ContactPanel({
                         ) : (
                             <p className="text-[12px] text-[#C4C4CE] italic">Sin etapa</p>
                         )}
+                    </div>
+
+                    {/* Agent assignment */}
+                    <div className="px-4 py-3 border-b border-[#F3F4F6]">
+                        <p className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                            <UserCheck size={10} /> Asignado a
+                        </p>
+                        <select
+                            value={currentAssignedTo ?? ''}
+                            onChange={(e) => saveAssignment(e.target.value || null)}
+                            className="w-full text-[12px] text-[#1A1A2E] bg-[#F9FAFB] border border-[#E8E8EC] rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#818CF8]/30 cursor-pointer"
+                        >
+                            <option value="">Sin asignar</option>
+                            {teamMembers.map((m) => (
+                                <option key={m.id} value={m.id}>{m.full_name}</option>
+                            ))}
+                        </select>
                     </div>
 
                     {/* Tags — editable */}

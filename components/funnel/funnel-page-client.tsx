@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition, useCallback } from 'react';
+import { useState, useTransition, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     DndContext,
@@ -26,6 +26,10 @@ import {
     List,
     Plus,
     Phone,
+    DollarSign,
+    X,
+    Loader2,
+    Search,
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -34,6 +38,7 @@ import { Button } from '@/components/ui/button';
 import { FunnelStageBadge } from '@/components/contacts/funnel-stage-badge';
 import { formatSmartDate } from '@/lib/utils/format';
 import type { FunnelStage } from '@/lib/types/database';
+import type { DealRow } from '@/app/(dashboard)/funnel/page';
 
 type ContactRow = {
     id: string;
@@ -44,16 +49,22 @@ type ContactRow = {
     contact_tags: { tag: { id: string; name: string; color: string | null } | null }[];
 };
 
+function formatCurrency(value: number, currency = 'MXN'): string {
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+}
+
 // ---- Contact Card ----
 
 function ContactCard({
     contact,
     color,
     isDragging,
+    dealValue,
 }: {
     contact: ContactRow;
     color: string;
     isDragging?: boolean;
+    dealValue?: number;
 }) {
     const tags = contact.contact_tags
         .map((ct) => ct.tag)
@@ -98,9 +109,9 @@ function ContactCard({
                     </div>
                 </div>
 
-                {(tags.length > 0 || contact.last_contacted_at) && (
+                {(tags.length > 0 || contact.last_contacted_at || (dealValue && dealValue > 0)) && (
                     <div className="flex items-center justify-between mt-2.5 gap-2">
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-wrap gap-1 items-center">
                             {tags.map((tag) => tag && (
                                 <span
                                     key={tag.id}
@@ -109,6 +120,12 @@ function ContactCard({
                                     {tag.name}
                                 </span>
                             ))}
+                            {dealValue != null && dealValue > 0 && (
+                                <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-semibold rounded-full">
+                                    <DollarSign size={9} />
+                                    {formatCurrency(dealValue)}
+                                </span>
+                            )}
                         </div>
                         {contact.last_contacted_at && (
                             <span className="text-[10px] text-[#9CA3AF] flex-shrink-0">
@@ -127,9 +144,11 @@ function ContactCard({
 function SortableContactCard({
     contact,
     color,
+    dealValue,
 }: {
     contact: ContactRow;
     color: string;
+    dealValue?: number;
 }) {
     const {
         attributes,
@@ -148,7 +167,7 @@ function SortableContactCard({
 
     return (
         <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-            <ContactCard contact={contact} color={color} />
+            <ContactCard contact={contact} color={color} dealValue={dealValue} />
         </div>
     );
 }
@@ -158,9 +177,13 @@ function SortableContactCard({
 function KanbanColumn({
     stage,
     contacts,
+    dealValueByContact,
+    totalDealValue,
 }: {
     stage: FunnelStage;
     contacts: ContactRow[];
+    dealValueByContact: Record<string, number>;
+    totalDealValue: number;
 }) {
     const color = stage.color ?? '#818CF8';
     const { setNodeRef } = useDroppable({ id: `col-${stage.id}` });
@@ -168,7 +191,7 @@ function KanbanColumn({
     return (
         <div className="flex-shrink-0 w-[280px]">
             {/* Column Header */}
-            <div className="flex items-center gap-2 mb-3 px-1">
+            <div className="flex items-center gap-2 mb-1 px-1">
                 <div
                     className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                     style={{ backgroundColor: color }}
@@ -180,6 +203,11 @@ function KanbanColumn({
                     {contacts.length}
                 </span>
             </div>
+            {totalDealValue > 0 && (
+                <p className="text-[11px] text-emerald-600 font-semibold px-1 mb-2">
+                    {formatCurrency(totalDealValue)}
+                </p>
+            )}
 
             {/* Cards area */}
             <div
@@ -196,6 +224,7 @@ function KanbanColumn({
                             key={contact.id}
                             contact={contact}
                             color={color}
+                            dealValue={dealValueByContact[contact.id]}
                         />
                     ))}
                 </SortableContext>
@@ -298,19 +327,43 @@ function ListView({
 export function FunnelPageClient({
     stages,
     contacts: initialContacts,
+    deals: initialDeals = [],
 }: {
     stages: FunnelStage[];
     contacts: ContactRow[];
+    deals?: DealRow[];
 }) {
     const router = useRouter();
     const [, startTransition] = useTransition();
     const [contacts, setContacts] = useState<ContactRow[]>(initialContacts);
     const [activeContact, setActiveContact] = useState<ContactRow | null>(null);
     const [view, setView] = useState<'kanban' | 'list'>('kanban');
+    const [showNewDeal, setShowNewDeal] = useState(false);
 
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
     );
+
+    // Compute deal values by contact and by stage
+    const dealValueByContact = useMemo(() => {
+        const map: Record<string, number> = {};
+        for (const deal of initialDeals) {
+            const cId = deal.contact_id;
+            map[cId] = (map[cId] || 0) + (deal.price ?? 0);
+        }
+        return map;
+    }, [initialDeals]);
+
+    const dealValueByStage = useMemo(() => {
+        const map: Record<string, number> = {};
+        for (const deal of initialDeals) {
+            const stageId = deal.contact?.funnel_stage_id;
+            if (stageId) {
+                map[stageId] = (map[stageId] || 0) + (deal.price ?? 0);
+            }
+        }
+        return map;
+    }, [initialDeals]);
 
     const contactsByStage = stages.reduce<Record<string, ContactRow[]>>((acc, stage) => {
         acc[stage.id] = contacts.filter((c) => c.funnel_stage_id === stage.id);
@@ -410,6 +463,13 @@ export function FunnelPageClient({
                 title="Funnel"
                 description="Arrastra contactos entre etapas"
             >
+                <Button
+                    onClick={() => setShowNewDeal(true)}
+                    className="gap-2 rounded-[10px] bg-[#818CF8] hover:bg-[#6366F1] text-white"
+                >
+                    <DollarSign size={15} />
+                    Nuevo Deal
+                </Button>
                 <Link href="/funnel/settings">
                     <Button
                         variant="outline"
@@ -464,6 +524,8 @@ export function FunnelPageClient({
                                     key={stage.id}
                                     stage={stage}
                                     contacts={contactsByStage[stage.id] ?? []}
+                                    dealValueByContact={dealValueByContact}
+                                    totalDealValue={dealValueByStage[stage.id] ?? 0}
                                 />
                             ))}
 
@@ -502,6 +564,177 @@ export function FunnelPageClient({
                     </DndContext>
                 </div>
             )}
+
+            {showNewDeal && (
+                <NewDealDialog
+                    contacts={contacts}
+                    onClose={() => setShowNewDeal(false)}
+                    onCreated={() => {
+                        setShowNewDeal(false);
+                        router.refresh();
+                    }}
+                />
+            )}
         </>
+    );
+}
+
+// ---- New Deal Dialog ----
+
+function NewDealDialog({
+    contacts,
+    onClose,
+    onCreated,
+}: {
+    contacts: ContactRow[];
+    onClose: () => void;
+    onCreated: () => void;
+}) {
+    const [contactSearch, setContactSearch] = useState('');
+    const [selectedContactId, setSelectedContactId] = useState('');
+    const [name, setName] = useState('');
+    const [price, setPrice] = useState('');
+    const [currency, setCurrency] = useState('MXN');
+    const [description, setDescription] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    const filteredContacts = contactSearch.trim()
+        ? contacts.filter((c) => c.nombre.toLowerCase().includes(contactSearch.toLowerCase())).slice(0, 8)
+        : [];
+
+    async function handleSubmit() {
+        if (!selectedContactId || !name) return;
+        setSaving(true);
+        try {
+            const res = await fetch('/api/deals', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contact_id: selectedContactId,
+                    name,
+                    price: price ? parseFloat(price) : null,
+                    currency,
+                    description: description || null,
+                }),
+            });
+            if (res.ok) {
+                toast.success('Deal creado');
+                onCreated();
+            } else {
+                toast.error('Error al crear deal');
+            }
+        } catch {
+            toast.error('Error de conexión');
+        }
+        setSaving(false);
+    }
+
+    const selectedContact = contacts.find((c) => c.id === selectedContactId);
+
+    return (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-6 py-4 border-b border-[#E8E8EC]">
+                    <h2 className="text-[16px] font-semibold text-[#1A1A2E]">Nuevo Deal</h2>
+                    <button onClick={onClose} className="text-[#9CA3AF] hover:text-[#6B7280]"><X size={18} /></button>
+                </div>
+                <div className="p-6 space-y-4">
+                    {/* Contact search */}
+                    <div>
+                        <label className="block text-[13px] font-medium text-[#6B7280] mb-1.5">Contacto</label>
+                        {selectedContact ? (
+                            <div className="flex items-center gap-2 px-3 py-2 bg-[#F9FAFB] rounded-xl border border-[#E8E8EC]">
+                                <span className="text-[13px] text-[#1A1A2E] flex-1">{selectedContact.nombre}</span>
+                                <button onClick={() => { setSelectedContactId(''); setContactSearch(''); }} className="text-[#9CA3AF] hover:text-[#6B7280]">
+                                    <X size={14} />
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="relative">
+                                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" />
+                                <input
+                                    type="text"
+                                    value={contactSearch}
+                                    onChange={(e) => setContactSearch(e.target.value)}
+                                    placeholder="Buscar contacto..."
+                                    className="w-full pl-9 pr-3 py-2 text-[13px] bg-white border border-[#E8E8EC] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20"
+                                />
+                                {filteredContacts.length > 0 && (
+                                    <div className="absolute z-10 mt-1 w-full bg-white border border-[#E8E8EC] rounded-xl shadow-lg max-h-40 overflow-y-auto">
+                                        {filteredContacts.map((c) => (
+                                            <button
+                                                key={c.id}
+                                                onClick={() => { setSelectedContactId(c.id); setContactSearch(''); }}
+                                                className="w-full text-left px-3 py-2 text-[13px] text-[#1A1A2E] hover:bg-[#F9FAFB] transition-colors"
+                                            >
+                                                {c.nombre}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    <div>
+                        <label className="block text-[13px] font-medium text-[#6B7280] mb-1.5">Nombre del deal</label>
+                        <input
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            placeholder="Ej: Paquete Premium"
+                            className="w-full px-3 py-2 text-[13px] bg-white border border-[#E8E8EC] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20"
+                        />
+                    </div>
+
+                    <div className="flex gap-3">
+                        <div className="flex-1">
+                            <label className="block text-[13px] font-medium text-[#6B7280] mb-1.5">Valor</label>
+                            <input
+                                type="number"
+                                value={price}
+                                onChange={(e) => setPrice(e.target.value)}
+                                placeholder="0"
+                                className="w-full px-3 py-2 text-[13px] bg-white border border-[#E8E8EC] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20"
+                            />
+                        </div>
+                        <div className="w-24">
+                            <label className="block text-[13px] font-medium text-[#6B7280] mb-1.5">Moneda</label>
+                            <select
+                                value={currency}
+                                onChange={(e) => setCurrency(e.target.value)}
+                                className="w-full px-3 py-2 text-[13px] bg-white border border-[#E8E8EC] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20"
+                            >
+                                <option value="MXN">MXN</option>
+                                <option value="USD">USD</option>
+                                <option value="EUR">EUR</option>
+                                <option value="COP">COP</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-[13px] font-medium text-[#6B7280] mb-1.5">Descripción (opcional)</label>
+                        <textarea
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            rows={2}
+                            className="w-full px-3 py-2 text-[13px] bg-white border border-[#E8E8EC] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20 resize-none"
+                        />
+                    </div>
+                </div>
+
+                <div className="px-6 py-4 border-t border-[#E8E8EC] flex justify-end gap-2">
+                    <Button variant="outline" onClick={onClose} className="rounded-xl border-[#E8E8EC] text-[#6B7280]">Cancelar</Button>
+                    <Button
+                        onClick={handleSubmit}
+                        disabled={saving || !selectedContactId || !name}
+                        className="gap-2 rounded-xl bg-[#818CF8] hover:bg-[#6366F1] text-white"
+                    >
+                        {saving ? <Loader2 size={14} className="animate-spin" /> : <DollarSign size={14} />}
+                        Crear Deal
+                    </Button>
+                </div>
+            </div>
+        </div>
     );
 }

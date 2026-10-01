@@ -11,10 +11,22 @@ export async function GET(
         const supabase = createAdminClient();
     const TENANT_ID = await getServerTenantId();
 
+        // Verify conversation belongs to this tenant
+        const { data: conv } = await supabase
+            .from('conversations')
+            .select('id')
+            .eq('id', id)
+            .eq('tenant_id', TENANT_ID)
+            .single();
+        if (!conv) {
+            return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
+        }
+
         const { data: messages, error } = await supabase
             .from('messages')
             .select('*')
             .eq('conversation_id', id)
+            .eq('tenant_id', TENANT_ID)
             .order('created_at', { ascending: true });
 
         if (error) {
@@ -46,10 +58,7 @@ export async function POST(
     const TENANT_ID = await getServerTenantId();
         const body = await request.json();
 
-        // Fetch conversation to get contact info for webhook
-        // NOTE: do NOT filter by tenant_id here — admin client bypasses RLS.
-        // The tenant_id from getServerTenantId() may differ from the conversation's
-        // actual tenant_id due to Clerk org linking. Use the conversation's own tenant.
+        // Fetch conversation — MUST belong to current tenant
         type ConvWithContact = {
             id: string;
             tenant_id: string;
@@ -60,16 +69,13 @@ export async function POST(
             .from('conversations')
             .select('id, tenant_id, contact_id, contact:contacts!conversations_contact_id_fkey(id, nombre, wa_id)')
             .eq('id', id)
+            .eq('tenant_id', TENANT_ID)
             .single() as unknown as Promise<{ data: ConvWithContact | null; error: unknown }>);
         const { data: conversation, error: convError } = convQueryResult;
 
         if (convError || !conversation) {
-            console.error('[messages POST] conversation lookup failed:', convError, 'id:', id);
             return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
         }
-
-        // Use the conversation's actual tenant_id for all subsequent DB operations
-        const CONV_TENANT_ID = conversation.tenant_id ?? TENANT_ID;
 
         const isNote = body.is_note === true;
 
@@ -78,7 +84,7 @@ export async function POST(
             const { data: message, error } = await supabase
                 .from('messages')
                 .insert({
-                    tenant_id: CONV_TENANT_ID,
+                    tenant_id: TENANT_ID,
                     conversation_id: id,
                     contact_id: conversation.contact_id,
                     content: body.content,
@@ -110,14 +116,14 @@ export async function POST(
         const { data: credentials } = await supabase
             .from('tenant_credentials')
             .select('n8n_send_message_webhook')
-            .eq('tenant_id', CONV_TENANT_ID)
+            .eq('tenant_id', TENANT_ID)
             .maybeSingle();
 
         const webhookUrl = credentials?.n8n_send_message_webhook ?? undefined;
-        console.log(`[messages POST] tenant_id=${CONV_TENANT_ID} webhook_url=${webhookUrl ?? 'NOT_CONFIGURED'}`);
+        console.log(`[messages POST] tenant_id=${TENANT_ID} webhook_url=${webhookUrl ?? 'NOT_CONFIGURED'}`);
 
         if (!webhookUrl) {
-            console.warn(`[messages POST] n8n_send_message_webhook not configured for tenant ${CONV_TENANT_ID}`);
+            console.warn(`[messages POST] n8n_send_message_webhook not configured for tenant ${TENANT_ID}`);
             return NextResponse.json({ error: 'Webhook not configured' }, { status: 503 });
         }
 
@@ -130,7 +136,7 @@ export async function POST(
             headers: { 'Content-Type': 'application/json' },
             signal: AbortSignal.timeout(10000),
             body: JSON.stringify({
-                tenant_id: CONV_TENANT_ID,
+                tenant_id: TENANT_ID,
                 conversation_id: id,
                 contact_id: contact?.id,
                 wa_id: contact?.wa_id,

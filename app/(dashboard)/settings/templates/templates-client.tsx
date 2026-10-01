@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Plus, RefreshCw, X, Loader2, FileText } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { PageHeader } from '@/components/layout/page-header';
@@ -59,11 +60,19 @@ function NewTemplateDialog({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name, content, category: category || null, language, variables: variables.length > 0 ? variables : null }),
             });
+            if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                toast.error(d.error || 'Error al crear la plantilla');
+                return;
+            }
             const data = await res.json();
             if (data.template) {
                 onCreated(data.template);
                 setName(''); setContent(''); setCategory(''); setLanguage('es');
+                toast.success('Plantilla creada');
             }
+        } catch {
+            toast.error('Error de conexión al crear la plantilla');
         } finally {
             setLoading(false);
         }
@@ -165,8 +174,12 @@ export default function TemplatesPage() {
 
     useEffect(() => {
         fetch('/api/templates')
-            .then((r) => r.json())
+            .then((r) => {
+                if (!r.ok) throw new Error('Error al cargar plantillas');
+                return r.json();
+            })
             .then((d) => setTemplates(d.templates ?? []))
+            .catch(() => toast.error('Error al cargar las plantillas'))
             .finally(() => setLoading(false));
     }, []);
 
@@ -178,12 +191,17 @@ export default function TemplatesPage() {
             const data = await res.json();
             if (res.ok) {
                 setSyncMsg(`${data.synced} plantillas sincronizadas desde Meta.`);
+                toast.success(`${data.synced} plantillas sincronizadas`);
                 // Refresh list
                 const refresh = await fetch('/api/templates').then((r) => r.json());
                 setTemplates(refresh.templates ?? []);
             } else {
-                setSyncMsg(data.error ?? 'Error al sincronizar.');
+                const msg = data.error ?? 'Error al sincronizar.';
+                setSyncMsg(msg);
+                toast.error(msg);
             }
+        } catch {
+            toast.error('Error de conexión al sincronizar plantillas');
         } finally {
             setSyncing(false);
         }

@@ -8,6 +8,7 @@ import {
     Save, Globe, Users as UsersIcon, Tag as TagIcon, Sliders, MessageSquare,
     Plus, Loader2, X, Pencil, Check, ExternalLink, Kanban
 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { Tenant, User, Tag, CustomField, CannedResponse } from '@/lib/types/database';
 import Link from 'next/link';
 
@@ -62,13 +63,16 @@ function GeneralTab() {
 
     async function handleSave() {
         setSaving(true);
-        const res = await fetch('/api/settings/general', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, slug, logo_url: logoUrl }),
-        });
-        const data = await res.json();
-        if (data.tenant) { setTenant(data.tenant); setSaved(true); setTimeout(() => setSaved(false), 2500); }
+        try {
+            const res = await fetch('/api/settings/general', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, slug, logo_url: logoUrl }),
+            });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Error al guardar configuración'); setSaving(false); return; }
+            const data = await res.json();
+            if (data.tenant) { setTenant(data.tenant); setSaved(true); setTimeout(() => setSaved(false), 2500); }
+        } catch { toast.error('Error de conexión al guardar configuración'); }
         setSaving(false);
     }
 
@@ -215,30 +219,39 @@ function TagsTab() {
     async function handleAdd() {
         if (!newName.trim()) return;
         setAdding(true);
-        await fetch('/api/settings/tags', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: newName.trim(), color: newColor }),
-        });
-        setNewName('');
-        await loadTags();
+        try {
+            const res = await fetch('/api/settings/tags', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newName.trim(), color: newColor }),
+            });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Error al crear etiqueta'); setAdding(false); return; }
+            setNewName('');
+            await loadTags();
+        } catch { toast.error('Error de conexión al crear etiqueta'); }
         setAdding(false);
     }
 
     async function handleDelete(id: string) {
-        await fetch(`/api/settings/tags/${id}`, { method: 'DELETE' });
-        setTags((prev) => prev.filter((t) => t.id !== id));
+        try {
+            const res = await fetch(`/api/settings/tags/${id}`, { method: 'DELETE' });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Error al eliminar etiqueta'); return; }
+            setTags((prev) => prev.filter((t) => t.id !== id));
+        } catch { toast.error('Error de conexión al eliminar etiqueta'); }
     }
 
     async function handleEdit(id: string) {
         if (!editName.trim()) return;
-        await fetch(`/api/settings/tags/${id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: editName.trim() }),
-        });
-        setTags((prev) => prev.map((t) => t.id === id ? { ...t, name: editName.trim() } : t));
-        setEditId(null);
+        try {
+            const res = await fetch(`/api/settings/tags/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: editName.trim() }),
+            });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Error al editar etiqueta'); return; }
+            setTags((prev) => prev.map((t) => t.id === id ? { ...t, name: editName.trim() } : t));
+            setEditId(null);
+        } catch { toast.error('Error de conexión al editar etiqueta'); }
     }
 
     if (loading) return <div className="p-8 text-center text-[#9CA3AF] text-[14px]">Cargando etiquetas…</div>;

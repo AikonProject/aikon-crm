@@ -1,12 +1,22 @@
 import { clerkMiddleware } from '@clerk/nextjs/server';
 
+// App routes that should NOT be treated as public booking slugs
+const APP_ROUTES = new Set([
+    '/dashboard', '/contacts', '/conversations', '/funnel', '/campaigns',
+    '/templates', '/reservations', '/settings', '/admin', '/reports',
+    '/orders', '/products', '/pipeline', '/calendar', '/emails', '/messages',
+]);
+
 export default clerkMiddleware(async (_auth, _request) => {
     const path = _request.nextUrl.pathname;
-    // Public: sign-in/up pages, public API (booking page), webhooks, and /{slug} (customer booking pages)
     const PUBLIC_PREFIXES = ['/sign-in', '/sign-up', '/api/public', '/api/webhooks'];
+
+    // Check if path is a valid public booking slug: /{slug} where slug is lowercase alphanumeric + hyphens
+    const isBookingSlug = /^\/[a-z0-9][a-z0-9-]*$/.test(path) && !APP_ROUTES.has(path);
+
     const isPublic =
-        PUBLIC_PREFIXES.some((p) => path.startsWith(p)) ||
-        /^\/[^/]+$/.test(path); // matches /{slug} — customer-facing booking pages
+        PUBLIC_PREFIXES.some((p) => path.startsWith(p)) || isBookingSlug;
+
     if (!isPublic) await _auth.protect();
 });
 

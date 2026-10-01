@@ -1,10 +1,11 @@
-import { Plus, Upload } from 'lucide-react';
+import { Plus, Upload, Download } from 'lucide-react';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getServerTenantId } from '@/lib/tenant';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { NewContactDialog } from '@/components/contacts/new-contact-dialog';
+import { ImportCSVDialog } from '@/components/contacts/import-csv-dialog';
 import { ContactsTableClient } from '@/components/contacts/contacts-table-client';
 import type { FunnelStage } from '@/lib/types/database';
 
@@ -67,15 +68,26 @@ export default async function ContactsPage() {
             <Breadcrumb />
             <PageHeader
                 title="Contactos"
-                description="Gestiona todos tus leads y clientes del restaurante"
+                description="Gestiona todos tus leads y clientes"
             >
-                <Button
-                    variant="outline"
-                    className="gap-2 rounded-[10px] border-[#E8E8EC] text-[#6B7280] hover:bg-[#F9FAFB]"
-                >
-                    <Upload size={16} />
-                    Importar CSV
-                </Button>
+                <a href="/api/contacts/export" download>
+                    <Button
+                        variant="outline"
+                        className="gap-2 rounded-[10px] border-[#E8E8EC] text-[#6B7280] hover:bg-[#F9FAFB]"
+                    >
+                        <Download size={16} />
+                        Exportar CSV
+                    </Button>
+                </a>
+                <ImportCSVDialog>
+                    <Button
+                        variant="outline"
+                        className="gap-2 rounded-[10px] border-[#E8E8EC] text-[#6B7280] hover:bg-[#F9FAFB]"
+                    >
+                        <Upload size={16} />
+                        Importar CSV
+                    </Button>
+                </ImportCSVDialog>
                 <NewContactDialog>
                     <Button className="gap-2 rounded-[10px] bg-[#818CF8] hover:bg-[#6366F1] text-white">
                         <Plus size={16} />

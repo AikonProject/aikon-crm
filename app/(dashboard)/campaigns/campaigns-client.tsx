@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Plus, Send, CheckCircle, Eye, MessageSquare, MoreHorizontal, Copy, XCircle } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { PageHeader } from '@/components/layout/page-header';
@@ -35,8 +36,12 @@ export default function CampaignsPage() {
 
     useEffect(() => {
         fetch('/api/campaigns')
-            .then((r) => r.json())
+            .then((r) => {
+                if (!r.ok) throw new Error('Error al cargar campañas');
+                return r.json();
+            })
             .then((d) => setCampaigns(d.campaigns ?? []))
+            .catch(() => toast.error('Error al cargar las campañas'))
             .finally(() => setLoading(false));
     }, []);
 
@@ -47,27 +52,46 @@ export default function CampaignsPage() {
     const totalResponded = 0;
 
     async function handleCancel(id: string) {
-        await fetch(`/api/campaigns/${id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: 'cancelled' }),
-        });
-        setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, status: 'cancelled' } : c)));
+        try {
+            const res = await fetch(`/api/campaigns/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'cancelled' }),
+            });
+            if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                toast.error(d.error || 'Error al cancelar la campaña');
+                return;
+            }
+            setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, status: 'cancelled' } : c)));
+        } catch {
+            toast.error('Error de conexión al cancelar la campaña');
+        }
     }
 
     async function handleDuplicate(campaign: CampaignWithCount) {
-        const res = await fetch('/api/campaigns', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                name: `${campaign.name} (copia)`,
-                description: campaign.description,
-                template_id: campaign.template_id,
-            }),
-        });
-        const data = await res.json();
-        if (data.campaign) {
-            setCampaigns((prev) => [{ ...data.campaign, contact_count: data.contact_count ?? 0 }, ...prev]);
+        try {
+            const res = await fetch('/api/campaigns', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: `${campaign.name} (copia)`,
+                    description: campaign.description,
+                    template_id: campaign.template_id,
+                }),
+            });
+            if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                toast.error(d.error || 'Error al duplicar la campaña');
+                return;
+            }
+            const data = await res.json();
+            if (data.campaign) {
+                setCampaigns((prev) => [{ ...data.campaign, contact_count: data.contact_count ?? 0 }, ...prev]);
+                toast.success('Campaña duplicada');
+            }
+        } catch {
+            toast.error('Error de conexión al duplicar la campaña');
         }
     }
 

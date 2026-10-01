@@ -17,48 +17,51 @@ import {
     Menu,
     UtensilsCrossed,
     ShieldCheck,
+    ShoppingCart,
+    Package,
+    Bot,
 } from 'lucide-react';
 import { UserButton, useUser } from '@clerk/nextjs';
 import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
 import { useSidebar } from './sidebar-provider';
 import { createClient } from '@/lib/supabase/client';
+import { useTenantId } from '@/components/providers/tenant-provider';
 
-const mainMenuItems = [
+type MenuItem = { label: string; href: string; icon: React.ElementType; badge?: boolean; restaurant?: boolean };
+
+const menuItems: MenuItem[] = [
     { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     { label: 'Contactos', href: '/contacts', icon: Users },
     { label: 'Conversaciones', href: '/conversations', icon: MessageCircle, badge: true },
     { label: 'Funnel', href: '/funnel', icon: Kanban },
-    { label: 'Reservas', href: '/reservations', icon: CalendarCheck },
-    { label: 'Campañas', href: '/campaigns', icon: Megaphone },
-    { label: 'Reportes', href: '/reports', icon: BarChart3 },
-];
-
-const configMenuItems = [
-    { label: 'Ajustes', href: '/settings', icon: Settings },
-    { label: 'Restaurante', href: '/settings/restaurant', icon: UtensilsCrossed },
+    { label: 'Productos', href: '/settings/products', icon: Package },
+    { label: 'Ventas', href: '/orders', icon: ShoppingCart },
     { label: 'Plantillas', href: '/settings/templates', icon: FileText },
-    { label: 'Integraciones', href: '/settings/integrations', icon: Puzzle },
+    { label: 'Campañas', href: '/campaigns', icon: Megaphone },
+    { label: 'Reservas', href: '/reservations', icon: CalendarCheck, restaurant: true },
+    { label: 'Reportes', href: '/reports', icon: BarChart3 },
+    { label: 'Configuración', href: '/settings', icon: Settings },
+    { label: 'Restaurante', href: '/settings/restaurant', icon: UtensilsCrossed, restaurant: true },
     { label: 'Admin', href: '/admin', icon: ShieldCheck },
 ];
 
-export function Sidebar({ plan = 'professional' }: { plan?: 'starter' | 'professional' | 'enterprise' }) {
+export function Sidebar({
+    plan = 'professional',
+    businessType = 'general',
+}: {
+    plan?: 'starter' | 'professional' | 'enterprise';
+    businessType?: 'general' | 'restaurant';
+}) {
     const pathname = usePathname();
     const { collapsed, setCollapsed } = useSidebar();
 
-    const canAccess = (feature: string): boolean => {
-        if (plan === 'professional' || plan === 'enterprise') return true;
-        // starter: reservations, contacts, funnel, dashboard, reports
-        //          settings + restaurant + integrations (reservation webhook only)
-        //          NO: conversations, campaigns, templates
-        const starterBlocked = ['/conversations', '/campaigns', '/settings/templates'];
-        return !starterBlocked.some((p) => feature.startsWith(p));
-    };
+    const isRestaurant = businessType === 'restaurant';
 
-    const visibleMainItems = mainMenuItems.filter((item) => canAccess(item.href));
-    const visibleConfigItems = configMenuItems.filter((item) => canAccess(item.href));
+    const visibleItems = menuItems.filter((item) => !item.restaurant || isRestaurant);
     const [mobileOpen, setMobileOpen] = useState(false);
     const { user } = useUser();
+    const tenantId = useTenantId();
     const [unreadCount, setUnreadCount] = useState(0);
     const supabase = createClient();
 
@@ -67,6 +70,7 @@ export function Sidebar({ plan = 'professional' }: { plan?: 'starter' | 'profess
             const { data } = await supabase
                 .from('conversations')
                 .select('unread_count')
+                .eq('tenant_id', tenantId)
                 .gt('unread_count', 0);
             const total = data?.reduce((sum, c) => sum + (c.unread_count ?? 0), 0) ?? 0;
             setUnreadCount(total);
@@ -79,11 +83,12 @@ export function Sidebar({ plan = 'professional' }: { plan?: 'starter' | 'profess
                 event: '*',
                 schema: 'public',
                 table: 'conversations',
+                filter: `tenant_id=eq.${tenantId}`,
             }, fetchUnread)
             .subscribe();
 
         return () => { supabase.removeChannel(channel); };
-    }, [supabase]);
+    }, [supabase, tenantId]);
 
     const isActive = (href: string) => {
         if (href === '/dashboard') return pathname === '/dashboard';
@@ -116,13 +121,10 @@ export function Sidebar({ plan = 'professional' }: { plan?: 'starter' | 'profess
                 </button>
             </div>
 
-            {/* Main Menu */}
+            {/* Menu */}
             <div className="flex-1 px-3 py-4 overflow-y-auto">
-                {!collapsed && (
-                    <p className="crm-section-label px-3 mb-2">Menú principal</p>
-                )}
                 <nav className="space-y-1">
-                    {visibleMainItems.map((item) => {
+                    {visibleItems.map((item) => {
                         const active = isActive(item.href);
                         return (
                             <Link
@@ -157,40 +159,6 @@ export function Sidebar({ plan = 'professional' }: { plan?: 'starter' | 'profess
                         );
                     })}
                 </nav>
-
-                {/* Config Section */}
-                <div className="mt-6">
-                    {!collapsed && (
-                        <p className="crm-section-label px-3 mb-2">Configuración</p>
-                    )}
-                    <nav className="space-y-1">
-                        {visibleConfigItems.map((item) => {
-                            const active = isActive(item.href);
-                            return (
-                                <Link
-                                    key={item.href}
-                                    href={item.href}
-                                    onClick={() => setMobileOpen(false)}
-                                    className={cn(
-                                        'flex items-center gap-3 px-3 py-2.5 rounded-r-lg text-sm font-medium transition-all duration-150',
-                                        active
-                                            ? 'bg-[#F3F4FF] text-[#4F46E5] border-l-[3px] border-[#818CF8]'
-                                            : 'text-[#6B7280] hover:bg-[#F9FAFB] border-l-[3px] border-transparent'
-                                    )}
-                                >
-                                    <item.icon
-                                        size={20}
-                                        className={cn(
-                                            'flex-shrink-0',
-                                            active ? 'text-[#4F46E5]' : 'text-[#9CA3AF]'
-                                        )}
-                                    />
-                                    {!collapsed && <span>{item.label}</span>}
-                                </Link>
-                            );
-                        })}
-                    </nav>
-                </div>
             </div>
 
             {/* Plan badge */}

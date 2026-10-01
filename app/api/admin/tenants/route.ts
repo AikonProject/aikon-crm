@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { requireSuperAdmin, TenantError } from '@/lib/tenant';
 import type { Tenant } from '@/lib/types/database';
 
 export async function GET() {
     try {
+        await requireSuperAdmin();
         const supabase = createAdminClient();
 
         // Fetch all tenants (no tenant_id filter — super admin sees all)
@@ -53,6 +55,9 @@ export async function GET() {
 
         return NextResponse.json({ tenants: enriched });
     } catch (err) {
+        if (err instanceof TenantError) {
+            return NextResponse.json({ error: err.message }, { status: err.status });
+        }
         console.error('[GET /api/admin/tenants]', err);
         return NextResponse.json({ error: 'Error fetching tenants' }, { status: 500 });
     }
@@ -60,6 +65,7 @@ export async function GET() {
 
 export async function PATCH(req: NextRequest) {
     try {
+        await requireSuperAdmin();
         const body = await req.json();
         const { id, ...updates } = body;
 
@@ -80,6 +86,9 @@ export async function PATCH(req: NextRequest) {
 
         return NextResponse.json({ tenant: data });
     } catch (err) {
+        if (err instanceof TenantError) {
+            return NextResponse.json({ error: err.message }, { status: err.status });
+        }
         console.error('[PATCH /api/admin/tenants]', err);
         return NextResponse.json({ error: 'Error updating tenant' }, { status: 500 });
     }

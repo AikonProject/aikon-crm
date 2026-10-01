@@ -26,6 +26,8 @@ export type Tenant = {
     table_selection_enabled: boolean;
     table_spaces: string[];
     plan: 'starter' | 'professional' | 'enterprise';
+    business_type: 'general' | 'restaurant';
+    ai_config: Record<string, unknown> | null;
     is_active: boolean;
     max_agents: number | null;
     max_contacts: number | null;
@@ -271,6 +273,29 @@ export type CannedResponse = {
     created_by: string | null; // User.id
     created_at: string;
     updated_at: string;
+};
+
+// ============================================================
+// Message buffer (incoming messages queued for AI processing)
+// ============================================================
+
+export type MessageBufferStatus = 'pending' | 'processing' | 'processed' | 'failed';
+
+export type MessageBuffer = {
+    id: string;
+    tenant_id: string;
+    conversation_id: string;
+    contact_id: string;
+    wa_message_id: string | null;
+    content: string | null;
+    content_type: string;
+    media_url: string | null;
+    media_mime_type: string | null;
+    media_filename: string | null;
+    raw_payload: Record<string, unknown> | null;
+    status: MessageBufferStatus;
+    processed_at: string | null;
+    created_at: string;
 };
 
 // ============================================================
@@ -544,6 +569,64 @@ export type RestaurantMenu = {
 };
 
 // ============================================================
+// Products & Orders
+// ============================================================
+
+export type ProductCategory = {
+    id: string;
+    tenant_id: string;
+    name: string;
+    parent_id: string | null;
+    position: number;
+    created_at: string;
+};
+
+export type Product = {
+    id: string;
+    tenant_id: string;
+    name: string;
+    description: string | null;
+    sku: string | null;
+    price: number;
+    image_url: string | null;
+    is_active: boolean;
+    category_id: string | null;
+    metadata: Record<string, unknown> | null;
+    created_at: string;
+    updated_at: string;
+};
+
+export type OrderStatus = 'pending' | 'confirmed' | 'preparing' | 'ready' | 'delivered' | 'completed' | 'cancelled' | 'refunded';
+
+export type Order = {
+    id: string;
+    tenant_id: string;
+    contact_id: string | null;
+    status: OrderStatus;
+    subtotal: number;
+    discount: number;
+    total: number;
+    notes: string | null;
+    source: string | null;
+    created_by: string | null;
+    created_at: string;
+    updated_at: string;
+};
+
+export type OrderItem = {
+    id: string;
+    tenant_id: string;
+    order_id: string;
+    product_id: string | null;
+    product_name: string;
+    quantity: number;
+    unit_price: number;
+    subtotal: number;
+    notes: string | null;
+    created_at: string;
+};
+
+// ============================================================
 // Insert / Update helper types
 // ============================================================
 
@@ -551,6 +634,7 @@ export type RestaurantMenu = {
 type WithoutJoins<T> = Omit<T,
     | 'funnel_stage' | 'assigned_user' | 'tags' | 'contact' | 'user' | 'messages'
     | 'template' | 'service' | 'table' | 'event' | 'custom_field'
+    | 'category' | 'items' | 'created_by_user'
 >;
 
 // ============================================================
@@ -645,6 +729,12 @@ export type Database = {
                 Update: Partial<WithoutJoins<Message>>;
                 Relationships: never[];
             };
+            message_buffer: {
+                Row: MessageBuffer;
+                Insert: Partial<WithoutJoins<MessageBuffer>> & Pick<MessageBuffer, 'tenant_id' | 'conversation_id' | 'contact_id'>;
+                Update: Partial<WithoutJoins<MessageBuffer>>;
+                Relationships: never[];
+            };
             canned_responses: {
                 Row: CannedResponse;
                 Insert: Partial<WithoutJoins<CannedResponse>> & Pick<CannedResponse, 'tenant_id' | 'title' | 'content'>;
@@ -727,6 +817,30 @@ export type Database = {
                 Row: RestaurantMenu;
                 Insert: Partial<WithoutJoins<RestaurantMenu>> & Pick<RestaurantMenu, 'tenant_id' | 'name'>;
                 Update: Partial<WithoutJoins<RestaurantMenu>>;
+                Relationships: never[];
+            };
+            product_categories: {
+                Row: ProductCategory;
+                Insert: Partial<WithoutJoins<ProductCategory>> & Pick<ProductCategory, 'tenant_id' | 'name'>;
+                Update: Partial<WithoutJoins<ProductCategory>>;
+                Relationships: never[];
+            };
+            products: {
+                Row: Product;
+                Insert: Partial<WithoutJoins<Product>> & Pick<Product, 'tenant_id' | 'name' | 'price'>;
+                Update: Partial<WithoutJoins<Product>>;
+                Relationships: never[];
+            };
+            orders: {
+                Row: Order;
+                Insert: Partial<WithoutJoins<Order>> & Pick<Order, 'tenant_id'>;
+                Update: Partial<WithoutJoins<Order>>;
+                Relationships: never[];
+            };
+            order_items: {
+                Row: OrderItem;
+                Insert: Partial<WithoutJoins<OrderItem>> & Pick<OrderItem, 'tenant_id' | 'order_id' | 'product_name' | 'quantity' | 'unit_price'>;
+                Update: Partial<WithoutJoins<OrderItem>>;
                 Relationships: never[];
             };
         };

@@ -16,12 +16,15 @@ const ROUTE_LABELS: Record<string, string> = {
     settings: 'Configuración',
     integrations: 'Integraciones',
     reservations: 'Reservas',
+    orders: 'Ventas',
     restaurant: 'Restaurante',
     templates: 'Plantillas',
     campaigns: 'Campañas',
     new: 'Nueva',
     admin: 'Super Admin',
     conversations: 'Conversaciones',
+    products: 'Productos',
+    ai: 'IA / Bot',
 };
 
 export function Breadcrumb() {

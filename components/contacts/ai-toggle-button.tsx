@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Bot, UserCheck } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface AiToggleButtonProps {
     contactId: string;
@@ -25,9 +26,12 @@ export function AiToggleButton({ contactId, initialAiActive }: AiToggleButtonPro
                 body: JSON.stringify({ ai_active: next }),
             });
             if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                toast.error(d.error || 'Error al cambiar estado de IA');
                 setAiActive(!next); // revert on error
             }
         } catch {
+            toast.error('Error de conexión al cambiar estado de IA');
             setAiActive(!next);
         } finally {
             setLoading(false);
