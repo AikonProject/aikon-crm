@@ -43,6 +43,7 @@ const TAG_COLORS = ['#818CF8', '#34D399', '#F9A8D4', '#FBBF24', '#F87171', '#60A
 // ─── General Tab ────────────────────────────────────────────────────────────
 function GeneralTab() {
     const [tenant, setTenant] = useState<Tenant | null>(null);
+    const [planName, setPlanName] = useState('');
     const [name, setName] = useState('');
     const [slug, setSlug] = useState('');
     const [logoUrl, setLogoUrl] = useState('');
@@ -54,6 +55,7 @@ function GeneralTab() {
             .then((r) => r.json())
             .then((d) => {
                 setTenant(d.tenant);
+                setPlanName(d.plan?.name ?? '');
                 setName(d.tenant?.name ?? '');
                 setSlug(d.tenant?.slug ?? '');
                 // logo_url may not exist on type yet
@@ -109,7 +111,7 @@ function GeneralTab() {
             </div>
             <div className="pt-3 border-t border-[#F3F4F6]">
                 <p className="text-[12px] text-[#9CA3AF]">
-                    Plan actual: <span className="font-semibold text-[#1A1A2E]">{tenant.plan}</span>
+                    Plan actual: <span className="font-semibold text-[#1A1A2E]">{planName}</span>
                     {' · '}Estado: <span className={`font-semibold ${tenant.is_active ? 'text-[#059669]' : 'text-[#DC2626]'}`}>{tenant.is_active ? 'Activo' : 'Inactivo'}</span>
                 </p>
             </div>

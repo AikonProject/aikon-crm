@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 export async function GET(
     request: NextRequest,
@@ -9,7 +10,7 @@ export async function GET(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('chat');
 
         // Verify conversation belongs to this tenant
         const { data: conv } = await supabase
@@ -43,6 +44,7 @@ export async function GET(
 
         return NextResponse.json(messages ?? []);
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('Unexpected error in GET /api/conversations/[id]/messages:', err);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
@@ -55,7 +57,7 @@ export async function POST(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('chat');
         const body = await request.json();
 
         // Fetch conversation — MUST belong to current tenant
@@ -156,6 +158,7 @@ export async function POST(
 
         return NextResponse.json({ queued: true }, { status: 202 });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('Unexpected error in POST /api/conversations/[id]/messages:', err);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }

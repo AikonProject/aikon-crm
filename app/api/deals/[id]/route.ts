@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 // ---------------------------------------------------------------------------
 // PATCH /api/deals/[id] — update a deal
@@ -12,7 +13,7 @@ export async function PATCH(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('funnel');
         const body = await request.json();
 
         const allowedFields = ['name', 'description', 'price', 'currency', 'quantity', 'status', 'notes', 'sold_at'];
@@ -42,6 +43,7 @@ export async function PATCH(
 
         return NextResponse.json(data);
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[PATCH /api/deals/[id]] unexpected', err);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
@@ -57,7 +59,7 @@ export async function DELETE(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('funnel');
 
         const { error } = await supabase
             .from('deals')
@@ -72,6 +74,7 @@ export async function DELETE(
 
         return NextResponse.json({ ok: true });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[DELETE /api/deals/[id]] unexpected', err);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }

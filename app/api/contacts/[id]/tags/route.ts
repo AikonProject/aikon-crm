@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { getServerTenantId, TenantError } from '@/lib/tenant';
 
 export async function POST(
     request: Request,
@@ -32,6 +32,7 @@ export async function POST(
         if (error && error.code !== '23505') throw error; // ignore duplicate
         return NextResponse.json({ success: true });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[POST /api/contacts/[id]/tags]', err);
         return NextResponse.json({ error: 'Failed to add tag' }, { status: 500 });
     }
@@ -65,6 +66,7 @@ export async function DELETE(
 
         return NextResponse.json({ success: true });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[DELETE /api/contacts/[id]/tags]', err);
         return NextResponse.json({ error: 'Failed to remove tag' }, { status: 500 });
     }

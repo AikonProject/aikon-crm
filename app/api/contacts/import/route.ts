@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { getServerTenantId, TenantError } from '@/lib/tenant';
 
 type ImportRow = {
     nombre: string;
@@ -117,6 +117,7 @@ export async function POST(req: NextRequest) {
             total: rows.length,
         });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[POST /api/contacts/import] unexpected', err);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }

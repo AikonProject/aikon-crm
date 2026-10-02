@@ -25,12 +25,31 @@ export type Tenant = {
     corporate_contact_link: string | null;
     table_selection_enabled: boolean;
     table_spaces: string[];
+    /** @deprecated use plan_id → plans */
     plan: 'starter' | 'professional' | 'enterprise';
+    plan_id: string;
     business_type: 'general' | 'restaurant';
     ai_config: Record<string, unknown> | null;
     is_active: boolean;
     max_agents: number | null;
     max_contacts: number | null;
+    created_at: string;
+    updated_at: string;
+};
+
+export type PlanModule =
+    | 'chat' | 'contacts' | 'funnel' | 'campaigns' | 'orders'
+    | 'reports' | 'reservations' | 'restaurant';
+
+export type Plan = {
+    id: string;
+    slug: string;
+    name: string;
+    features: { modules?: PlanModule[] } & Record<string, unknown>;
+    max_contacts: number;
+    max_users: number;
+    price_monthly: number;
+    is_active: boolean;
     created_at: string;
     updated_at: string;
 };
@@ -649,6 +668,12 @@ export type Database = {
                 Row: SuperAdmin;
                 Insert: Partial<WithoutJoins<SuperAdmin>> & Pick<SuperAdmin, 'email' | 'name'>;
                 Update: Partial<WithoutJoins<SuperAdmin>>;
+                Relationships: never[];
+            };
+            plans: {
+                Row: Plan;
+                Insert: Partial<Plan> & Pick<Plan, 'slug' | 'name'>;
+                Update: Partial<Plan>;
                 Relationships: never[];
             };
             tenants: {

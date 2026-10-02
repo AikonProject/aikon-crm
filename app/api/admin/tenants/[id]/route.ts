@@ -12,7 +12,7 @@ export async function PATCH(
         const body = await request.json();
         const supabase = createAdminClient();
 
-        const allowed = ['plan', 'is_active', 'name', 'slug'];
+        const allowed = ['plan_id', 'is_active', 'name', 'slug'];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const update: any = {};
         for (const key of allowed) {

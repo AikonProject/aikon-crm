@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 // ---------------------------------------------------------------------------
 // GET /api/deals — list deals for tenant
@@ -8,7 +9,7 @@ import { getServerTenantId } from '@/lib/tenant';
 export async function GET(req: NextRequest) {
     try {
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('funnel');
         const { searchParams } = new URL(req.url);
         const contactId = searchParams.get('contact_id');
 
@@ -31,6 +32,7 @@ export async function GET(req: NextRequest) {
 
         return NextResponse.json(data ?? []);
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/deals] unexpected', err);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
@@ -42,7 +44,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
     try {
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('funnel');
         const body = await req.json();
 
         const { contact_id, name, description, price, currency, quantity, status, notes } = body;
@@ -74,6 +76,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json(data, { status: 201 });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[POST /api/deals] unexpected', err);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }

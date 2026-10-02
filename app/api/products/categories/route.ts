@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 // ---------------------------------------------------------------------------
 // GET /api/products/categories  — list all categories for tenant
@@ -8,7 +9,7 @@ import { getServerTenantId } from '@/lib/tenant';
 export async function GET(_req: NextRequest) {
     try {
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('orders');
 
         const { data, error } = await supabase
             .from('product_categories')
@@ -23,6 +24,7 @@ export async function GET(_req: NextRequest) {
 
         return NextResponse.json({ categories: data ?? [] });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/products/categories] unexpected', err);
         return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
     }
@@ -45,7 +47,7 @@ export async function POST(req: NextRequest) {
         }
 
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('orders');
 
         const { data, error } = await supabase
             .from('product_categories')
@@ -65,6 +67,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ category: data }, { status: 201 });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[POST /api/products/categories] unexpected', err);
         return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
     }

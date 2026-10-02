@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 export async function GET(
     _req: NextRequest,
@@ -9,7 +10,7 @@ export async function GET(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('campaigns');
 
         const { data: campaign, error } = await supabase
             .from('campaigns')
@@ -30,6 +31,7 @@ export async function GET(
 
         return NextResponse.json({ campaign, messages: messages ?? [] });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/campaigns/[id]]', err);
         return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
     }
@@ -43,7 +45,7 @@ export async function PATCH(
         const { id } = await params;
         const body = await req.json();
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('campaigns');
 
         const { data, error } = await supabase
             .from('campaigns')
@@ -57,6 +59,7 @@ export async function PATCH(
 
         return NextResponse.json({ campaign: data });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[PATCH /api/campaigns/[id]]', err);
         return NextResponse.json({ error: 'Error updating campaign' }, { status: 500 });
     }

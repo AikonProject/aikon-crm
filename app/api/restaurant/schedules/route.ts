@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 export async function GET() {
     try {
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('restaurant');
         const { data, error } = await supabase
             .from('restaurant_schedules')
             .select('*')
@@ -14,6 +15,7 @@ export async function GET() {
         if (error) throw error;
         return NextResponse.json(data ?? []);
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/restaurant/schedules]', err);
         return NextResponse.json({ error: 'Failed to fetch schedules' }, { status: 500 });
     }
@@ -25,7 +27,7 @@ export async function POST(request: Request) {
         const { day_of_week, open_time, close_time, is_active, slot_duration_minutes } = body;
 
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('restaurant');
 
         // Use the day number as the shift_name fallback
         const DAY_NAMES: Record<number, string> = {
@@ -50,6 +52,7 @@ export async function POST(request: Request) {
         if (error) throw error;
         return NextResponse.json(data, { status: 201 });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[POST /api/restaurant/schedules]', err);
         return NextResponse.json({ error: 'Failed to create schedule' }, { status: 500 });
     }

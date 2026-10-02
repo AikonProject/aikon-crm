@@ -25,10 +25,12 @@ import { UserButton, useUser } from '@clerk/nextjs';
 import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
 import { useSidebar } from './sidebar-provider';
-import { createClient } from '@/lib/supabase/client';
+import { useSupabaseClient } from '@/lib/supabase/client';
 import { useTenantId } from '@/components/providers/tenant-provider';
+import { moduleForPath } from '@/lib/plan-modules';
+import type { PlanModule } from '@/lib/types/database';
 
-type MenuItem = { label: string; href: string; icon: React.ElementType; badge?: boolean; restaurant?: boolean };
+type MenuItem = { label: string; href: string; icon: React.ElementType; badge?: boolean; superAdminOnly?: boolean };
 
 const menuItems: MenuItem[] = [
     { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -39,31 +41,35 @@ const menuItems: MenuItem[] = [
     { label: 'Ventas', href: '/orders', icon: ShoppingCart },
     { label: 'Plantillas', href: '/settings/templates', icon: FileText },
     { label: 'Campañas', href: '/campaigns', icon: Megaphone },
-    { label: 'Reservas', href: '/reservations', icon: CalendarCheck, restaurant: true },
+    { label: 'Reservas', href: '/reservations', icon: CalendarCheck },
     { label: 'Reportes', href: '/reports', icon: BarChart3 },
     { label: 'Configuración', href: '/settings', icon: Settings },
-    { label: 'Restaurante', href: '/settings/restaurant', icon: UtensilsCrossed, restaurant: true },
-    { label: 'Admin', href: '/admin', icon: ShieldCheck },
+    { label: 'Restaurante', href: '/settings/restaurant', icon: UtensilsCrossed },
+    { label: 'Admin', href: '/admin', icon: ShieldCheck, superAdminOnly: true },
 ];
 
 export function Sidebar({
-    plan = 'professional',
-    businessType = 'general',
+    planName,
+    modules,
+    isSuperAdmin = false,
 }: {
-    plan?: 'starter' | 'professional' | 'enterprise';
-    businessType?: 'general' | 'restaurant';
+    planName: string;
+    modules: PlanModule[];
+    isSuperAdmin?: boolean;
 }) {
     const pathname = usePathname();
     const { collapsed, setCollapsed } = useSidebar();
 
-    const isRestaurant = businessType === 'restaurant';
-
-    const visibleItems = menuItems.filter((item) => !item.restaurant || isRestaurant);
+    const visibleItems = menuItems.filter((item) => {
+        if (item.superAdminOnly) return isSuperAdmin;
+        const required = moduleForPath(item.href);
+        return !required || modules.includes(required);
+    });
     const [mobileOpen, setMobileOpen] = useState(false);
     const { user } = useUser();
     const tenantId = useTenantId();
     const [unreadCount, setUnreadCount] = useState(0);
-    const supabase = createClient();
+    const supabase = useSupabaseClient();
 
     useEffect(() => {
         async function fetchUnread() {
@@ -163,12 +169,8 @@ export function Sidebar({
 
             {/* Plan badge */}
             <div className={`mx-3 mb-3 px-3 py-1.5 rounded-lg text-center ${!collapsed ? 'block' : 'hidden'}`}>
-                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                    plan === 'enterprise' ? 'bg-amber-100 text-amber-700' :
-                    plan === 'professional' ? 'bg-[#EEF0FF] text-[#818CF8]' :
-                    'bg-[#F3F4F6] text-[#6B7280]'
-                }`}>
-                    {plan}
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#EEF0FF] text-[#818CF8]">
+                    {planName}
                 </span>
             </div>
 

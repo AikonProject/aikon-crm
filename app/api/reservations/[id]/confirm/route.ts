@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 type ReservationRow = {
     id: string;
@@ -20,7 +21,7 @@ export async function POST(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('reservations');
 
         // 1. Fetch reservation with contact — cast to avoid generated-type join mismatch
         const { data: rawReservation, error: resError } = await supabase
@@ -79,12 +80,14 @@ export async function POST(
                 }),
             });
         } catch (webhookErr) {
+            if (webhookErr instanceof TenantError) return NextResponse.json({ error: webhookErr.message }, { status: webhookErr.status });
             console.error('[confirm webhook]', webhookErr);
             return NextResponse.json({ success: false, sent: false, error: 'Webhook delivery failed' }, { status: 502 });
         }
 
         return NextResponse.json({ success: true, sent: true });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[POST /api/reservations/[id]/confirm]', err);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }

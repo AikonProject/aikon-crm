@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 import type { ConversationStatus } from '@/lib/types/database';
 
 export async function GET(request: NextRequest) {
     try {
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('chat');
         const { searchParams } = new URL(request.url);
         const status = searchParams.get('status');
 
@@ -36,6 +37,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json(data ?? []);
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('Unexpected error in GET /api/conversations:', err);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
@@ -44,7 +46,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
     try {
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('chat');
         const body = await request.json();
 
         const { data, error } = await supabase
@@ -65,6 +67,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json(data, { status: 201 });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('Unexpected error in POST /api/conversations:', err);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }

@@ -12,12 +12,7 @@ type TenantWithDetails = Tenant & {
     n8n_configured: boolean;
 };
 
-const PLAN_BADGE: Record<string, string> = {
-    free: 'bg-[#F3F4F6] text-[#6B7280]',
-    starter: 'bg-[#EFF6FF] text-[#3B82F6]',
-    pro: 'bg-[#EEF0FF] text-[#818CF8]',
-    enterprise: 'bg-[#FEF9C3] text-[#854D0E]',
-};
+type PlanOption = { id: string; slug: string; name: string; price_monthly: number };
 
 function StatCard({ label, value, icon: Icon, color }: { label: string; value: number | string; icon: React.ElementType; color: string }) {
     return (
@@ -42,10 +37,11 @@ function ConfigIndicator({ label, configured }: { label: string; configured: boo
     );
 }
 
-function TenantRow({ tenant, onUpdate }: { tenant: TenantWithDetails; onUpdate: (t: TenantWithDetails) => void }) {
+function TenantRow({ tenant, plans, onUpdate }: { tenant: TenantWithDetails; plans: PlanOption[]; onUpdate: (t: TenantWithDetails) => void }) {
     const [expanded, setExpanded] = useState(false);
     const [editing, setEditing] = useState(false);
-    const [plan, setPlan] = useState(tenant.plan);
+    const [planId, setPlanId] = useState(tenant.plan_id);
+    const planName = plans.find((p) => p.id === tenant.plan_id)?.name ?? '—';
     const [isActive, setIsActive] = useState(tenant.is_active);
     const [saving, setSaving] = useState(false);
 
@@ -54,11 +50,11 @@ function TenantRow({ tenant, onUpdate }: { tenant: TenantWithDetails; onUpdate: 
         const res = await fetch('/api/admin/tenants', {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: tenant.id, plan, is_active: isActive }),
+            body: JSON.stringify({ id: tenant.id, plan_id: planId, is_active: isActive }),
         });
         const data = await res.json();
         if (data.tenant) {
-            onUpdate({ ...tenant, plan: data.tenant.plan, is_active: data.tenant.is_active });
+            onUpdate({ ...tenant, plan_id: data.tenant.plan_id, is_active: data.tenant.is_active });
         }
         setSaving(false);
         setEditing(false);
@@ -76,13 +72,13 @@ function TenantRow({ tenant, onUpdate }: { tenant: TenantWithDetails; onUpdate: 
                 <td className="px-5 py-3.5 text-[13px] text-[#6B7280]">/{tenant.slug}</td>
                 <td className="px-5 py-3.5">
                     {editing ? (
-                        <select value={plan} onChange={(e) => setPlan(e.target.value as Tenant['plan'])}
+                        <select value={planId} onChange={(e) => setPlanId(e.target.value)}
                             className="text-[12px] border border-[#E8E8EC] rounded-lg px-2 py-1 focus:outline-none focus:border-[#818CF8]">
-                            {['free', 'starter', 'pro', 'enterprise'].map((p) => <option key={p} value={p}>{p}</option>)}
+                            {plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                     ) : (
-                        <span className={`text-[12px] font-medium px-2.5 py-1 rounded-full ${PLAN_BADGE[tenant.plan] ?? PLAN_BADGE.free}`}>
-                            {plan}
+                        <span className="text-[12px] font-medium px-2.5 py-1 rounded-full bg-[#EEF0FF] text-[#818CF8]">
+                            {planName}
                         </span>
                     )}
                 </td>
@@ -110,7 +106,7 @@ function TenantRow({ tenant, onUpdate }: { tenant: TenantWithDetails; onUpdate: 
                                 <Button onClick={handleSave} disabled={saving} className="text-[12px] py-1 px-3 rounded-lg bg-[#818CF8] hover:bg-[#6366F1] text-white gap-1">
                                     {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Guardar
                                 </Button>
-                                <Button variant="outline" onClick={() => { setEditing(false); setPlan(tenant.plan); setIsActive(tenant.is_active); }} className="text-[12px] py-1 px-3 rounded-lg border-[#E8E8EC]">
+                                <Button variant="outline" onClick={() => { setEditing(false); setPlanId(tenant.plan_id); setIsActive(tenant.is_active); }} className="text-[12px] py-1 px-3 rounded-lg border-[#E8E8EC]">
                                     Cancelar
                                 </Button>
                             </>
@@ -160,6 +156,7 @@ function TenantRow({ tenant, onUpdate }: { tenant: TenantWithDetails; onUpdate: 
 
 export default function SuperAdminPage() {
     const [tenants, setTenants] = useState<TenantWithDetails[]>([]);
+    const [plans, setPlans] = useState<PlanOption[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Global n8n config form
@@ -170,7 +167,7 @@ export default function SuperAdminPage() {
     useEffect(() => {
         fetch('/api/admin/tenants')
             .then((r) => r.json())
-            .then((d) => setTenants(d.tenants ?? []))
+            .then((d) => { setTenants(d.tenants ?? []); setPlans(d.plans ?? []); })
             .finally(() => setLoading(false));
         setGlobalN8nUrl(process.env.NEXT_PUBLIC_N8N_URL ?? '');
     }, []);
@@ -231,7 +228,7 @@ export default function SuperAdminPage() {
                                     </tr>
                                 ) : (
                                     tenants.map((t) => (
-                                        <TenantRow key={t.id} tenant={t} onUpdate={handleUpdate} />
+                                        <TenantRow key={t.id} tenant={t} plans={plans} onUpdate={handleUpdate} />
                                     ))
                                 )}
                             </tbody>

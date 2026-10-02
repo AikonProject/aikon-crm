@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 // ---------------------------------------------------------------------------
 // GET /api/products/[id]  — single product by id
@@ -12,7 +13,7 @@ export async function GET(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('orders');
 
         const { data, error } = await supabase
             .from('products')
@@ -34,6 +35,7 @@ export async function GET(
 
         return NextResponse.json({ product: data });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/products/[id]]', err);
         return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
     }
@@ -62,7 +64,7 @@ export async function PATCH(
         }
 
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('orders');
 
         const { data, error } = await supabase
             .from('products')
@@ -86,6 +88,7 @@ export async function PATCH(
 
         return NextResponse.json({ product: data });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[PATCH /api/products/[id]] unexpected', err);
         return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
     }
@@ -101,7 +104,7 @@ export async function DELETE(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('orders');
 
         const { data, error } = await supabase
             .from('products')
@@ -118,6 +121,7 @@ export async function DELETE(
 
         return NextResponse.json({ product: data });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[DELETE /api/products/[id]] unexpected', err);
         return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
     }

@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 export async function GET() {
     try {
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('funnel');
         const { data, error } = await supabase
             .from('funnel_stages')
             .select('*')
@@ -15,6 +16,7 @@ export async function GET() {
         if (error) throw error;
         return NextResponse.json(data ?? []);
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/funnel-stages]', err);
         return NextResponse.json({ error: 'Failed to fetch funnel stages' }, { status: 500 });
     }
@@ -30,7 +32,7 @@ export async function POST(request: Request) {
         }
 
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('funnel');
 
         // Determine position if not provided
         let stagePosition = position;
@@ -66,6 +68,7 @@ export async function POST(request: Request) {
         if (error) throw error;
         return NextResponse.json(data, { status: 201 });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[POST /api/funnel-stages]', err);
         return NextResponse.json({ error: 'Failed to create funnel stage' }, { status: 500 });
     }

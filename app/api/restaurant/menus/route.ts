@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 export async function GET() {
     try {
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('restaurant');
         const { data, error } = await supabase
             .from('restaurant_menus')
             .select('*')
@@ -14,6 +15,7 @@ export async function GET() {
         if (error) throw error;
         return NextResponse.json(data ?? []);
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/restaurant/menus]', err);
         return NextResponse.json({ error: 'Failed to fetch menus' }, { status: 500 });
     }
@@ -27,7 +29,7 @@ export async function POST(request: Request) {
         if (!name) return NextResponse.json({ error: 'name is required' }, { status: 400 });
 
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('restaurant');
 
         const { data, error } = await supabase
             .from('restaurant_menus')
@@ -44,6 +46,7 @@ export async function POST(request: Request) {
         if (error) throw error;
         return NextResponse.json(data, { status: 201 });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[POST /api/restaurant/menus]', err);
         return NextResponse.json({ error: 'Failed to create menu' }, { status: 500 });
     }

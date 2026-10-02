@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 const PAGE_SIZE = 20;
 
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
         const activeParam = searchParams.get('active');
 
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('orders');
 
         let query = supabase
             .from('products')
@@ -63,6 +64,7 @@ export async function GET(req: NextRequest) {
             totalPages: Math.ceil((count ?? 0) / PAGE_SIZE),
         });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/products] unexpected', err);
         return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
     }
@@ -103,7 +105,7 @@ export async function POST(req: NextRequest) {
         }
 
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('orders');
 
         const { data, error } = await supabase
             .from('products')
@@ -135,6 +137,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ product: data }, { status: 201 });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[POST /api/products] unexpected', err);
         return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
     }

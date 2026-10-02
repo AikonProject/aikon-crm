@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { getServerTenantId, TenantError } from '@/lib/tenant';
 
 export async function GET() {
     try {
@@ -16,6 +16,7 @@ export async function GET() {
 
         return NextResponse.json({ tags: data ?? [] });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/settings/tags]', err);
         return NextResponse.json({ error: 'Error fetching tags' }, { status: 500 });
     }
@@ -40,6 +41,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ tag: data }, { status: 201 });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[POST /api/settings/tags]', err);
         return NextResponse.json({ error: 'Error creating tag' }, { status: 500 });
     }

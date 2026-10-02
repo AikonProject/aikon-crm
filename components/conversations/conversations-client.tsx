@@ -25,7 +25,7 @@ import {
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { getInitials } from '@/lib/utils/format';
-import { createClient } from '@/lib/supabase/client';
+import { useSupabaseClient } from '@/lib/supabase/client';
 import { useSidebar } from '@/components/layout/sidebar-provider';
 import { useTenantId } from '@/components/providers/tenant-provider';
 import { ConversationListItem } from '@/components/conversations/conversation-list-item';
@@ -92,7 +92,7 @@ interface ConversationsClientProps {
 }
 
 export default function ConversationsClient({ initialConversations }: ConversationsClientProps) {
-    const supabase = createClient();
+    const supabase = useSupabaseClient();
     const { collapsed } = useSidebar();
     const tenantId = useTenantId();
 
@@ -269,9 +269,8 @@ export default function ConversationsClient({ initialConversations }: Conversati
     // ── Fetch templates and canned responses ───────────────────────────────
     useEffect(() => {
         async function fetchMeta() {
-            const supabaseClient = createClient();
             const [tRes, cRes] = await Promise.all([
-                supabaseClient.from('message_templates').select('*').eq('tenant_id', tenantId).eq('is_active', true).limit(20),
+                supabase.from('message_templates').select('*').eq('tenant_id', tenantId).eq('is_active', true).limit(20),
                 fetch('/api/settings/canned-responses').then((r) => r.json()),
             ]);
             if (tRes.data) setTemplates(tRes.data as MessageTemplate[]);
@@ -279,7 +278,7 @@ export default function ConversationsClient({ initialConversations }: Conversati
             if (Array.isArray(cannedData)) setCannedResponses(cannedData as CannedResponse[]);
         }
         fetchMeta();
-    }, []);
+    }, [supabase, tenantId]);
 
     // ── Auto-resize textarea ───────────────────────────────────────────────
     useEffect(() => {
@@ -318,14 +317,13 @@ export default function ConversationsClient({ initialConversations }: Conversati
 
         setSending(true);
         try {
-            const supabaseClient = createClient();
-            const { error: uploadError } = await supabaseClient.storage
+            const { error: uploadError } = await supabase.storage
                 .from('chat-media')
                 .upload(path, file, { upsert: true });
 
             if (uploadError) throw uploadError;
 
-            const { data: { publicUrl } } = supabaseClient.storage.from('chat-media').getPublicUrl(path);
+            const { data: { publicUrl } } = supabase.storage.from('chat-media').getPublicUrl(path);
 
             const res = await fetch(`/api/conversations/${activeConvId}/messages`, {
                 method: 'POST',

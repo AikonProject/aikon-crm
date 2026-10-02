@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { getServerTenantId, TenantError } from '@/lib/tenant';
+import { getTenantConfig } from '@/lib/tenant-plan';
 
 export async function GET() {
     try {
@@ -14,8 +15,13 @@ export async function GET() {
 
         if (error) throw error;
 
-        return NextResponse.json({ tenant: data });
+        const config = await getTenantConfig(TENANT_ID);
+        return NextResponse.json({
+            tenant: data,
+            plan: { slug: config.planSlug, name: config.planName, modules: config.modules },
+        });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/settings/general]', err);
         return NextResponse.json({ error: 'Error fetching tenant' }, { status: 500 });
     }
@@ -64,6 +70,7 @@ export async function PATCH(req: NextRequest) {
 
         return NextResponse.json({ tenant: data });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[PATCH /api/settings/general]', err);
         return NextResponse.json({ error: 'Error updating tenant' }, { status: 500 });
     }

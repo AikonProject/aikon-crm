@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 export async function PATCH(
     request: Request,
@@ -23,7 +24,7 @@ export async function PATCH(
         }
 
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('reservations');
         const { data, error } = await supabase
             .from('reservations')
             .update(update)
@@ -97,6 +98,7 @@ export async function PATCH(
                         }),
                     });
                 } catch (webhookErr) {
+                    if (webhookErr instanceof TenantError) return NextResponse.json({ error: webhookErr.message }, { status: webhookErr.status });
                     console.error(`[n8n webhook on status=${newStatus}]`, webhookErr);
                 }
             })();
@@ -105,6 +107,7 @@ export async function PATCH(
 
         return NextResponse.json(data);
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[PATCH /api/reservations/[id]]', err);
         return NextResponse.json({ error: 'Failed to update reservation' }, { status: 500 });
     }

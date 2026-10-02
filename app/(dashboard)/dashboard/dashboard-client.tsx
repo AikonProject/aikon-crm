@@ -1,5 +1,6 @@
 'use client';
 
+import type { PlanModule } from '@/lib/types/database';
 import { useEffect, useState } from 'react';
 import { Users, MessageCircle, ShoppingCart, TrendingUp, CalendarCheck, Plus, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -74,14 +75,8 @@ const ORDER_STATUS_COLORS: Record<string, string> = {
     cancelled: 'bg-red-50 text-red-600', refunded: 'bg-gray-100 text-gray-500',
 };
 
-export default function DashboardClient({
-    plan = 'professional',
-    businessType = 'general',
-}: {
-    plan?: 'starter' | 'professional' | 'enterprise';
-    businessType?: 'general' | 'restaurant';
-}) {
-    const isRestaurant = businessType === 'restaurant';
+export default function DashboardClient({ modules }: { modules: PlanModule[] }) {
+    const isRestaurant = modules.includes('reservations');
     const [stats, setStats] = useState<DashStats>({ total_contacts: 0, active_conversations: 0, orders_today: 0, revenue_month: 0, reservations_today: 0 });
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [recentOrders, setRecentOrders] = useState<OrderRow[]>([]);

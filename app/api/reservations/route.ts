@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 import type { ReservationStatus } from '@/lib/types/database';
 
 export async function GET(request: Request) {
@@ -11,7 +12,7 @@ export async function GET(request: Request) {
         const tableId = searchParams.get('table_id');
 
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('reservations');
         let query = supabase
             .from('reservations')
             .select(
@@ -32,6 +33,7 @@ export async function GET(request: Request) {
         if (error) throw error;
         return NextResponse.json(data ?? []);
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/reservations]', err);
         return NextResponse.json({ error: 'Failed to fetch reservations' }, { status: 500 });
     }
@@ -64,7 +66,7 @@ export async function POST(request: Request) {
         }
 
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('reservations');
         const { data, error } = await supabase
             .from('reservations')
             .insert({
@@ -123,11 +125,13 @@ export async function POST(request: Request) {
                 });
             }
         } catch (webhookErr) {
+            if (webhookErr instanceof TenantError) return NextResponse.json({ error: webhookErr.message }, { status: webhookErr.status });
             console.warn('[POST /api/reservations] webhook failed (non-fatal):', webhookErr);
         }
 
         return NextResponse.json(data, { status: 201 });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[POST /api/reservations]', err);
         return NextResponse.json({ error: 'Failed to create reservation' }, { status: 500 });
     }

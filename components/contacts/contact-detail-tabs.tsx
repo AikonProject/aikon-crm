@@ -24,7 +24,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { FunnelStageBadge } from '@/components/contacts/funnel-stage-badge';
 import { formatSmartDate, formatDate } from '@/lib/utils/format';
-import { createClient } from '@/lib/supabase/client';
+import { useSupabaseClient } from '@/lib/supabase/client';
 import { useTenantId } from '@/components/providers/tenant-provider';
 import { MessageBubble } from '@/components/conversations/message-bubble';
 import type {
@@ -621,7 +621,7 @@ function DateSeparator({ date }: { date: string }) {
 }
 
 function ConversationsTab({ conversations }: { conversations: ConversationRow[] }) {
-    const supabase = createClient();
+    const supabase = useSupabaseClient();
     const tenantId = useTenantId();
     const [selectedId, setSelectedId] = useState<string>(conversations[0]?.id ?? '');
     const [messages, setMessages] = useState<Message[]>([]);

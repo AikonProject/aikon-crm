@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 // ---------------------------------------------------------------------------
 // PATCH /api/products/categories/[id]  — update category fields
@@ -29,7 +30,7 @@ export async function PATCH(
         }
 
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('orders');
 
         const { data, error } = await supabase
             .from('product_categories')
@@ -46,6 +47,7 @@ export async function PATCH(
 
         return NextResponse.json({ category: data });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[PATCH /api/products/categories/[id]] unexpected', err);
         return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
     }
@@ -61,7 +63,7 @@ export async function DELETE(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('orders');
 
         const { error } = await supabase
             .from('product_categories')
@@ -76,6 +78,7 @@ export async function DELETE(
 
         return NextResponse.json({ success: true });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[DELETE /api/products/categories/[id]] unexpected', err);
         return NextResponse.json({ error: 'Error interno del servidor.' }, { status: 500 });
     }

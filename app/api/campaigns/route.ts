@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 import type { Campaign } from '@/lib/types/database';
 
 export async function GET() {
     try {
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('campaigns');
         const { data: rawData, error } = await supabase
             .from('campaigns')
             .select('*')
@@ -36,6 +37,7 @@ export async function GET() {
 
         return NextResponse.json({ campaigns: enriched });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/campaigns]', err);
         return NextResponse.json({ error: 'Error fetching campaigns' }, { status: 500 });
     }
@@ -57,7 +59,7 @@ export async function POST(req: NextRequest) {
         }
 
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('campaigns');
 
         // Build contact query with optional segment filters
         let query = supabase
@@ -122,6 +124,7 @@ export async function POST(req: NextRequest) {
             { status: 201 }
         );
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[POST /api/campaigns]', err);
         return NextResponse.json({ error: 'Error creating campaign' }, { status: 500 });
     }

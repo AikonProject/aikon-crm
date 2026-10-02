@@ -1,4 +1,4 @@
-import { auth, clerkClient } from '@clerk/nextjs/server';
+import { auth, clerkClient, currentUser } from '@clerk/nextjs/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export class TenantError extends Error {
@@ -71,48 +71,67 @@ async function seedTenantData(supabase: ReturnType<typeof createAdminClient>, te
 }
 
 /**
- * Auto-provisions a new tenant in Supabase for a Clerk organization.
- * Creates the tenant record and seeds it with sample data.
+ * Returns the tenant id for a Clerk organization, creating and seeding the
+ * tenant if it doesn't exist yet. Idempotent: safe to call from both the
+ * Clerk webhook and the first request of a new organization.
  */
-async function provisionTenant(orgId: string): Promise<string> {
+export async function provisionTenant(orgId: string): Promise<string> {
+    const supabase = createAdminClient();
+
+    const { data: existingTenant } = await supabase
+        .from('tenants')
+        .select('id')
+        .eq('clerk_org_id', orgId)
+        .maybeSingle();
+    if (existingTenant) return existingTenant.id;
+
     const clerk = await clerkClient();
     const org = await clerk.organizations.getOrganization({ organizationId: orgId });
 
     const name = org.name || 'Mi Negocio';
-    let slug = slugify(name);
-
-    const supabase = createAdminClient();
+    let slug = org.slug ? slugify(org.slug) : slugify(name);
 
     // Ensure slug is unique — append random suffix if taken
-    const { data: existing } = await supabase
+    const { data: slugTaken } = await supabase
         .from('tenants')
         .select('id')
         .eq('slug', slug)
         .maybeSingle();
 
-    if (existing) {
+    if (slugTaken) {
         slug = `${slug}-${Math.random().toString(36).slice(2, 7)}`;
     }
 
+    // plan_id defaults to the crm_basic plan (column default in the DB)
     const { data, error } = await supabase
         .from('tenants')
         .insert({
             clerk_org_id: orgId,
             name,
             slug,
+            logo_url: org.imageUrl ?? null,
         })
         .select('id')
         .single();
 
     if (error || !data) {
+        // Another request may have created it concurrently (unique clerk_org_id)
+        const { data: raced } = await supabase
+            .from('tenants')
+            .select('id')
+            .eq('clerk_org_id', orgId)
+            .maybeSingle();
+        if (raced) return raced.id;
+
         console.error('[provisionTenant] Failed to create tenant:', error);
-        throw new TenantError('Failed to provision tenant for new organization.');
+        throw new TenantError('Failed to provision tenant for new organization.', 500);
     }
 
-    // Seed sample data in the background — don't block the user
-    seedTenantData(supabase, data.id).catch((err) => {
+    try {
+        await seedTenantData(supabase, data.id);
+    } catch (err) {
         console.error('[provisionTenant] Failed to seed data:', err);
-    });
+    }
 
     console.log(`[provisionTenant] Created tenant ${data.id} for org ${orgId} (${name})`);
     return data.id;
@@ -122,7 +141,7 @@ async function provisionTenant(orgId: string): Promise<string> {
  * Returns the tenant UUID for the currently authenticated Clerk user.
  * Looks up tenants.clerk_org_id matching the active Clerk organization.
  * If no tenant exists, auto-provisions one from the Clerk org metadata.
- * Throws TenantError if no org is found.
+ * Throws TenantError if no org is found or the tenant is deactivated.
  */
 export async function getServerTenantId(): Promise<string> {
     const { orgId } = await auth();
@@ -133,12 +152,12 @@ export async function getServerTenantId(): Promise<string> {
     const supabase = createAdminClient();
     const { data } = await supabase
         .from('tenants')
-        .select('id')
+        .select('id, is_active')
         .eq('clerk_org_id', orgId)
-        .eq('is_active', true)
-        .single();
+        .maybeSingle();
 
     if (data) {
+        if (!data.is_active) throw new TenantError('This organization is deactivated.', 403);
         return data.id;
     }
 
@@ -167,13 +186,71 @@ export async function getServerAuth() {
 }
 
 /**
- * Checks if the current user is a super_admin via Clerk publicMetadata.
- * Throws TenantError(403) if not.
+ * True if the current Clerk user is a super admin: either flagged in Clerk
+ * publicMetadata.role or listed (active) in the super_admins table, which is
+ * also what the RLS helper is_super_admin() checks.
+ */
+export async function isSuperAdmin(): Promise<boolean> {
+    const { userId, sessionClaims } = await auth();
+    if (!userId) return false;
+    const role = (sessionClaims?.publicMetadata as { role?: string } | undefined)?.role;
+    if (role === 'super_admin') return true;
+
+    const supabase = createAdminClient();
+    const { data } = await supabase
+        .from('super_admins')
+        .select('id')
+        .eq('clerk_user_id', userId)
+        .eq('is_active', true)
+        .maybeSingle();
+    return !!data;
+}
+
+/**
+ * Throws TenantError(403) if the current user is not a super admin.
  */
 export async function requireSuperAdmin(): Promise<void> {
-    const { sessionClaims } = await auth();
-    const role = (sessionClaims?.publicMetadata as { role?: string } | undefined)?.role;
-    if (role !== 'super_admin') {
+    if (!(await isSuperAdmin())) {
         throw new TenantError('Forbidden: super_admin role required', 403);
     }
+}
+
+/** Maps a Clerk organization role to a CRM role. */
+export function mapClerkOrgRole(orgRole: string | null | undefined): 'admin' | 'agent' {
+    return orgRole === 'org:admin' || orgRole === 'admin' ? 'admin' : 'agent';
+}
+
+/**
+ * Ensures the current Clerk user has a users row for this tenant, so the RLS
+ * helper has_role() works even if the Clerk membership webhook was missed.
+ * Existing rows are left untouched (their CRM role may have been changed).
+ */
+export async function ensureTenantMembership(tenantId: string): Promise<void> {
+    const { userId, orgRole } = await auth();
+    if (!userId) return;
+
+    const supabase = createAdminClient();
+    const { data: existing } = await supabase
+        .from('users')
+        .select('id')
+        .eq('clerk_user_id', userId)
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+    if (existing) return;
+
+    const user = await currentUser();
+    const email = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses?.[0]?.emailAddress ?? '';
+    const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || email || userId;
+
+    const { error } = await supabase.from('users').upsert({
+        clerk_user_id: userId,
+        tenant_id: tenantId,
+        email,
+        full_name: fullName,
+        avatar_url: user?.imageUrl ?? null,
+        role: mapClerkOrgRole(orgRole),
+        is_active: true,
+    }, { onConflict: 'clerk_user_id,tenant_id', ignoreDuplicates: true });
+
+    if (error) console.error('[ensureTenantMembership] Failed to create user row:', error);
 }

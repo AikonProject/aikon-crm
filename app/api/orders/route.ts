@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 const PAGE_SIZE = 20;
 
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
         const contactId  = searchParams.get('contact_id') ?? '';
 
         const supabase  = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('orders');
 
         let query = supabase
             .from('orders')
@@ -84,6 +85,7 @@ export async function GET(req: NextRequest) {
             totalPages: Math.ceil((count ?? 0) / PAGE_SIZE),
         });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/orders] unexpected', err);
         return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
     }
@@ -143,7 +145,7 @@ export async function POST(req: NextRequest) {
         const total         = Math.max(0, subtotal - appliedDiscount);
 
         const supabase  = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('orders');
 
         // Insert the order
         const { data: order, error: orderErr } = await supabase
@@ -196,6 +198,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ order }, { status: 201 });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[POST /api/orders] unexpected', err);
         return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
     }

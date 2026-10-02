@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 // ---------------------------------------------------------------------------
 // GET /api/orders/[id]  — single order with contact, items, and creator
@@ -12,7 +13,7 @@ export async function GET(
     try {
         const { id } = await params;
         const supabase  = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('orders');
 
         const { data, error } = await supabase
             .from('orders')
@@ -35,6 +36,7 @@ export async function GET(
 
         return NextResponse.json({ order: data });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/orders/[id]] unexpected', err);
         return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
     }
@@ -59,7 +61,7 @@ export async function PATCH(
         }
 
         const supabase  = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('orders');
 
         // If discount is being updated, recalculate total from current subtotal
         if (body.discount !== undefined) {
@@ -94,6 +96,7 @@ export async function PATCH(
 
         return NextResponse.json({ order: data });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[PATCH /api/orders/[id]] unexpected', err);
         return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
     }

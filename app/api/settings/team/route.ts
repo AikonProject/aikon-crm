@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { getServerTenantId, TenantError } from '@/lib/tenant';
 
 export async function GET() {
     try {
@@ -16,6 +16,7 @@ export async function GET() {
 
         return NextResponse.json({ users: data ?? [] });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/settings/team]', err);
         return NextResponse.json({ error: 'Error fetching team' }, { status: 500 });
     }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { getServerTenantId, TenantError } from '@/lib/tenant';
 
 // ---------------------------------------------------------------------------
 // GET /api/settings/ai — fetch AI config for tenant
@@ -23,6 +23,7 @@ export async function GET() {
 
         return NextResponse.json({ config: data?.ai_config ?? {} });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/settings/ai] unexpected', err);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
@@ -59,6 +60,7 @@ export async function PATCH(req: NextRequest) {
 
         return NextResponse.json({ config: newConfig });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[PATCH /api/settings/ai] unexpected', err);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }

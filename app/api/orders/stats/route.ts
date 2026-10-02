@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 const CANCELLED_STATUSES = ['cancelled', 'refunded'];
 
@@ -23,7 +24,7 @@ type OrderStatus = (typeof ALL_STATUSES)[number];
 export async function GET() {
     try {
         const supabase  = createAdminClient();
-        const TENANT_ID = await getServerTenantId();
+        const TENANT_ID = await requireModule('orders');
 
         // Today's date in ISO format (YYYY-MM-DD) at midnight UTC
         const todayStart = new Date();
@@ -112,6 +113,7 @@ export async function GET() {
             orders_by_status,
         });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/orders/stats] unexpected', err);
         return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
     }

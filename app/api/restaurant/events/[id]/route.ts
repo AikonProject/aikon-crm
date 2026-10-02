@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 export async function PATCH(
     request: Request,
@@ -16,7 +17,7 @@ export async function PATCH(
         }
 
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('restaurant');
         const { data, error } = await supabase
             .from('restaurant_events')
             .update(update)
@@ -28,6 +29,7 @@ export async function PATCH(
         if (error) throw error;
         return NextResponse.json(data);
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[PATCH /api/restaurant/events/[id]]', err);
         return NextResponse.json({ error: 'Failed to update event' }, { status: 500 });
     }
@@ -40,7 +42,7 @@ export async function DELETE(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('restaurant');
 
         // Nullify event_id on reservations
         await supabase
@@ -58,6 +60,7 @@ export async function DELETE(
         if (error) throw error;
         return NextResponse.json({ success: true });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[DELETE /api/restaurant/events/[id]]', err);
         return NextResponse.json({ error: 'Failed to delete event' }, { status: 500 });
     }

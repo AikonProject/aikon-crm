@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 export async function GET() {
     try {
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('chat');
         const { data, error } = await supabase
             .from('message_templates')
             .select('*')
@@ -16,6 +17,7 @@ export async function GET() {
 
         return NextResponse.json({ templates: data ?? [] });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/templates]', err);
         return NextResponse.json({ error: 'Error fetching templates' }, { status: 500 });
     }
@@ -31,7 +33,7 @@ export async function POST(req: NextRequest) {
         }
 
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('chat');
         const { data, error } = await supabase
             .from('message_templates')
             .insert({
@@ -50,6 +52,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ template: data }, { status: 201 });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[POST /api/templates]', err);
         return NextResponse.json({ error: 'Error creating template' }, { status: 500 });
     }

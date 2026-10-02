@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { getServerTenantId, TenantError } from '@/lib/tenant';
 import type { ContactSource } from '@/lib/types/database';
 
 export async function GET(req: NextRequest) {
@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
 
         return NextResponse.json({ count: count ?? 0 });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/contacts/count]', err);
         return NextResponse.json({ count: 0 });
     }

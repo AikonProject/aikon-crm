@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 export async function POST() {
     try {
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('chat');
 
         // Fetch tenant credentials for Meta/WhatsApp
         const { data: credentials } = await supabase
@@ -62,6 +63,7 @@ export async function POST() {
 
         return NextResponse.json({ synced: upserted, total: metaTemplates.length });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[POST /api/templates/sync]', err);
         return NextResponse.json({ error: 'Error syncing templates from Meta' }, { status: 500 });
     }

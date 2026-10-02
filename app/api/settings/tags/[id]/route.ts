@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { getServerTenantId, TenantError } from '@/lib/tenant';
 
 export async function PATCH(
     req: NextRequest,
@@ -24,6 +24,7 @@ export async function PATCH(
 
         return NextResponse.json({ tag: data });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[PATCH /api/settings/tags/[id]]', err);
         return NextResponse.json({ error: 'Error updating tag' }, { status: 500 });
     }
@@ -48,6 +49,7 @@ export async function DELETE(
 
         return NextResponse.json({ success: true });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[DELETE /api/settings/tags/[id]]', err);
         return NextResponse.json({ error: 'Error deleting tag' }, { status: 500 });
     }

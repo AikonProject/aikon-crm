@@ -2,6 +2,7 @@ import { Webhook } from 'svix';
 import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { mapClerkOrgRole, provisionTenant } from '@/lib/tenant';
 
 type ClerkUserEvent = {
     id: string;
@@ -22,7 +23,13 @@ type ClerkOrgEvent = {
 
 type ClerkMembershipEvent = {
     organization: { id: string };
-    public_user_data: { user_id: string };
+    public_user_data: {
+        user_id: string;
+        identifier?: string;
+        first_name?: string | null;
+        last_name?: string | null;
+        image_url?: string | null;
+    };
     role: string;
 };
 
@@ -80,23 +87,11 @@ export async function POST(req: Request) {
 
         // ── 5. Handle events ──────────────────────────────────────────────
 
-        // Organization created → create tenant
+        // Organization created → create (and seed) the tenant
         if (type === 'organization.created') {
-            const org  = data as ClerkOrgEvent;
-            const slug = org.slug
-                ?? org.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-            console.log('[Clerk Webhook] organization.created:', org.id, slug);
-
-            const { error } = await supabase.from('tenants').upsert({
-                clerk_org_id: org.id,
-                name:         org.name,
-                slug,
-                logo_url:     org.image_url ?? null,
-                plan:         'starter',
-                is_active:    true,
-            }, { onConflict: 'clerk_org_id' });
-
-            if (error) console.error('[Clerk Webhook] tenants upsert error:', error);
+            const org = data as ClerkOrgEvent;
+            console.log('[Clerk Webhook] organization.created:', org.id);
+            await provisionTenant(org.id);
         }
 
         // Organization updated → update tenant
@@ -111,12 +106,12 @@ export async function POST(req: Request) {
             if (error) console.error('[Clerk Webhook] tenants update error:', error);
         }
 
-        // User created / updated → upsert user
+        // User created / updated → refresh profile on every tenant membership
         if (type === 'user.created' || type === 'user.updated') {
             const user     = data as ClerkUserEvent;
             const email    = user.email_addresses[0]?.email_address ?? '';
             const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ') || email;
-            console.log('[Clerk Webhook]', type, ':', user.id, email);
+            console.log('[Clerk Webhook]', type, ':', user.id);
 
             // Super admin check
             if (user.public_metadata?.role === 'super_admin') {
@@ -129,72 +124,64 @@ export async function POST(req: Request) {
                 if (error) console.error('[Clerk Webhook] super_admins upsert error:', error);
             }
 
-            // Upsert user — tenant_id/role set later via membership events
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const { error } = await (supabase.from('users') as any).upsert({
-                clerk_user_id: user.id,
-                email,
-                full_name:  fullName,
-                avatar_url: user.image_url ?? null,
-                tenant_id:  null,
-                role:       'agent',
-                is_active:  true,
-            }, { onConflict: 'clerk_user_id' });
-
-            if (error) console.error('[Clerk Webhook] users upsert error:', error);
+            // Membership rows are created by organizationMembership events
+            const { error } = await supabase.from('users')
+                .update({ email, full_name: fullName, avatar_url: user.image_url ?? null })
+                .eq('clerk_user_id', user.id);
+            if (error) console.error('[Clerk Webhook] users update error:', error);
         }
 
-        // Membership created/updated → link user to tenant
+        // User deleted → deactivate every membership
+        if (type === 'user.deleted') {
+            const user = data as { id: string };
+            const { error } = await supabase.from('users')
+                .update({ is_active: false })
+                .eq('clerk_user_id', user.id);
+            if (error) console.error('[Clerk Webhook] users deactivate error:', error);
+        }
+
+        // Membership created/updated → link user to tenant (one row per tenant)
         if (type === 'organizationMembership.created' || type === 'organizationMembership.updated') {
             const membership  = data as ClerkMembershipEvent;
             const clerkOrgId  = membership.organization.id;
-            const clerkUserId = membership.public_user_data.user_id;
-            const role        = membership.role === 'org:admin' ? 'admin' : 'agent';
-            console.log('[Clerk Webhook]', type, ': org', clerkOrgId, 'user', clerkUserId, 'role', role);
+            const userData    = membership.public_user_data;
+            const role        = mapClerkOrgRole(membership.role);
+            console.log('[Clerk Webhook]', type, ': org', clerkOrgId, 'user', userData.user_id, 'role', role);
+
+            const tenantId = await provisionTenant(clerkOrgId);
+            const email    = userData.identifier ?? '';
+            const fullName = [userData.first_name, userData.last_name].filter(Boolean).join(' ') || email || userData.user_id;
+
+            const { error } = await supabase.from('users').upsert({
+                clerk_user_id: userData.user_id,
+                tenant_id:     tenantId,
+                email,
+                full_name:     fullName,
+                avatar_url:    userData.image_url ?? null,
+                role,
+                is_active:     true,
+            }, { onConflict: 'clerk_user_id,tenant_id' });
+            if (error) console.error('[Clerk Webhook] users upsert error:', error);
+        }
+
+        // Membership deleted → deactivate the user in that tenant only
+        if (type === 'organizationMembership.deleted') {
+            const membership = data as ClerkMembershipEvent;
+            console.log('[Clerk Webhook] organizationMembership.deleted:', membership.public_user_data.user_id);
 
             const { data: tenant } = await supabase
                 .from('tenants')
                 .select('id')
-                .eq('clerk_org_id', clerkOrgId)
-                .single();
+                .eq('clerk_org_id', membership.organization.id)
+                .maybeSingle();
 
-            if (!tenant) {
-                console.error('[Clerk Webhook] tenant not found for org:', clerkOrgId);
-            } else {
-                const { data: existingUser } = await supabase
-                    .from('users')
-                    .select('id')
-                    .eq('clerk_user_id', clerkUserId)
-                    .maybeSingle();
-
-                if (existingUser) {
-                    const { error } = await supabase.from('users')
-                        .update({ tenant_id: tenant.id, role, is_active: true })
-                        .eq('clerk_user_id', clerkUserId);
-                    if (error) console.error('[Clerk Webhook] users update error:', error);
-                } else {
-                    // Fallback: user.created was missed
-                    const { error } = await supabase.from('users').insert({
-                        clerk_user_id: clerkUserId,
-                        tenant_id:     tenant.id,
-                        email:         `${clerkUserId}@pending.clerk`,
-                        full_name:     clerkUserId,
-                        role,
-                        is_active:     true,
-                    });
-                    if (error) console.error('[Clerk Webhook] users insert fallback error:', error);
-                }
+            if (tenant) {
+                const { error } = await supabase.from('users')
+                    .update({ is_active: false })
+                    .eq('clerk_user_id', membership.public_user_data.user_id)
+                    .eq('tenant_id', tenant.id);
+                if (error) console.error('[Clerk Webhook] users deactivate error:', error);
             }
-        }
-
-        // Membership deleted → deactivate user
-        if (type === 'organizationMembership.deleted') {
-            const membership = data as ClerkMembershipEvent;
-            console.log('[Clerk Webhook] organizationMembership.deleted:', membership.public_user_data.user_id);
-            const { error } = await supabase.from('users')
-                .update({ is_active: false })
-                .eq('clerk_user_id', membership.public_user_data.user_id);
-            if (error) console.error('[Clerk Webhook] users deactivate error:', error);
         }
 
         console.log('[Clerk Webhook] done:', type);

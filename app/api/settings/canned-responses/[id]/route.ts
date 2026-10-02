@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { getServerTenantId, TenantError } from '@/lib/tenant';
 
 export async function DELETE(
     _req: NextRequest,
@@ -21,6 +21,7 @@ export async function DELETE(
 
         return NextResponse.json({ success: true });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[DELETE /api/settings/canned-responses/[id]]', err);
         return NextResponse.json({ error: 'Error deleting canned response' }, { status: 500 });
     }

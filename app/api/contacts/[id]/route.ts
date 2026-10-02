@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { getServerTenantId, TenantError } from '@/lib/tenant';
 
 export async function GET(
     _request: Request,
@@ -39,6 +39,7 @@ export async function GET(
             activity: toArr(activityRes.data),
         });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/contacts/[id]]', err);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
@@ -78,6 +79,7 @@ export async function PATCH(
         if (error) throw error;
         return NextResponse.json(data);
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[PATCH /api/contacts/[id]]', err);
         return NextResponse.json({ error: 'Failed to update contact' }, { status: 500 });
     }

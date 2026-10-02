@@ -53,7 +53,13 @@ export async function GET() {
             };
         });
 
-        return NextResponse.json({ tenants: enriched });
+        const { data: plans } = await supabase
+            .from('plans')
+            .select('id, slug, name, price_monthly')
+            .eq('is_active', true)
+            .order('price_monthly');
+
+        return NextResponse.json({ tenants: enriched, plans: plans ?? [] });
     } catch (err) {
         if (err instanceof TenantError) {
             return NextResponse.json({ error: err.message }, { status: err.status });
@@ -67,17 +73,24 @@ export async function PATCH(req: NextRequest) {
     try {
         await requireSuperAdmin();
         const body = await req.json();
-        const { id, ...updates } = body;
+        const { id } = body;
 
         if (!id) {
             return NextResponse.json({ error: 'id is required' }, { status: 400 });
         }
 
+        // Only these fields can be changed from the admin panel
+        const updates: { plan_id?: string; is_active?: boolean; name?: string; updated_at: string } = {
+            updated_at: new Date().toISOString(),
+        };
+        if (typeof body.plan_id === 'string') updates.plan_id = body.plan_id;
+        if (typeof body.is_active === 'boolean') updates.is_active = body.is_active;
+        if (typeof body.name === 'string' && body.name.trim()) updates.name = body.name.trim();
+
         const supabase = createAdminClient();
         const { data, error } = await supabase
             .from('tenants')
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            .update({ ...updates, updated_at: new Date().toISOString() } as any)
+            .update(updates)
             .eq('id', id)
             .select()
             .single();

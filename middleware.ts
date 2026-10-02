@@ -1,4 +1,5 @@
 import { clerkMiddleware } from '@clerk/nextjs/server';
+import { NextResponse } from 'next/server';
 
 // App routes that should NOT be treated as public booking slugs
 const APP_ROUTES = new Set([
@@ -18,6 +19,11 @@ export default clerkMiddleware(async (_auth, _request) => {
         PUBLIC_PREFIXES.some((p) => path.startsWith(p)) || isBookingSlug;
 
     if (!isPublic) await _auth.protect();
+
+    // Expose the pathname to server layouts (used for plan-module gating)
+    const headers = new Headers(_request.headers);
+    headers.set('x-pathname', path);
+    return NextResponse.next({ request: { headers } });
 });
 
 export const config = {

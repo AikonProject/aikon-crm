@@ -1,22 +1,10 @@
 import Link from 'next/link';
 import { ShieldCheck, LayoutDashboard } from 'lucide-react';
-import { auth, currentUser } from '@clerk/nextjs/server';
+import { isSuperAdmin } from '@/lib/tenant';
 import { redirect } from 'next/navigation';
 
 export default async function SuperAdminLayout({ children }: { children: React.ReactNode }) {
-    const { sessionClaims } = await auth();
-    const role = (sessionClaims?.publicMetadata as { role?: string } | undefined)?.role;
-
-    if (role !== 'super_admin') {
-        // Fallback: allow if email is in SUPER_ADMIN_EMAILS env var
-        const user = await currentUser();
-        const email = user?.emailAddresses?.[0]?.emailAddress ?? '';
-        const allowedEmails = (process.env.SUPER_ADMIN_EMAILS ?? '')
-            .split(',')
-            .map((e) => e.trim())
-            .filter(Boolean);
-        if (!allowedEmails.includes(email)) redirect('/dashboard');
-    }
+    if (!(await isSuperAdmin())) redirect('/dashboard');
 
     return (
         <div className="min-h-screen bg-[#F8F8FA] flex">

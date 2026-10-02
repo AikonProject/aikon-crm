@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { requireModule } from '@/lib/tenant-plan';
+import { TenantError } from '@/lib/tenant';
 
 export async function PATCH(
     request: Request,
@@ -12,7 +13,7 @@ export async function PATCH(
         const { name, color, position, is_won, is_lost } = body;
 
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('funnel');
         const update: Record<string, unknown> = {};
         if (name !== undefined) {
             update.name = name;
@@ -35,6 +36,7 @@ export async function PATCH(
         if (error) throw error;
         return NextResponse.json(data);
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[PATCH /api/funnel-stages/[id]]', err);
         return NextResponse.json({ error: 'Failed to update funnel stage' }, { status: 500 });
     }
@@ -47,7 +49,7 @@ export async function DELETE(
     try {
         const { id } = await params;
         const supabase = createAdminClient();
-    const TENANT_ID = await getServerTenantId();
+    const TENANT_ID = await requireModule('funnel');
 
         // Nullify contacts referencing this stage first
         await supabase
@@ -65,6 +67,7 @@ export async function DELETE(
         if (error) throw error;
         return NextResponse.json({ success: true });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[DELETE /api/funnel-stages/[id]]', err);
         return NextResponse.json({ error: 'Failed to delete funnel stage' }, { status: 500 });
     }

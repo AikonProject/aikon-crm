@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getServerTenantId } from '@/lib/tenant';
+import { getServerTenantId, TenantError } from '@/lib/tenant';
 
 const PAGE_SIZE = 12;
 
@@ -61,6 +61,7 @@ export async function GET(req: NextRequest) {
             totalPages: Math.ceil((count ?? 0) / PAGE_SIZE),
         });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[GET /api/contacts] unexpected', err);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
@@ -108,6 +109,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ contact: data }, { status: 201 });
     } catch (err) {
+        if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[POST /api/contacts] unexpected', err);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
