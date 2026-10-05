@@ -87,6 +87,11 @@ function isSameDay(a: string, b: string) {
     return new Date(a).toDateString() === new Date(b).toDateString();
 }
 
+/** Returns the value if it's an array, otherwise an empty array (e.g. an API error object). */
+function asArray<T>(value: unknown): T[] {
+    return Array.isArray(value) ? (value as T[]) : [];
+}
+
 interface ConversationsClientProps {
     initialConversations: Conversation[];
 }
@@ -135,7 +140,7 @@ export default function ConversationsClient({ initialConversations }: Conversati
             const res = await fetch(`/api/conversations${params}`);
             if (res.ok) {
                 const data = await res.json();
-                setConversations(data);
+                if (Array.isArray(data)) setConversations(data);
             }
         } finally {
             setLoadingConvs(false);
@@ -174,7 +179,7 @@ export default function ConversationsClient({ initialConversations }: Conversati
             const res = await fetch(`/api/conversations/${convId}/messages`);
             if (res.ok) {
                 const data = await res.json();
-                setMessages(data);
+                if (Array.isArray(data)) setMessages(data);
             }
         } finally {
             setLoadingMessages(false);
@@ -270,15 +275,16 @@ export default function ConversationsClient({ initialConversations }: Conversati
     useEffect(() => {
         async function fetchMeta() {
             const [tRes, cRes] = await Promise.all([
-                supabase.from('message_templates').select('*').eq('tenant_id', tenantId).eq('is_active', true).limit(20),
-                fetch('/api/settings/canned-responses').then((r) => r.json()),
+                fetch('/api/templates').then((r) => r.json()).catch(() => null),
+                fetch('/api/settings/canned-responses').then((r) => r.json()).catch(() => null),
             ]);
-            if (tRes.data) setTemplates(tRes.data as MessageTemplate[]);
+            const allTemplates: MessageTemplate[] = Array.isArray(tRes?.templates) ? tRes.templates : [];
+            setTemplates(allTemplates.filter((t) => t.status === 'APPROVED').slice(0, 20));
             const cannedData = cRes?.responses ?? cRes ?? [];
             if (Array.isArray(cannedData)) setCannedResponses(cannedData as CannedResponse[]);
         }
         fetchMeta();
-    }, [supabase, tenantId]);
+    }, []);
 
     // ── Auto-resize textarea ───────────────────────────────────────────────
     useEffect(() => {
@@ -991,9 +997,9 @@ function ContactPanel({
                     .map((ct: { tag: { id: string; name: string; color: string | null } | null }) => ct.tag)
                     .filter(Boolean) as Array<{ id: string; name: string; color: string | null }>;
                 setContactTags(rawTags);
-                setAllTags(tagsRes.tags ?? tagsRes ?? []);
-                setStages(stagesRes.stages ?? stagesRes ?? []);
-                setTeamMembers(teamRes.members ?? teamRes ?? []);
+                setAllTags(asArray(tagsRes?.tags ?? tagsRes));
+                setStages(asArray(stagesRes?.stages ?? stagesRes));
+                setTeamMembers(asArray(teamRes?.users));
             })
             .catch(() => {
                 setData({ tags: [], custom_fields: [], reservations: [], notes: [], activity: [] });

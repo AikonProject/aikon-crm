@@ -41,3 +41,9 @@ export function getInitials(name: string): string {
         .toUpperCase()
         .slice(0, 2);
 }
+
+/**
+ * Time zone used to render dates. Fixed so server-rendered HTML (UTC on Vercel)
+ * matches the browser and React doesn't throw hydration mismatches.
+ */
+export const APP_TIME_ZONE = 'America/Bogota';

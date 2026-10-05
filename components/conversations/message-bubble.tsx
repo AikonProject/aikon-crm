@@ -1,5 +1,6 @@
 'use client';
 
+import { APP_TIME_ZONE } from '@/lib/utils/format';
 import { FileText, Music, Video, Image as ImageIcon, Clock, Check, CheckCheck, X, Bot, User } from 'lucide-react';
 import type { Message, DeliveryStatus, SenderType } from '@/lib/types/database';
 
@@ -9,7 +10,7 @@ interface MessageBubbleProps {
 
 function formatTime(dateStr: string) {
     const d = new Date(dateStr);
-    return d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: APP_TIME_ZONE });
 }
 
 function DeliveryIcon({ status }: { status: DeliveryStatus | null }) {

@@ -14,10 +14,12 @@ export async function GET(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const run = <T>(q: any): Promise<{ data: T | null; error: unknown }> => q;
 
-        const [contactRes, tagsRes, fieldsRes, reservationsRes, notesRes, activityRes] = await Promise.all([
+        const [contactRes, tagsRes, fieldsRes, fieldDefsRes, reservationsRes, notesRes, activityRes] = await Promise.all([
             run(supabase.from('contacts').select('*, funnel_stage:funnel_stages(id, name, color)').eq('id', id).eq('tenant_id', TENANT_ID).single()),
             run(supabase.from('contact_tags').select('tag:tags(id, name, color)').eq('contact_id', id)),
-            run(supabase.from('contact_field_values').select('field_key, value, custom_field:custom_fields(label, field_type)').eq('contact_id', id)),
+            // No FK between contact_field_values and custom_fields (joined by field_key), so fetch both
+            run(supabase.from('contact_field_values').select('field_key, value').eq('contact_id', id).eq('tenant_id', TENANT_ID)),
+            run(supabase.from('custom_fields').select('field_key, label, field_type').eq('tenant_id', TENANT_ID)),
             run(supabase.from('reservations').select('id, reservation_date, reservation_time, party_size, status, occasion').eq('contact_id', id).eq('tenant_id', TENANT_ID).order('reservation_date', { ascending: false }).limit(5)),
             run(supabase.from('contact_notes').select('id, content, created_at, user:users(full_name)').eq('contact_id', id).eq('tenant_id', TENANT_ID).order('created_at', { ascending: false }).limit(5)),
             run(supabase.from('activity_log').select('id, activity_type, description, created_at, performed_by_name').eq('contact_id', id).eq('tenant_id', TENANT_ID).order('created_at', { ascending: false }).limit(10)),
@@ -30,10 +32,18 @@ export async function GET(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const toArr = (d: any) => Array.isArray(d) ? d : (d ?? []);
 
+        const fieldDefs = new Map<string, { label: string; field_type: string }>(
+            toArr(fieldDefsRes.data).map((f: { field_key: string; label: string; field_type: string }) =>
+                [f.field_key, { label: f.label, field_type: f.field_type }])
+        );
+        const customFields = toArr(fieldsRes.data)
+            .filter((f: { value: string | null }) => f.value !== null && f.value !== '')
+            .map((f: { field_key: string; value: string }) => ({ ...f, custom_field: fieldDefs.get(f.field_key) ?? null }));
+
         return NextResponse.json({
             contact: contactRes.data,
             tags: toArr(tagsRes.data),
-            custom_fields: toArr(fieldsRes.data).filter((f: { value: string | null }) => f.value !== null && f.value !== ''),
+            custom_fields: customFields,
             reservations: toArr(reservationsRes.data),
             notes: toArr(notesRes.data),
             activity: toArr(activityRes.data),

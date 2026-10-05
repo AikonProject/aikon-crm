@@ -1,5 +1,6 @@
 'use client';
 
+import { APP_TIME_ZONE } from '@/lib/utils/format';
 import { Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getInitials } from '@/lib/utils/format';
@@ -18,13 +19,13 @@ function formatTimeShort(dateStr: string | null): string {
     const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
 
     if (diffDays === 0) {
-        return d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: false });
+        return d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: APP_TIME_ZONE });
     } else if (diffDays === 1) {
         return 'Ayer';
     } else if (diffDays < 7) {
-        return d.toLocaleDateString('es-CO', { weekday: 'short' });
+        return d.toLocaleDateString('es-CO', { weekday: 'short', timeZone: APP_TIME_ZONE });
     }
-    return d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit' });
+    return d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', timeZone: APP_TIME_ZONE });
 }
 
 const statusColors: Record<string, string> = {
