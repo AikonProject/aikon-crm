@@ -68,12 +68,15 @@ export async function POST(req: Request) {
 
         let event: { type: string; data: unknown };
         try {
+                        // svix v2: verify() only throws on a bad signature and returns
+            // nothing, so the event is parsed from the raw payload afterwards
             const wh = new Webhook(secret);
-            event = wh.verify(payload, {
+            wh.verify(payload, {
                 'svix-id':        svixId,
                 'svix-timestamp': svixTimestamp,
                 'svix-signature': svixSignature,
-            }) as unknown as { type: string; data: unknown };
+            });
+            event = JSON.parse(payload) as { type: string; data: unknown };
         } catch (err) {
             console.error('[Clerk Webhook] Signature verification failed:', err);
             return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
