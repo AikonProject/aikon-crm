@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { MessageType } from '@/lib/types/database';
+import { refreshCampaignCounts } from '@/lib/campaigns';
 
 // ============================================================
 // N8N Callback Webhook
@@ -8,6 +9,7 @@ import type { MessageType } from '@/lib/types/database';
 //   1. Sending an outbound WhatsApp message (delivery confirmation + wa_message_id)
 //   2. Processing an AI response that needs to be saved
 //   3. Updating message delivery status
+//   4. Reporting campaign progress (campaign_message_status / campaign_status)
 // ============================================================
 
 export async function POST(request: NextRequest) {
@@ -28,18 +30,21 @@ export async function POST(request: NextRequest) {
         );
     }
 
-    // Verify tenant exists and authenticate via webhook secret
+    // Authenticate via webhook secret: once a tenant configures one, every
+    // call must carry it. Tenants without a secret are still accepted (legacy).
     const secret = request.headers.get('x-webhook-secret');
-    if (secret) {
-        const { data: cred } = await supabase
-            .from('tenant_credentials')
-            .select('n8n_webhook_secret')
-            .eq('tenant_id', tenant_id)
-            .maybeSingle();
+    const { data: cred } = await supabase
+        .from('tenant_credentials')
+        .select('n8n_webhook_secret')
+        .eq('tenant_id', tenant_id)
+        .maybeSingle();
 
-        if (cred?.n8n_webhook_secret && cred.n8n_webhook_secret !== secret) {
+    if (cred?.n8n_webhook_secret) {
+        if (secret !== cred.n8n_webhook_secret) {
             return NextResponse.json({ error: 'Invalid secret' }, { status: 401 });
         }
+    } else {
+        console.warn(`[n8n webhook] tenant ${tenant_id} has no n8n_webhook_secret: request not authenticated`);
     }
 
     try {
@@ -52,6 +57,10 @@ export async function POST(request: NextRequest) {
                 return await handleAiResponse(supabase, body);
             case 'buffer_processed':
                 return await handleBufferProcessed(supabase, body);
+            case 'campaign_message_status':
+                return await handleCampaignMessageStatus(supabase, body);
+            case 'campaign_status':
+                return await handleCampaignStatus(supabase, body);
             default:
                 return NextResponse.json(
                     { error: `Unknown action: ${action}` },
@@ -276,6 +285,83 @@ async function handleBufferProcessed(
     return NextResponse.json({ updated: true });
 }
 
+/**
+ * Progress of one campaign recipient: sent / delivered / read / replied / failed.
+ * Identified by campaign_message_id (preferred) or by wa_message_id once known.
+ */
+async function handleCampaignMessageStatus(
+    supabase: ReturnType<typeof createAdminClient>,
+    body: N8NPayload
+) {
+    const { tenant_id, campaign_message_id, wa_message_id, status } = body;
+    const VALID = ['sent', 'delivered', 'read', 'replied', 'failed'];
+
+    if ((!campaign_message_id && !wa_message_id) || !status || !VALID.includes(status)) {
+        return NextResponse.json(
+            { error: `Missing campaign_message_id/wa_message_id or invalid status (${VALID.join(', ')})` },
+            { status: 400 }
+        );
+    }
+
+    const now = new Date().toISOString();
+    const update: Record<string, unknown> = { status };
+    if (wa_message_id) update.wa_message_id = wa_message_id;
+    if (status === 'sent') update.sent_at = now;
+    if (status === 'delivered') update.delivered_at = now;
+    if (status === 'read') update.read_at = now;
+    if (status === 'replied') update.replied_at = now;
+    if (status === 'failed') {
+        update.error_code = body.error_code ?? null;
+        update.error_message = body.error_message ?? null;
+    }
+
+    let query = supabase.from('campaign_messages').update(update).eq('tenant_id', tenant_id);
+    query = campaign_message_id ? query.eq('id', campaign_message_id) : query.eq('wa_message_id', wa_message_id!);
+    const { data, error } = await query.select('campaign_id');
+
+    if (error) {
+        console.error('[n8n webhook] campaign_message_status update error:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    const campaignIds = [...new Set((data ?? []).map((m) => m.campaign_id as string))];
+    await Promise.all(campaignIds.map((id) => refreshCampaignCounts(supabase, tenant_id, id)));
+
+    return NextResponse.json({ updated: (data ?? []).length });
+}
+
+/** Campaign-level status from n8n: running (started), completed or cancelled. */
+async function handleCampaignStatus(
+    supabase: ReturnType<typeof createAdminClient>,
+    body: N8NPayload
+) {
+    const { tenant_id, campaign_id, status } = body;
+    if (!campaign_id || !status || !['running', 'completed', 'cancelled'].includes(status)) {
+        return NextResponse.json(
+            { error: 'Missing campaign_id or invalid status (running, completed, cancelled)' },
+            { status: 400 }
+        );
+    }
+
+    const now = new Date().toISOString();
+    const update: Record<string, unknown> = { status, updated_at: now };
+    if (status === 'running') update.started_at = now;
+    if (status === 'completed') update.completed_at = now;
+
+    const { error } = await supabase
+        .from('campaigns')
+        .update(update)
+        .eq('id', campaign_id)
+        .eq('tenant_id', tenant_id);
+    if (error) {
+        console.error('[n8n webhook] campaign_status update error:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    await refreshCampaignCounts(supabase, tenant_id, campaign_id);
+    return NextResponse.json({ updated: true });
+}
+
 // ============================================================
 // Types
 // ============================================================
@@ -297,4 +383,7 @@ type N8NPayload = {
     error_message?: string;
     // buffer_processed
     buffer_id?: string;
+    // campaign_message_status / campaign_status
+    campaign_id?: string;
+    campaign_message_id?: string;
 };

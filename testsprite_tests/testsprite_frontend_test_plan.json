@@ -508,8 +508,8 @@
   },
   {
     "id": "TC016",
-    "title": "Detalle de contacto: botones Llamar y Email",
-    "description": "Los botones de acción del contacto deben hacer algo. [Cuenta: cualquiera]",
+    "title": "Detalle de contacto: Email y sin botón Llamar",
+    "description": "El botón Email abre mailto: y no existe botón Llamar. [Cuenta: cualquiera]",
     "category": "buttons",
     "priority": "High",
     "steps": [
@@ -518,12 +518,8 @@
         "description": "Abrir un contacto con teléfono y email"
       },
       {
-        "type": "action",
-        "description": "Clic en 'Llamar'"
-      },
-      {
         "type": "assertion",
-        "description": "Se abre un enlace tel: o WhatsApp (wa.me)"
+        "description": "No existe un botón 'Llamar'"
       },
       {
         "type": "action",
@@ -531,7 +527,7 @@
       },
       {
         "type": "assertion",
-        "description": "Se abre un enlace mailto:"
+        "description": "Se abre un enlace mailto: con el email del contacto"
       }
     ]
   },
@@ -735,7 +731,15 @@
       },
       {
         "type": "assertion",
-        "description": "Navega a /contacts con la pestaña 'Contactado' preseleccionada o abre el diálogo de nuevo contacto con esa etapa"
+        "description": "Navega a /contacts con la pestaña 'Contactado' seleccionada y el diálogo 'Nuevo contacto' abierto"
+      },
+      {
+        "type": "action",
+        "description": "Crear el contacto 'TS Funnel'"
+      },
+      {
+        "type": "assertion",
+        "description": "'TS Funnel' aparece en la etapa 'Contactado'"
       }
     ]
   },
@@ -862,12 +866,12 @@
         "description": "Ir a /campaigns y clic en 'Nueva Campaña'"
       },
       {
-        "type": "action",
-        "description": "Paso 1: elegir una plantilla y clic en Siguiente"
+        "type": "assertion",
+        "description": "Solo se listan plantillas aprobadas"
       },
       {
         "type": "action",
-        "description": "Paso 2: elegir la etapa 'Nuevo'"
+        "description": "Completar nombre, plantilla, variables y la etapa 'Nuevo'"
       },
       {
         "type": "assertion",
@@ -875,32 +879,28 @@
       },
       {
         "type": "action",
-        "description": "Paso 3: 'Enviar ahora' y confirmar"
+        "description": "Paso Programar: 'Enviar ahora' y confirmar"
       },
       {
         "type": "assertion",
-        "description": "Vuelve a /campaigns y la campaña aparece"
-      },
-      {
-        "type": "assertion",
-        "description": "El estado de la campaña es 'enviando' o 'enviada', NO 'borrador'"
+        "description": "Si el tenant tiene el webhook de campañas, el estado es 'Enviando'; si no, aparece el aviso 'guardada como borrador' con el motivo"
       }
     ]
   },
   {
     "id": "TC029",
-    "title": "Menú 'Más opciones' de campañas",
-    "description": "El botón de tres puntos de cada campaña debe abrir un menú. [Cuenta: crm_pro]",
+    "title": "Enviar campaña en borrador",
+    "description": "El botón ✈ de una campaña en borrador la envía a n8n. [Cuenta: crm_pro]",
     "category": "buttons",
     "priority": "Medium",
     "steps": [
       {
         "type": "action",
-        "description": "En /campaigns clic en el botón '...' de una campaña"
+        "description": "En /campaigns clic en ✈ (Enviar) de una campaña en borrador"
       },
       {
         "type": "assertion",
-        "description": "Se abre un menú con opciones (ver, duplicar, eliminar)"
+        "description": "Toast de éxito y el estado cambia a 'Enviando' o 'Programada', o un toast con el error de configuración de n8n"
       }
     ]
   },
@@ -1103,19 +1103,27 @@
     "steps": [
       {
         "type": "action",
-        "description": "Ir a /settings, pestaña Equipo, y clic en 'Invitar usuario'"
+        "description": "Como administrador, ir a /settings, pestaña Equipo, y clic en 'Invitar usuario'"
       },
       {
         "type": "assertion",
-        "description": "Se abre un diálogo para el email y el rol"
+        "description": "Se abre un diálogo con email y rol"
       },
       {
         "type": "action",
-        "description": "Invitar un email de prueba"
+        "description": "Invitar un email de prueba como Agente"
       },
       {
         "type": "assertion",
-        "description": "Aparece como invitación pendiente"
+        "description": "Aparece en 'Invitaciones pendientes' y Clerk envía el correo"
+      },
+      {
+        "type": "action",
+        "description": "Revocar la invitación"
+      },
+      {
+        "type": "assertion",
+        "description": "Desaparece de la lista"
       }
     ]
   },
@@ -1161,19 +1169,27 @@
     "steps": [
       {
         "type": "action",
-        "description": "Desde /settings buscar un enlace a 'Agente IA'"
+        "description": "Ir a /settings"
       },
       {
         "type": "assertion",
-        "description": "Existe un enlace y lleva a /settings/ai"
+        "description": "Hay botones 'Agente IA' e 'Integraciones' en el encabezado"
       },
       {
         "type": "action",
-        "description": "Buscar un enlace a 'Integraciones'"
+        "description": "Clic en 'Integraciones'"
       },
       {
         "type": "assertion",
-        "description": "Existe un enlace y lleva a /settings/integrations"
+        "description": "Carga /settings/integrations con los valores guardados de WhatsApp"
+      },
+      {
+        "type": "action",
+        "description": "Cambiar Phone Number ID y guardar"
+      },
+      {
+        "type": "assertion",
+        "description": "Persiste al recargar"
       }
     ]
   },
@@ -1266,6 +1282,73 @@
       {
         "type": "assertion",
         "description": "Redirige o muestra 'Prohibido'"
+      }
+    ]
+  },
+  {
+    "id": "TC043",
+    "title": "Contacto sin módulo de reservas",
+    "description": "En planes sin reservas, el detalle de contacto y el panel de chat no muestran reservas. [Cuenta: crm_basic y crm_pro]",
+    "category": "plan-gating",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Abrir el detalle de un contacto"
+      },
+      {
+        "type": "assertion",
+        "description": "No existe la pestaña 'Reservas'; sí están Información, Conversaciones, Notas y Actividad"
+      },
+      {
+        "type": "action",
+        "description": "En /conversations abrir el panel del contacto"
+      },
+      {
+        "type": "assertion",
+        "description": "No aparece el botón ni la sección 'Reservas'"
+      }
+    ]
+  },
+  {
+    "id": "TC044",
+    "title": "Editar artículos y descuento de un pedido",
+    "description": "En planes con ventas se pueden editar los productos de un pedido. [Cuenta: crm_pro]",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Abrir un pedido 'Pendiente' y clic en 'Editar' en Artículos"
+      },
+      {
+        "type": "action",
+        "description": "Cambiar la cantidad del primer artículo a 3, agregar 'TS Producto' y poner un descuento de 1000"
+      },
+      {
+        "type": "action",
+        "description": "Clic en 'Guardar cambios'"
+      },
+      {
+        "type": "assertion",
+        "description": "Toast 'Pedido actualizado'; el subtotal y el total se recalculan y persisten al recargar"
+      }
+    ]
+  },
+  {
+    "id": "TC045",
+    "title": "Adjuntar archivo en conversación",
+    "description": "El clip sube el archivo y lo envía. [Cuenta: tenant con n8n]",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "En una conversación, clic en el clip y elegir una imagen < 16 MB"
+      },
+      {
+        "type": "assertion",
+        "description": "El mensaje con la imagen aparece en el chat sin el toast 'Error al subir el archivo'"
       }
     ]
   }

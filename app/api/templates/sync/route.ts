@@ -45,20 +45,26 @@ export async function POST() {
             components: Array<{ type: string; text?: string; buttons?: unknown[] }>;
         }> = json.data ?? [];
 
+        const STATUSES = ['APPROVED', 'PENDING', 'REJECTED'] as const;
+        type Status = (typeof STATUSES)[number];
         let upserted = 0;
         for (const t of metaTemplates) {
-            await supabase.from('message_templates').upsert(
+            const { error } = await supabase.from('message_templates').upsert(
                 {
                     tenant_id: TENANT_ID,
                     name: t.name,
                     category: t.category,
                     language: t.language,
                     components: t.components,
-                    is_active: t.status === 'APPROVED',
+                    meta_id: t.id,
+                    // Meta also returns PAUSED / DISABLED / IN_APPEAL…: not usable → treat as pending
+                    status: (STATUSES as readonly string[]).includes(t.status) ? (t.status as Status) : 'PENDING',
+                    updated_at: new Date().toISOString(),
                 },
                 { onConflict: 'tenant_id,name,language' }
             );
-            upserted++;
+            if (error) console.error('[POST /api/templates/sync] upsert', t.name, error);
+            else upserted++;
         }
 
         return NextResponse.json({ synced: upserted, total: metaTemplates.length });

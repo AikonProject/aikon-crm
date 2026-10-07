@@ -32,11 +32,14 @@ interface ContactsTableClientProps {
     contacts: ContactWithRelations[];
     stages: FunnelStage[];
     total: number;
+    initialStageId?: string | null;
 }
 
-export function ContactsTableClient({ contacts, stages }: ContactsTableClientProps) {
+export function ContactsTableClient({ contacts, stages, initialStageId = null }: ContactsTableClientProps) {
     const [search, setSearch] = useState('');
-    const [selectedStageId, setSelectedStageId] = useState<string | 'all'>('all');
+    const [selectedStageId, setSelectedStageId] = useState<string | 'all'>(
+        initialStageId && stages.some((s) => s.id === initialStageId) ? initialStageId : 'all'
+    );
     const [page, setPage] = useState(1);
 
     // Advanced filter state

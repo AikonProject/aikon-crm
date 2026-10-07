@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, Phone, Mail as MailIcon } from 'lucide-react';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getServerTenantId } from '@/lib/tenant';
+import { getTenantConfig, hasModule } from '@/lib/tenant-plan';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { FunnelStageBadge } from '@/components/contacts/funnel-stage-badge';
@@ -18,6 +19,7 @@ import type { FunnelStage } from '@/lib/types/database';
 async function getContactData(id: string) {
     const supabase = createAdminClient();
     const TENANT_ID = await getServerTenantId();
+    const config = await getTenantConfig(TENANT_ID);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [contactRes, conversationsRes, reservationsRes, notesRes, activityRes, stagesRes] =
@@ -47,15 +49,17 @@ async function getContactData(id: string) {
                 .order('last_message_at', { ascending: false })
                 .limit(20),
 
-            supabase
-                .from('reservations')
-                .select(
-                    'id, reservation_date, reservation_time, party_size, status, source, created_at, table:restaurant_tables ( id, name )'
-                )
-                .eq('contact_id', id)
-                .eq('tenant_id', TENANT_ID)
-                .order('reservation_date', { ascending: false })
-                .limit(50),
+            hasModule(config, 'reservations')
+                ? supabase
+                    .from('reservations')
+                    .select(
+                        'id, reservation_date, reservation_time, party_size, status, source, created_at, table:restaurant_tables ( id, name )'
+                    )
+                    .eq('contact_id', id)
+                    .eq('tenant_id', TENANT_ID)
+                    .order('reservation_date', { ascending: false })
+                    .limit(50)
+                : Promise.resolve({ data: [] }),
 
             supabase
                 .from('contact_notes')
@@ -232,22 +236,16 @@ export default async function ContactDetailPage({
                             contactId={contact.id}
                             initialAiActive={contact.ai_active}
                         />
-                        {contact.wa_id && (
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-1.5 rounded-[10px] border-[#E8E8EC] text-[#6B7280]"
-                            >
-                                <Phone size={14} /> Llamar
-                            </Button>
-                        )}
                         {contact.email && (
                             <Button
+                                asChild
                                 variant="outline"
                                 size="sm"
                                 className="gap-1.5 rounded-[10px] border-[#E8E8EC] text-[#6B7280]"
                             >
-                                <MailIcon size={14} /> Email
+                                <a href={`mailto:${contact.email}`}>
+                                    <MailIcon size={14} /> Email
+                                </a>
                             </Button>
                         )}
                         <EditContactButton

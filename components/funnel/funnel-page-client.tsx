@@ -236,7 +236,7 @@ function KanbanColumn({
                 )}
 
                 {/* Quick add */}
-                <Link href={`/contacts?stage=${stage.id}`}>
+                <Link href={`/contacts?stage=${stage.id}&new=1`}>
                     <button className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] text-[#9CA3AF] hover:text-[#6B7280] hover:bg-[#E5E7EB]/50 transition-colors mt-1">
                         <Plus size={12} />
                         Agregar contacto

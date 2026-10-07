@@ -75,8 +75,12 @@ const ORDER_STATUS_COLORS: Record<string, string> = {
     cancelled: 'bg-red-50 text-red-600', refunded: 'bg-gray-100 text-gray-500',
 };
 
+// Static class names so Tailwind picks them up
+const STAT_COLS: Record<number, string> = { 2: 'xl:grid-cols-2', 3: 'xl:grid-cols-3', 4: 'xl:grid-cols-4', 5: 'xl:grid-cols-5' };
+
 export default function DashboardClient({ modules }: { modules: PlanModule[] }) {
     const isRestaurant = modules.includes('reservations');
+    const hasOrders = modules.includes('orders');
     const [stats, setStats] = useState<DashStats>({ total_contacts: 0, active_conversations: 0, orders_today: 0, revenue_month: 0, reservations_today: 0 });
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [recentOrders, setRecentOrders] = useState<OrderRow[]>([]);
@@ -93,8 +97,8 @@ export default function DashboardClient({ modules }: { modules: PlanModule[] }) 
             fetch('/api/settings/general').then((r) => r.json()),
             fetch('/api/contacts/count').then((r) => r.json()),
             fetch('/api/conversations?status=open').then((r) => r.json()),
-            fetch('/api/orders?page=1').then((r) => r.json()),
-            fetch('/api/orders/stats').then((r) => r.json()),
+            hasOrders ? fetch('/api/orders?page=1').then((r) => r.json()) : Promise.resolve({}),
+            hasOrders ? fetch('/api/orders/stats').then((r) => r.json()) : Promise.resolve({}),
             fetch('/api/funnel-stages').then((r) => r.json()),
             isRestaurant ? fetch(`/api/reservations?date=${today}`).then((r) => r.json()) : Promise.resolve([]),
         ];
@@ -133,7 +137,7 @@ export default function DashboardClient({ modules }: { modules: PlanModule[] }) 
                 setFunnelBars(bars.filter((b) => b.count > 0));
             }
         }).finally(() => setLoading(false));
-    }, [isRestaurant]);
+    }, [isRestaurant, hasOrders]);
 
     const hour = new Date().getHours();
     const greeting = hour < 12 ? 'Buenos días' : hour < 18 ? 'Buenas tardes' : 'Buenas noches';
@@ -148,21 +152,30 @@ export default function DashboardClient({ modules }: { modules: PlanModule[] }) 
             />
 
             {/* Stats */}
-            <div className={`grid grid-cols-1 sm:grid-cols-2 ${isRestaurant ? 'xl:grid-cols-5' : 'xl:grid-cols-4'} gap-5 mb-6`}>
+            <div className={`grid grid-cols-1 sm:grid-cols-2 ${STAT_COLS[2 + (hasOrders ? 2 : 0) + (isRestaurant ? 1 : 0)]} gap-5 mb-6`}>
                 <StatCard label="Contactos totales" value={loading ? '—' : stats.total_contacts.toLocaleString()} icon={Users} color="#818CF8" bg="#EEF0FF" />
                 <StatCard label="Conversaciones abiertas" value={loading ? '—' : stats.active_conversations} icon={MessageCircle} color="#34D399" bg="#ECFDF5" />
-                <StatCard label="Pedidos hoy" value={loading ? '—' : stats.orders_today} icon={ShoppingCart} color="#F59E0B" bg="#FFFBEB" />
-                <StatCard label="Ingresos total" value={loading ? '—' : formatMXN(stats.revenue_month)} icon={TrendingUp} color="#10B981" bg="#ECFDF5" />
+                {hasOrders && <StatCard label="Pedidos hoy" value={loading ? '—' : stats.orders_today} icon={ShoppingCart} color="#F59E0B" bg="#FFFBEB" />}
+                {hasOrders && <StatCard label="Ingresos total" value={loading ? '—' : formatMXN(stats.revenue_month)} icon={TrendingUp} color="#10B981" bg="#ECFDF5" />}
                 {isRestaurant && <StatCard label="Reservas hoy" value={loading ? '—' : stats.reservations_today} icon={CalendarCheck} color="#F9A8D4" bg="#FDF2F8" />}
             </div>
 
             {/* Quick actions */}
             <div className="flex flex-wrap gap-3 mb-6">
-                <Link href="/orders">
-                    <Button className="gap-2 rounded-xl bg-[#818CF8] hover:bg-[#6366F1] text-white">
-                        <Plus size={16} /> Nuevo Pedido
-                    </Button>
-                </Link>
+                {hasOrders && (
+                    <Link href="/orders?new=1">
+                        <Button className="gap-2 rounded-xl bg-[#818CF8] hover:bg-[#6366F1] text-white">
+                            <Plus size={16} /> Nuevo Pedido
+                        </Button>
+                    </Link>
+                )}
+                {isRestaurant && (
+                    <Link href="/reservations">
+                        <Button variant="outline" className="gap-2 rounded-xl border-[#E8E8EC] text-[#6B7280]">
+                            <CalendarCheck size={16} /> Ver Reservas
+                        </Button>
+                    </Link>
+                )}
                 <Link href="/conversations">
                     <Button variant="outline" className="gap-2 rounded-xl border-[#E8E8EC] text-[#6B7280]">
                         <MessageCircle size={16} /> Ver Conversaciones
@@ -175,7 +188,7 @@ export default function DashboardClient({ modules }: { modules: PlanModule[] }) 
                 </Link>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+            <div className={`grid grid-cols-1 ${hasOrders ? 'lg:grid-cols-2' : ''} gap-5 mb-5`}>
                 {/* Recent conversations */}
                 <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm overflow-hidden">
                     <div className="flex items-center justify-between px-6 py-4 border-b border-[#E8E8EC]">
@@ -215,7 +228,7 @@ export default function DashboardClient({ modules }: { modules: PlanModule[] }) 
                 </div>
 
                 {/* Recent orders */}
-                <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm overflow-hidden">
+                {hasOrders && <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm overflow-hidden">
                     <div className="flex items-center justify-between px-6 py-4 border-b border-[#E8E8EC]">
                         <h2 className="text-[15px] font-semibold text-[#1A1A2E]">Pedidos recientes</h2>
                         <Link href="/orders" className="text-[12px] text-[#818CF8] hover:underline flex items-center gap-1">
@@ -250,7 +263,7 @@ export default function DashboardClient({ modules }: { modules: PlanModule[] }) 
                             ))}
                         </ul>
                     )}
-                </div>
+                </div>}
             </div>
 
             {/* Restaurant: Today's reservations */}

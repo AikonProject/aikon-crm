@@ -31,7 +31,7 @@ export default async function DashboardLayout({
 
     return (
         <div className="min-h-screen bg-[#F8F8FA]">
-            <TenantProvider tenantId={tenantId}>
+            <TenantProvider tenantId={tenantId} modules={config.modules} businessType={config.businessType}>
                 <SidebarProvider>
                     <Sidebar
                         planName={config.planName}

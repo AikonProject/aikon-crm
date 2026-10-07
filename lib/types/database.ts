@@ -83,6 +83,7 @@ export type TenantCredentials = {
     n8n_send_message_webhook: string | null;
     n8n_bot_webhook: string | null;
     n8n_reservation_webhook: string | null;
+    n8n_campaign_webhook: string | null;
     google_calendar_id: string | null;
     google_service_account_json: string | null;
     created_at: string;
@@ -877,20 +878,9 @@ export type Database = {
 };
 
 // ============================================================
-// Legacy / deprecated type aliases — kept for mock-data.ts compatibility.
+// Legacy / deprecated type aliases.
 // Do NOT use in new code.
 // ============================================================
-
-/** @deprecated Use User instead */
-export type Profile = {
-    id: string;
-    full_name: string;
-    email: string;
-    avatar_url: string | null;
-    role: 'admin' | 'manager' | 'agent';
-    created_at: string;
-    updated_at: string;
-};
 
 /** @deprecated Use FunnelStage.name instead */
 export type ContactPhase =
@@ -903,77 +893,8 @@ export type ContactPhase =
     | 'cerrado_ganado'
     | 'cerrado_perdido';
 
-/** @deprecated Use Campaign instead */
-export type EmailCampaign = {
-    id: string;
-    name: string;
-    instantly_campaign_id: string | null;
-    status: 'draft' | 'active' | 'paused' | 'completed';
-    sequence_steps: number;
-    total_leads: number;
-    start_date: string | null;
-    created_at: string;
-};
-
-/** @deprecated */
-export type EmailEventType =
-    | 'sent'
-    | 'opened'
-    | 'clicked'
-    | 'replied'
-    | 'bounced'
-    | 'unsubscribed';
-
-/** @deprecated Use Message instead */
-export type EmailEvent = {
-    id: string;
-    contact_id: string;
-    campaign_id: string;
-    event_type: EmailEventType;
-    email_account: string | null;
-    subject: string | null;
-    body_preview: string | null;
-    sequence_step: number | null;
-    variant_used: string | null;
-    raw_payload: Record<string, unknown> | null;
-    created_at: string;
-};
-
 /** @deprecated Use Appointment instead */
 export type CalendarEventType = 'meeting' | 'follow_up' | 'call' | 'demo' | 'task';
-
-/** @deprecated Use Appointment instead */
-export type CalendarEvent = {
-    id: string;
-    title: string;
-    description: string | null;
-    location: string | null;
-    contact_id: string | null;
-    assigned_to: string | null;
-    event_type: CalendarEventType;
-    start_time: string;
-    end_time: string;
-    status: 'scheduled' | 'completed' | 'cancelled' | 'no_show';
-    color: string | null;
-    created_at: string;
-};
-
-/** @deprecated */
-export type DailyMetrics = {
-    id: string;
-    date: string;
-    campaign_id: string | null;
-    emails_sent: number;
-    emails_opened: number;
-    emails_replied: number;
-    emails_bounced: number;
-    wa_messages_received: number;
-    wa_messages_sent: number;
-    new_leads: number;
-    leads_interested: number;
-    meetings_booked: number;
-    created_at: string;
-};
 
 /** @deprecated Use CampaignMessageStatus instead */
 export type CampaignChannel = 'whatsapp' | 'email' | 'sms';

@@ -73,11 +73,12 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { nombre, email, wa_id, source } = body as {
+        const { nombre, email, wa_id, source, funnel_stage_id } = body as {
             nombre?: string;
             email?: string | null;
             wa_id?: string | null;
             source?: string;
+            funnel_stage_id?: string | null;
         };
 
         if (!nombre?.trim()) {
@@ -86,6 +87,18 @@ export async function POST(req: NextRequest) {
 
         const supabase = createAdminClient();
     const TENANT_ID = await getServerTenantId();
+
+        // Only accept a stage that belongs to this tenant
+        let stageId: string | null = null;
+        if (funnel_stage_id) {
+            const { data: stage } = await supabase
+                .from('funnel_stages')
+                .select('id')
+                .eq('id', funnel_stage_id)
+                .eq('tenant_id', TENANT_ID)
+                .maybeSingle();
+            stageId = stage?.id ?? null;
+        }
 
         const { data, error } = await supabase
             .from('contacts')
@@ -96,6 +109,7 @@ export async function POST(req: NextRequest) {
                 wa_id: wa_id ?? null,
                 source: (source as 'manual' | 'whatsapp' | 'web' | 'csv' | 'n8n') ?? 'manual',
                 lead_score: 0,
+                ...(stageId ? { funnel_stage_id: stageId } : {}),
                 last_contacted_at: null,
                 assigned_to: null,
             })

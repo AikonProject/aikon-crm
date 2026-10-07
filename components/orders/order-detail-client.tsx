@@ -13,9 +13,11 @@ import {
     StickyNote,
     Clock,
     Hash,
+    Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { OrderDetail } from '@/app/(dashboard)/orders/[id]/page';
+import { OrderItemsEditor } from '@/components/orders/order-items-editor';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -116,6 +118,17 @@ export function OrderDetailClient({ order: initialOrder }: { order: OrderDetail 
     const [editingNotes, setEditingNotes] = useState(false);
     const [notesValue, setNotesValue] = useState(order.notes ?? '');
     const [savingNotes, setSavingNotes] = useState(false);
+    const [editingItems, setEditingItems] = useState(false);
+    const isClosed = order.status === 'cancelled' || order.status === 'refunded' || order.status === 'completed';
+
+    async function reloadOrder() {
+        const res = await fetch(`/api/orders/${order.id}`);
+        if (res.ok) {
+            const data = await res.json();
+            setOrder((prev) => ({ ...prev, ...data.order }));
+        }
+        setEditingItems(false);
+    }
 
     const status = order.status as OrderStatus;
 
@@ -249,7 +262,30 @@ export function OrderDetailClient({ order: initialOrder }: { order: OrderDetail 
                             <h2 className="text-[14px] font-semibold text-[#1A1A2E]">
                                 Artículos ({order.items.length})
                             </h2>
+                            {!editingItems && !isClosed && (
+                                <button
+                                    onClick={() => setEditingItems(true)}
+                                    className="ml-auto inline-flex items-center gap-1 text-[12px] font-medium text-[#818CF8] hover:text-[#4F46E5]"
+                                >
+                                    <Pencil size={12} /> Editar
+                                </button>
+                            )}
                         </div>
+                        {editingItems ? (
+                            <OrderItemsEditor
+                                orderId={order.id}
+                                initialItems={order.items.map((it) => ({
+                                    product_id: it.product_id,
+                                    product_name: it.product_name,
+                                    quantity: it.quantity,
+                                    unit_price: it.unit_price,
+                                }))}
+                                initialDiscount={order.discount}
+                                formatMoney={formatMXN}
+                                onCancel={() => setEditingItems(false)}
+                                onSaved={reloadOrder}
+                            />
+                        ) : (<>
                         <div className="divide-y divide-[#F3F4F6]">
                             {order.items.map((item, idx) => (
                                 <div key={item.id} className="flex items-center gap-4 px-5 py-3.5">
@@ -291,6 +327,7 @@ export function OrderDetailClient({ order: initialOrder }: { order: OrderDetail 
                                 <span className="text-[18px] font-bold text-[#1A1A2E]">{formatMXN(order.total)}</span>
                             </div>
                         </div>
+                        </>)}
                     </div>
 
                     {/* Notes */}

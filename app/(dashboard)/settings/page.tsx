@@ -6,11 +6,13 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import {
     Save, Globe, Users as UsersIcon, Tag as TagIcon, Sliders, MessageSquare,
-    Plus, Loader2, X, Pencil, Check, ExternalLink, Kanban
+    Plus, Loader2, X, Pencil, Check, ExternalLink, Kanban, Bot, Plug
 } from 'lucide-react';
+import { useBusinessType } from '@/components/providers/tenant-provider';
 import { toast } from 'sonner';
 import type { Tenant, User, Tag, CustomField, CannedResponse } from '@/lib/types/database';
 import Link from 'next/link';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 // We call APIs directly (client-side fetch to our own API routes)
 const tabs = [
@@ -42,6 +44,7 @@ const TAG_COLORS = ['#818CF8', '#34D399', '#F9A8D4', '#FBBF24', '#F87171', '#60A
 
 // ─── General Tab ────────────────────────────────────────────────────────────
 function GeneralTab() {
+    const isRestaurant = useBusinessType() === 'restaurant';
     const [tenant, setTenant] = useState<Tenant | null>(null);
     const [planName, setPlanName] = useState('');
     const [name, setName] = useState('');
@@ -82,10 +85,16 @@ function GeneralTab() {
 
     return (
         <div className="crm-card p-6 max-w-2xl space-y-5">
-            <h3 className="text-[15px] font-semibold text-[#1A1A2E]">Información del restaurante</h3>
+            <h3 className="text-[15px] font-semibold text-[#1A1A2E]">
+                {isRestaurant ? 'Información del restaurante' : 'Información del negocio'}
+            </h3>
             {[
-                { label: 'Nombre del restaurante', value: name, setter: setName, placeholder: 'Ej. Restaurante El Cielo' },
-                { label: 'Slug (URL amigable)', value: slug, setter: setSlug, placeholder: 'restaurante-el-cielo' },
+                {
+                    label: isRestaurant ? 'Nombre del restaurante' : 'Nombre del negocio',
+                    value: name, setter: setName,
+                    placeholder: isRestaurant ? 'Ej. Restaurante El Cielo' : 'Ej. Mi Empresa',
+                },
+                { label: 'Slug (URL amigable)', value: slug, setter: setSlug, placeholder: isRestaurant ? 'restaurante-el-cielo' : 'mi-empresa' },
                 { label: 'URL del logo', value: logoUrl, setter: setLogoUrl, placeholder: 'https://...' },
             ].map(({ label, value, setter, placeholder }) => (
                 <div key={label}>
@@ -120,18 +129,119 @@ function GeneralTab() {
 }
 
 // ─── Team Tab ────────────────────────────────────────────────────────────────
+type Invitation = { id: string; email: string; role: 'admin' | 'agent'; created_at: string };
+
+function InviteUserDialog({ onInvited }: { onInvited: (inv: Invitation) => void }) {
+    const [open, setOpen] = useState(false);
+    const [email, setEmail] = useState('');
+    const [role, setRole] = useState<'admin' | 'agent'>('agent');
+    const [sending, setSending] = useState(false);
+
+    async function handleInvite() {
+        setSending(true);
+        try {
+            const res = await fetch('/api/settings/team/invitations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, role }),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) { toast.error(d.error || 'Error al enviar la invitación'); return; }
+            toast.success(`Invitación enviada a ${email}`);
+            onInvited(d.invitation);
+            setEmail('');
+            setRole('agent');
+            setOpen(false);
+        } catch {
+            toast.error('Error de conexión al enviar la invitación');
+        } finally {
+            setSending(false);
+        }
+    }
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button className="gap-2 rounded-xl bg-[#818CF8] hover:bg-[#6366F1] text-white text-[13px] py-2">
+                    <Plus size={14} /> Invitar usuario
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>Invitar usuario</DialogTitle>
+                </DialogHeader>
+                <p className="text-[13px] text-[#6B7280]">
+                    Le llegará un correo para unirse a tu organización.
+                </p>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-[13px] font-medium text-[#6B7280] mb-1.5">Email</label>
+                        <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="persona@empresa.com"
+                            className="w-full px-3 py-2.5 text-[14px] bg-white border border-[#E8E8EC] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20 focus:border-[#818CF8]"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-[13px] font-medium text-[#6B7280] mb-1.5">Rol</label>
+                        <select
+                            value={role}
+                            onChange={(e) => setRole(e.target.value as 'admin' | 'agent')}
+                            className="w-full px-3 py-2.5 text-[14px] bg-white border border-[#E8E8EC] rounded-xl focus:outline-none focus:border-[#818CF8]"
+                        >
+                            <option value="agent">Agente</option>
+                            <option value="admin">Administrador</option>
+                        </select>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                        <Button variant="outline" onClick={() => setOpen(false)} className="rounded-xl">Cancelar</Button>
+                        <Button
+                            onClick={handleInvite}
+                            disabled={sending || !email.trim()}
+                            className="gap-2 rounded-xl bg-[#818CF8] hover:bg-[#6366F1] text-white"
+                        >
+                            {sending && <Loader2 size={14} className="animate-spin" />}
+                            Enviar invitación
+                        </Button>
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 function TeamTab() {
     const [users, setUsers] = useState<User[]>([]);
+    const [invitations, setInvitations] = useState<Invitation[]>([]);
+    const [canInvite, setCanInvite] = useState(false);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         // Users are loaded via API (admin client in route)
-        fetch(`/api/settings/team`)
-            .then((r) => r.json())
-            .then((d) => setUsers(d.users ?? []))
-            .catch(() => setUsers([]))
-            .finally(() => setLoading(false));
+        Promise.all([
+            fetch(`/api/settings/team`).then((r) => r.json()).then((d) => setUsers(d.users ?? [])).catch(() => setUsers([])),
+            // 403 for non-admins: they just don't see invitations
+            fetch('/api/settings/team/invitations').then(async (r) => {
+                if (!r.ok) return;
+                const d = await r.json();
+                setInvitations(d.invitations ?? []);
+                setCanInvite(true);
+            }).catch(() => {}),
+        ]).finally(() => setLoading(false));
     }, []);
+
+    async function revokeInvitation(id: string) {
+        const res = await fetch(`/api/settings/team/invitations?id=${id}`, { method: 'DELETE' });
+        if (!res.ok) {
+            const d = await res.json().catch(() => ({}));
+            toast.error(d.error || 'Error al revocar la invitación');
+            return;
+        }
+        setInvitations((prev) => prev.filter((i) => i.id !== id));
+        toast.success('Invitación revocada');
+    }
 
     if (loading) return <div className="p-8 text-center text-[#9CA3AF] text-[14px]">Cargando equipo…</div>;
 
@@ -139,10 +249,32 @@ function TeamTab() {
         <div className="space-y-4 max-w-2xl">
             <div className="flex items-center justify-between">
                 <p className="text-[14px] text-[#6B7280]">{users.length} miembro{users.length !== 1 ? 's' : ''} en tu equipo</p>
-                <Button className="gap-2 rounded-xl bg-[#818CF8] hover:bg-[#6366F1] text-white text-[13px] py-2">
-                    <Plus size={14} /> Invitar usuario
-                </Button>
+                {canInvite && (
+                    <InviteUserDialog onInvited={(inv) => setInvitations((prev) => [inv, ...prev])} />
+                )}
             </div>
+            {invitations.length > 0 && (
+                <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm overflow-hidden">
+                    <p className="px-5 py-3 text-[12px] font-semibold text-[#9CA3AF] uppercase tracking-wider border-b border-[#E8E8EC]">
+                        Invitaciones pendientes
+                    </p>
+                    {invitations.map((inv) => (
+                        <div key={inv.id} className="flex items-center gap-3 px-5 py-3 border-b border-[#F3F4F6] last:border-0">
+                            <span className="flex-1 text-[13px] text-[#1A1A2E]">{inv.email}</span>
+                            <span className={`text-[12px] font-medium px-2 py-0.5 rounded-full ${ROLE_BADGE[inv.role]}`}>
+                                {inv.role === 'admin' ? 'Admin' : 'Agente'}
+                            </span>
+                            <button
+                                onClick={() => revokeInvitation(inv.id)}
+                                title="Revocar invitación"
+                                className="p-1.5 rounded-lg text-[#9CA3AF] hover:text-[#DC2626] hover:bg-[#FEF2F2] transition-colors"
+                            >
+                                <X size={14} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
             <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm overflow-hidden">
                 {users.length === 0 ? (
                     <div className="p-8 text-center text-[#9CA3AF] text-[14px]">No hay usuarios registrados.</div>
@@ -673,11 +805,26 @@ function FunnelStagesTab() {
 // ─── Main Settings Page ──────────────────────────────────────────────────────
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState('general');
+    const isRestaurant = useBusinessType() === 'restaurant';
 
     return (
         <>
             <Breadcrumb />
-            <PageHeader title="Configuración" description="Gestiona las preferencias de tu restaurante" />
+            <PageHeader
+                title="Configuración"
+                description={isRestaurant ? 'Gestiona las preferencias de tu restaurante' : 'Gestiona las preferencias de tu negocio'}
+            >
+                <Link href="/settings/ai">
+                    <Button variant="outline" className="gap-2 rounded-xl border-[#E8E8EC] text-[#6B7280] text-[13px]">
+                        <Bot size={15} /> Agente IA
+                    </Button>
+                </Link>
+                <Link href="/settings/integrations">
+                    <Button variant="outline" className="gap-2 rounded-xl border-[#E8E8EC] text-[#6B7280] text-[13px]">
+                        <Plug size={15} /> Integraciones
+                    </Button>
+                </Link>
+            </PageHeader>
 
             <div className="flex items-center gap-1 border-b border-[#E8E8EC] mb-6 overflow-x-auto">
                 {tabs.map((tab) => (

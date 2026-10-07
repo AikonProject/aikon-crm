@@ -60,8 +60,13 @@ export type ContactWithRelations = {
     contact_tags: { tag: { id: string; name: string; color: string | null } | null }[];
 };
 
-export default async function ContactsPage() {
-    const { stages, contacts, total } = await getPageData();
+export default async function ContactsPage({
+    searchParams,
+}: {
+    searchParams: Promise<{ stage?: string; new?: string }>;
+}) {
+    const [{ stages, contacts, total }, query] = await Promise.all([getPageData(), searchParams]);
+    const stageId = stages.some((s) => s.id === query.stage) ? query.stage! : null;
 
     return (
         <>
@@ -88,7 +93,7 @@ export default async function ContactsPage() {
                         Importar CSV
                     </Button>
                 </ImportCSVDialog>
-                <NewContactDialog>
+                <NewContactDialog defaultStageId={stageId} defaultOpen={query.new === '1'}>
                     <Button className="gap-2 rounded-[10px] bg-[#818CF8] hover:bg-[#6366F1] text-white">
                         <Plus size={16} />
                         Nuevo contacto
@@ -100,6 +105,7 @@ export default async function ContactsPage() {
                 contacts={contacts}
                 stages={stages}
                 total={total}
+                initialStageId={stageId}
             />
         </>
     );

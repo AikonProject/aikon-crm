@@ -26,7 +26,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { name, content, category, language = 'es', variables } = body;
+        const { name, content, category, language = 'es' } = body;
 
         if (!name || !content) {
             return NextResponse.json({ error: 'name and content are required' }, { status: 400 });
@@ -39,11 +39,12 @@ export async function POST(req: NextRequest) {
             .insert({
                 tenant_id: TENANT_ID,
                 name,
-                content,
                 category: category ?? null,
                 language,
-                variables: variables ?? null,
-                is_active: true,
+                // Same shape Meta uses, so the body text and {{N}} variables are read the same way
+                components: [{ type: 'BODY', text: content }],
+                // Approval happens in Meta; the n8n sync updates the status
+                status: 'PENDING',
             })
             .select()
             .single();

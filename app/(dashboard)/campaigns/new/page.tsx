@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, ChevronRight, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import type { MessageTemplate, FunnelStage } from '@/lib/types/database';
 
@@ -48,7 +49,8 @@ export default function NewCampaignPage() {
     useEffect(() => {
         fetch('/api/templates')
             .then((r) => r.json())
-            .then((d) => setTemplates(d.templates ?? []))
+            // Meta only sends approved templates
+            .then((d) => setTemplates((d.templates ?? []).filter((t: MessageTemplate) => t.status === 'APPROVED')))
             .finally(() => setLoadingTemplates(false));
 
         fetch('/api/funnel-stages')
@@ -104,6 +106,7 @@ export default function NewCampaignPage() {
                 name,
                 description: description || undefined,
                 template_id: selectedTemplate?.id,
+                template_variables: variableValues,
                 scheduled_at: scheduleType === 'later' ? new Date(scheduledAt).toISOString() : undefined,
                 segment_filters: {
                     funnel_stage_id: segmentFilters.funnel_stage_id || undefined,
@@ -115,9 +118,19 @@ export default function NewCampaignPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            if (res.ok) {
-                router.push('/campaigns');
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                toast.error(d.error || 'Error al crear la campaña');
+                return;
             }
+            if (d.dispatch_error) {
+                toast.warning(`Campaña guardada como borrador: ${d.dispatch_error}`);
+            } else {
+                toast.success(scheduleType === 'later' ? 'Campaña programada' : 'Campaña enviada a n8n');
+            }
+            router.push('/campaigns');
+        } catch {
+            toast.error('Error de conexión al crear la campaña');
         } finally {
             setSubmitting(false);
         }
@@ -196,7 +209,7 @@ export default function NewCampaignPage() {
                             {loadingTemplates ? (
                                 <p className="text-[13px] text-[#9CA3AF]">Cargando plantillas…</p>
                             ) : templates.length === 0 ? (
-                                <p className="text-[13px] text-[#9CA3AF]">No hay plantillas. Crea una en Configuración → Plantillas.</p>
+                                <p className="text-[13px] text-[#9CA3AF]">No hay plantillas aprobadas por Meta. Revisa Plantillas y sincroniza.</p>
                             ) : (
                                 <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                                     {templates.map((t) => (

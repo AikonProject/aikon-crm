@@ -9,6 +9,8 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, Legend,
 } from 'recharts';
+import { toast } from 'sonner';
+import { useBusinessType, useHasModule } from '@/components/providers/tenant-provider';
 import type { Reservation, Conversation, FunnelStage } from '@/lib/types/database';
 
 type DateRange = '7d' | '30d' | '90d';
@@ -61,25 +63,55 @@ function getDateRange(range: DateRange): { from: string; to: string } {
     };
 }
 
-function groupByDay(items: Reservation[], days: number): { date: string; count: number }[] {
-    const map: Record<string, number> = {};
+type DayPoint = { day: string; date: string; count: number; revenue: number };
+
+/** One point per day of the range; `values` maps YYYY-MM-DD → count/revenue. */
+function seriesByDay(values: Record<string, { count: number; revenue?: number }>, days: number): DayPoint[] {
+    const points: DayPoint[] = [];
     for (let i = days - 1; i >= 0; i--) {
-        const d = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
-        map[d] = 0;
+        const day = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
+        points.push({
+            day,
+            date: new Date(day + 'T12:00:00').toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }),
+            count: values[day]?.count ?? 0,
+            revenue: values[day]?.revenue ?? 0,
+        });
     }
-    items.forEach((r) => {
-        if (map[r.reservation_date] !== undefined) {
-            map[r.reservation_date]++;
-        }
-    });
-    return Object.entries(map).map(([date, count]) => ({
-        date: new Date(date + 'T12:00:00').toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }),
-        count,
-    }));
+    return points;
+}
+
+type OrderPeriod = { orders: number; revenue: number; by_day: { date: string; count: number; revenue: number }[] };
+
+const ORDER_STATUS_LABELS: Record<string, string> = {
+    pending: 'Pendiente', confirmed: 'Confirmado', preparing: 'En preparación', ready: 'Listo',
+    delivered: 'Entregado', completed: 'Completado', cancelled: 'Cancelado', refunded: 'Reembolsado',
+};
+
+function formatMoney(amount: number): string {
+    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(amount);
+}
+
+function downloadCsv(filename: string, rows: (string | number)[][]) {
+    const csv = rows
+        .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+    // BOM so Excel opens accents correctly
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
 }
 
 export default function ReportsPage() {
+    const hasReservations = useHasModule('reservations');
+    const hasOrders = useHasModule('orders');
+    const isRestaurant = useBusinessType() === 'restaurant';
     const [range, setRange] = useState<DateRange>('30d');
+    const [orderPeriod, setOrderPeriod] = useState<OrderPeriod | null>(null);
+    const [ordersByStatus, setOrdersByStatus] = useState<Record<string, number>>({});
     const [reservations, setReservations] = useState<Reservation[]>([]);
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [stages, setStages] = useState<FunnelStage[]>([]);
@@ -92,11 +124,14 @@ export default function ReportsPage() {
         const { from } = getDateRange(range);
 
         Promise.all([
-            fetch(`/api/reservations`).then((r) => r.json()),
+            hasReservations ? fetch(`/api/reservations`).then((r) => r.json()) : Promise.resolve([]),
             fetch('/api/conversations').then((r) => r.json()),
             fetch('/api/contacts/count').then((r) => r.json()),
             fetch('/api/funnel-stages').then((r) => r.json()),
-        ]).then(async ([resData, convsData, contactsData, stagesData]) => {
+            hasOrders ? fetch(`/api/orders/stats?from=${from}`).then((r) => r.json()) : Promise.resolve(null),
+        ]).then(async ([resData, convsData, contactsData, stagesData, orderStats]) => {
+            setOrderPeriod(orderStats?.period ?? null);
+            setOrdersByStatus(orderStats?.orders_by_status ?? {});
             // Filter reservations to the selected date range client-side
             const allRes: Reservation[] = Array.isArray(resData) ? resData : [];
             const res: Reservation[] = allRes.filter((r) => r.reservation_date >= from);
@@ -119,11 +154,24 @@ export default function ReportsPage() {
             );
             setStageCounts(counts);
         }).finally(() => setLoading(false));
-    }, [range]);
+    }, [range, hasReservations, hasOrders]);
 
     // Chart data
     const days = getDaysBack(range);
-    const reservationsByDay = groupByDay(reservations, days);
+    const reservationsByDay = seriesByDay(
+        reservations.reduce<Record<string, { count: number }>>((acc, r) => {
+            acc[r.reservation_date] = { count: (acc[r.reservation_date]?.count ?? 0) + 1 };
+            return acc;
+        }, {}),
+        days
+    );
+    const ordersByDay = seriesByDay(
+        Object.fromEntries((orderPeriod?.by_day ?? []).map((d) => [d.date, d])),
+        days
+    );
+    const orderStatusData = Object.entries(ordersByStatus)
+        .filter(([, count]) => count > 0)
+        .map(([status, count]) => ({ name: ORDER_STATUS_LABELS[status] ?? status, value: count }));
 
     // Conversation status distribution
     const convByStatus = Object.entries(
@@ -156,10 +204,38 @@ export default function ReportsPage() {
 
     const maxFunnelCount = Math.max(...funnelData.map((f) => f.count), 1);
 
+    function exportCsv() {
+        const rows: (string | number)[][] = [
+            ['Reporte', RANGE_LABELS[range]],
+            [],
+            ['Métrica', 'Valor'],
+            ['Contactos totales', contactCount],
+            ['Conversaciones abiertas', openConvs],
+            ['Conversaciones resueltas', resolvedConvs],
+            ['Tasa de resolución (%)', responseRate],
+        ];
+        if (hasReservations) rows.push(['Reservas en período', totalReservations], ['Reservas confirmadas', confirmedReservations]);
+        if (hasOrders) rows.push(['Pedidos en período', orderPeriod?.orders ?? 0], ['Ventas en período', orderPeriod?.revenue ?? 0]);
+        rows.push([], ['Etapa del funnel', 'Contactos'], ...funnelData.map((f) => [f.name, f.count]));
+
+        const header = ['Fecha'];
+        if (hasReservations) header.push('Reservas');
+        if (hasOrders) header.push('Pedidos', 'Ventas');
+        rows.push([], header);
+        for (let i = 0; i < reservationsByDay.length; i++) {
+            const row: (string | number)[] = [reservationsByDay[i].day];
+            if (hasReservations) row.push(reservationsByDay[i].count);
+            if (hasOrders) row.push(ordersByDay[i].count, ordersByDay[i].revenue);
+            rows.push(row);
+        }
+        downloadCsv(`reporte-${range}-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+        toast.success('Reporte exportado');
+    }
+
     return (
         <>
             <Breadcrumb />
-            <PageHeader title="Reportes" description="Analítica y métricas de tu restaurante">
+            <PageHeader title="Reportes" description={`Analítica y métricas de tu ${isRestaurant ? 'restaurante' : 'negocio'}`}>
                 <div className="flex items-center gap-2">
                     {(Object.keys(RANGE_LABELS) as DateRange[]).map((r) => (
                         <button
@@ -171,14 +247,29 @@ export default function ReportsPage() {
                         </button>
                     ))}
                 </div>
-                <Button variant="outline" className="gap-2 rounded-xl border-[#E8E8EC] text-[#6B7280]">
+                <Button
+                    variant="outline"
+                    onClick={exportCsv}
+                    disabled={loading}
+                    className="gap-2 rounded-xl border-[#E8E8EC] text-[#6B7280]"
+                >
                     <Download size={15} /> Exportar CSV
                 </Button>
             </PageHeader>
 
             {/* Metric cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <MetricCard label="Reservas en período" value={loading ? '—' : totalReservations} sub={`${confirmedReservations} confirmadas`} color="#818CF8" />
+                {hasReservations && (
+                    <MetricCard label="Reservas en período" value={loading ? '—' : totalReservations} sub={`${confirmedReservations} confirmadas`} color="#818CF8" />
+                )}
+                {hasOrders && !hasReservations && (
+                    <MetricCard
+                        label="Ventas en período"
+                        value={loading ? '—' : formatMoney(orderPeriod?.revenue ?? 0)}
+                        sub={`${orderPeriod?.orders ?? 0} pedidos`}
+                        color="#818CF8"
+                    />
+                )}
                 <MetricCard label="Contactos totales" value={loading ? '—' : contactCount.toLocaleString()} color="#34D399" />
                 <MetricCard label="Conversaciones abiertas" value={loading ? '—' : openConvs} color="#F9A8D4" />
                 <MetricCard label="Tasa de resolución" value={loading ? '—' : `${responseRate}%`} sub={`${resolvedConvs} resueltas`} color="#A78BFA" />
@@ -186,26 +277,26 @@ export default function ReportsPage() {
 
             {/* Charts row 1 */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
-                {/* Reservas por día */}
-                <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm p-6">
-                    <h3 className="text-[15px] font-semibold text-[#1A1A2E] mb-4">Reservas por día</h3>
+                {/* Reservas (o pedidos) por día */}
+                {(hasReservations || hasOrders) && <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm p-6">
+                    <h3 className="text-[15px] font-semibold text-[#1A1A2E] mb-4">{hasReservations ? 'Reservas por día' : 'Pedidos por día'}</h3>
                     {loading ? (
                         <div className="h-[240px] flex items-center justify-center text-[#9CA3AF] text-[13px]">Cargando…</div>
                     ) : (
                         <div className="h-[240px]">
                             <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={reservationsByDay} barSize={8}>
+                                <BarChart data={hasReservations ? reservationsByDay : ordersByDay} barSize={8}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
                                     <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9CA3AF' }} axisLine={false} tickLine={false}
                                         interval={Math.floor(reservationsByDay.length / 6)} />
                                     <YAxis tick={{ fontSize: 10, fill: '#9CA3AF' }} axisLine={false} tickLine={false} width={24} allowDecimals={false} />
                                     <Tooltip contentStyle={{ background: '#fff', border: '1px solid #E8E8EC', borderRadius: '12px', fontSize: '12px' }} />
-                                    <Bar dataKey="count" fill="#818CF8" radius={[4, 4, 0, 0]} name="Reservas" />
+                                    <Bar dataKey="count" fill="#818CF8" radius={[4, 4, 0, 0]} name={hasReservations ? 'Reservas' : 'Pedidos'} />
                                 </BarChart>
                             </ResponsiveContainer>
                         </div>
                     )}
-                </div>
+                </div>}
 
                 {/* Conversaciones por estado */}
                 <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm p-6">
@@ -256,19 +347,23 @@ export default function ReportsPage() {
                     )}
                 </div>
 
-                {/* Top ocasiones de reserva */}
-                <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm p-6">
-                    <h3 className="text-[15px] font-semibold text-[#1A1A2E] mb-4">Top ocasiones de reserva</h3>
+                {/* Top ocasiones de reserva (o pedidos por estado) */}
+                {(hasReservations || hasOrders) && <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm p-6">
+                    <h3 className="text-[15px] font-semibold text-[#1A1A2E] mb-4">
+                        {hasReservations ? 'Top ocasiones de reserva' : 'Pedidos por estado'}
+                    </h3>
                     {loading ? (
                         <div className="h-[200px] flex items-center justify-center text-[#9CA3AF] text-[13px]">Cargando…</div>
-                    ) : occasionData.length === 0 ? (
-                        <div className="h-[200px] flex items-center justify-center text-[#9CA3AF] text-[13px]">Sin datos de ocasiones</div>
+                    ) : (hasReservations ? occasionData : orderStatusData).length === 0 ? (
+                        <div className="h-[200px] flex items-center justify-center text-[#9CA3AF] text-[13px]">
+                            {hasReservations ? 'Sin datos de ocasiones' : 'Sin pedidos'}
+                        </div>
                     ) : (
                         <div className="h-[200px]">
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
-                                    <Pie data={occasionData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70}>
-                                        {occasionData.map((_, i) => (
+                                    <Pie data={hasReservations ? occasionData : orderStatusData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70}>
+                                        {(hasReservations ? occasionData : orderStatusData).map((_, i) => (
                                             <Cell key={i} fill={COLORS[i % COLORS.length]} />
                                         ))}
                                     </Pie>
@@ -278,7 +373,7 @@ export default function ReportsPage() {
                             </ResponsiveContainer>
                         </div>
                     )}
-                </div>
+                </div>}
             </div>
         </>
     );

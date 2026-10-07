@@ -145,18 +145,30 @@
   },
   {
     "id": "BE009",
-    "title": "Webhook n8n: rechaza sin secreto",
+    "title": "Webhook n8n: exige el secreto cuando está configurado",
     "description": "Cualquiera podría insertar mensajes.",
     "category": "api",
     "priority": "High",
     "steps": [
       {
         "type": "action",
-        "description": "POST /api/webhooks/n8n {tenant_id, action:'ai_response', conversation_id, contact_id, content:'x'} SIN el header x-webhook-secret"
+        "description": "Configurar n8n_webhook_secret en el tenant"
+      },
+      {
+        "type": "action",
+        "description": "POST /api/webhooks/n8n {tenant_id, action:'ai_response', ...} SIN el header x-webhook-secret"
       },
       {
         "type": "assertion",
         "description": "Responde 401 y no inserta el mensaje"
+      },
+      {
+        "type": "action",
+        "description": "Repetir con el secreto correcto"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 201"
       }
     ]
   },
@@ -257,6 +269,48 @@
       {
         "type": "assertion",
         "description": "Responde 404 o 403 y no modifica nada"
+      }
+    ]
+  },
+  {
+    "id": "BE014",
+    "title": "Webhook n8n: progreso de campaña",
+    "description": "campaign_message_status actualiza los contadores.",
+    "category": "api",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "POST /api/webhooks/n8n {action:'campaign_message_status', campaign_message_id, status:'delivered'} con el secreto"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 200 {updated:1} y delivered_count de la campaña sube"
+      },
+      {
+        "type": "action",
+        "description": "Enviar status 'bogus'"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 400"
+      }
+    ]
+  },
+  {
+    "id": "BE015",
+    "title": "Credenciales: no se puede escribir en otro tenant",
+    "description": "PATCH /api/settings/credentials ignora tenant_id del body.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "PATCH /api/settings/credentials {tenant_id:'<otro tenant>', n8n_send_message_webhook:'https://evil'} con la sesión del tenant A"
+      },
+      {
+        "type": "assertion",
+        "description": "Solo cambia la fila del tenant A; la del otro tenant no cambia"
       }
     ]
   }

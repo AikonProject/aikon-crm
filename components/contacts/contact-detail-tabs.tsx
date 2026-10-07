@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/button';
 import { FunnelStageBadge } from '@/components/contacts/funnel-stage-badge';
 import { formatSmartDate, formatDate } from '@/lib/utils/format';
 import { useSupabaseClient } from '@/lib/supabase/client';
-import { useTenantId } from '@/components/providers/tenant-provider';
+import { useHasModule, useTenantId } from '@/components/providers/tenant-provider';
 import { MessageBubble } from '@/components/conversations/message-bubble';
 import type {
     ConversationRow,
@@ -85,6 +85,8 @@ export function ContactDetailTabs({
     stages,
     contactId,
 }: ContactDetailTabsProps) {
+    const hasReservations = useHasModule('reservations');
+    const tabs = TABS.filter((t) => t.key !== 'reservations' || hasReservations);
     const [activeTab, setActiveTab] = useState<TabKey>('info');
     const [notes, setNotes] = useState(initialNotes);
     const [noteText, setNoteText] = useState('');
@@ -115,7 +117,7 @@ export function ContactDetailTabs({
         <div>
             {/* Tab bar */}
             <div className="flex items-center gap-0.5 border-b border-[#E8E8EC] mb-6 overflow-x-auto">
-                {TABS.map((tab) => (
+                {tabs.map((tab) => (
                     <button
                         key={tab.key}
                         onClick={() => setActiveTab(tab.key)}
@@ -146,7 +148,7 @@ export function ContactDetailTabs({
             {activeTab === 'conversations' && (
                 <ConversationsTab conversations={conversations} />
             )}
-            {activeTab === 'reservations' && (
+            {activeTab === 'reservations' && hasReservations && (
                 <ReservationsTab reservations={reservations} />
             )}
             {activeTab === 'notes' && (

@@ -14,6 +14,9 @@ import type { ContactSource } from '@/lib/types/database';
 
 interface NewContactDialogProps {
     children: React.ReactNode;
+    /** Funnel stage for the new contact (from the funnel's "Agregar contacto"). */
+    defaultStageId?: string | null;
+    defaultOpen?: boolean;
 }
 
 const SOURCES: { value: ContactSource; label: string }[] = [
@@ -24,9 +27,9 @@ const SOURCES: { value: ContactSource; label: string }[] = [
     { value: 'n8n', label: 'Automatización' },
 ];
 
-export function NewContactDialog({ children }: NewContactDialogProps) {
+export function NewContactDialog({ children, defaultStageId = null, defaultOpen = false }: NewContactDialogProps) {
     const router = useRouter();
-    const [open, setOpen] = useState(false);
+    const [open, setOpen] = useState(defaultOpen);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -61,6 +64,7 @@ export function NewContactDialog({ children }: NewContactDialogProps) {
                     email: form.email.trim() || null,
                     wa_id: form.wa_id.trim() || null,
                     source: form.source,
+                    funnel_stage_id: defaultStageId,
                 }),
             });
 
