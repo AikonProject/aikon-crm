@@ -1,0 +1,263 @@
+[
+  {
+    "id": "BE001",
+    "title": "APIs privadas sin sesión devuelven 401",
+    "description": "Sin cookie de Clerk.",
+    "category": "api",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "GET /api/contacts sin autenticación"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 401 o redirige a /sign-in, nunca 200 con datos"
+      }
+    ]
+  },
+  {
+    "id": "BE002",
+    "title": "/api/orders bloqueado sin módulo orders",
+    "description": "Con sesión de crm_basic.",
+    "category": "api",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "GET /api/orders con sesión de un usuario crm_basic"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 403 con un mensaje 'Tu plan no incluye el módulo'"
+      }
+    ]
+  },
+  {
+    "id": "BE003",
+    "title": "/api/products bloqueado sin módulo orders",
+    "description": "Con sesión de restaurant_basic.",
+    "category": "api",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "GET /api/products con sesión de un usuario restaurant_basic"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 403 con un mensaje 'Tu plan no incluye el módulo'"
+      }
+    ]
+  },
+  {
+    "id": "BE004",
+    "title": "/api/campaigns bloqueado sin módulo campaigns",
+    "description": "Con sesión de crm_basic.",
+    "category": "api",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "GET /api/campaigns con sesión de un usuario crm_basic"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 403 con un mensaje 'Tu plan no incluye el módulo'"
+      }
+    ]
+  },
+  {
+    "id": "BE005",
+    "title": "/api/reservations bloqueado sin módulo reservations",
+    "description": "Con sesión de crm_pro.",
+    "category": "api",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "GET /api/reservations con sesión de un usuario crm_pro"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 403 con un mensaje 'Tu plan no incluye el módulo'"
+      }
+    ]
+  },
+  {
+    "id": "BE006",
+    "title": "/api/restaurant/tables bloqueado sin módulo restaurant",
+    "description": "Con sesión de crm_pro.",
+    "category": "api",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "GET /api/restaurant/tables con sesión de un usuario crm_pro"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 403 con un mensaje 'Tu plan no incluye el módulo'"
+      }
+    ]
+  },
+  {
+    "id": "BE007",
+    "title": "Webhook WhatsApp: verificación GET",
+    "description": "Handshake de Meta.",
+    "category": "api",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "GET /api/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=INCORRECTO&hub.challenge=123"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 403"
+      },
+      {
+        "type": "action",
+        "description": "Repetir con el verify_token correcto del tenant"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 200 con el cuerpo '123'"
+      }
+    ]
+  },
+  {
+    "id": "BE008",
+    "title": "Webhook WhatsApp: rechaza POST sin firma",
+    "description": "Meta firma con X-Hub-Signature-256.",
+    "category": "api",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "POST /api/webhooks/whatsapp con un payload válido de mensaje entrante y SIN el header X-Hub-Signature-256"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 401 o 403 y no se crea ningún mensaje"
+      }
+    ]
+  },
+  {
+    "id": "BE009",
+    "title": "Webhook n8n: rechaza sin secreto",
+    "description": "Cualquiera podría insertar mensajes.",
+    "category": "api",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "POST /api/webhooks/n8n {tenant_id, action:'ai_response', conversation_id, contact_id, content:'x'} SIN el header x-webhook-secret"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 401 y no inserta el mensaje"
+      }
+    ]
+  },
+  {
+    "id": "BE010",
+    "title": "Webhook n8n: acciones válidas",
+    "description": "Con el secreto correcto.",
+    "category": "api",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "POST con action 'ai_response' y el secreto correcto"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 201 con message_id"
+      },
+      {
+        "type": "action",
+        "description": "POST con action 'message_status' y status 'read' para el mismo wa_message_id"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 200 con {updated:true}"
+      },
+      {
+        "type": "action",
+        "description": "POST con action 'desconocida'"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 400"
+      }
+    ]
+  },
+  {
+    "id": "BE011",
+    "title": "Webhook Clerk rechaza firma inválida",
+    "description": "svix.",
+    "category": "api",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "POST /api/webhooks/clerk con svix headers falsos"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 400 'Invalid signature'"
+      }
+    ]
+  },
+  {
+    "id": "BE012",
+    "title": "Reserva pública valida campos",
+    "description": "Validación de entrada.",
+    "category": "api",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "POST /api/public/{slug}/reservations sin teléfono o con party_size 0"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 400 con un mensaje claro"
+      },
+      {
+        "type": "action",
+        "description": "POST con datos válidos"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 201"
+      }
+    ]
+  },
+  {
+    "id": "BE013",
+    "title": "Aislamiento entre tenants",
+    "description": "Un tenant no puede leer ni editar datos de otro.",
+    "category": "api",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Con la sesión del tenant A hacer GET /api/contacts/{id de un contacto del tenant B}"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 404 o 403"
+      },
+      {
+        "type": "action",
+        "description": "PATCH al mismo id"
+      },
+      {
+        "type": "assertion",
+        "description": "Responde 404 o 403 y no modifica nada"
+      }
+    ]
+  }
+]
