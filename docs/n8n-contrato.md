@@ -2,7 +2,7 @@
 
 ## Principios
 1. **El CRM es el único que escribe en Supabase.** n8n no necesita llaves de la base de datos: todo lo que pasa en
-   WhatsApp se reporta a `POST https://aikon-crm.vercel.app/api/webhooks/n8n`.
+   WhatsApp se reporta a `POST https://crm.aikonintelligence.com/api/webhooks/n8n`.
 2. **Las credenciales de WhatsApp viven en el n8n de cada cliente**, no en el CRM. Así da igual el proveedor
    (Meta Cloud API, Zenvia, etc.): el CRM solo conoce las URLs de n8n y el secreto compartido.
 3. **Cada cliente tiene su bot** (su prompt, herramientas y credenciales), en el n8n de AiKon o en uno propio.
