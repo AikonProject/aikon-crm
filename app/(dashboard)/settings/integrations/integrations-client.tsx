@@ -79,6 +79,8 @@ export default function IntegrationsClient() {
     const [botWebhook, setBotWebhook] = useState('');
     const [reservationWebhook, setReservationWebhook] = useState('');
     const [campaignWebhook, setCampaignWebhook] = useState('');
+    const [templatesWebhook, setTemplatesWebhook] = useState('');
+    const [provider, setProvider] = useState('');
     const [webhookSecret, setWebhookSecret] = useState('');
     const [savingN8n, setSavingN8n] = useState(false);
     const [savedN8n, setSavedN8n] = useState(false);
@@ -110,6 +112,8 @@ export default function IntegrationsClient() {
                 setBotWebhook(flat.n8n_bot_webhook ?? '');
                 setReservationWebhook(flat.n8n_reservation_webhook ?? '');
                 setCampaignWebhook(flat.n8n_campaign_webhook ?? '');
+                setTemplatesWebhook(flat.n8n_templates_webhook ?? '');
+                setProvider(flat.whatsapp_provider ?? '');
                 setWebhookSecret(flat.n8n_webhook_secret ?? '');
                 // Google Calendar
                 setCalendarId(flat.google_calendar_id ?? '');
@@ -152,6 +156,8 @@ export default function IntegrationsClient() {
                     n8n_bot_webhook: botWebhook,
                     n8n_reservation_webhook: reservationWebhook,
                     n8n_campaign_webhook: campaignWebhook,
+                    n8n_templates_webhook: templatesWebhook,
+                    whatsapp_provider: provider,
                     n8n_webhook_secret: webhookSecret,
                 }),
             });
@@ -238,6 +244,8 @@ export default function IntegrationsClient() {
                     <FieldRow label="Bot Webhook URL" value={botWebhook} onChange={setBotWebhook} placeholder="https://mi-n8n.ejemplo.com/webhook/..." />
                     <FieldRow label="Reservas Webhook URL" value={reservationWebhook} onChange={setReservationWebhook} placeholder="https://mi-n8n.ejemplo.com/webhook/reservas" />
                     <FieldRow label="Campañas Webhook URL" value={campaignWebhook} onChange={setCampaignWebhook} placeholder="https://mi-n8n.ejemplo.com/webhook/campanas" />
+                    <FieldRow label="Plantillas Webhook URL" value={templatesWebhook} onChange={setTemplatesWebhook} placeholder="https://mi-n8n.ejemplo.com/webhook/plantillas" />
+                    <FieldRow label="Proveedor de WhatsApp (informativo)" value={provider} onChange={setProvider} placeholder="meta, zenvia, …" />
                     <FieldRow label="Webhook Secret" value={webhookSecret} onChange={setWebhookSecret} type="password" placeholder="secreto compartido" />
                     <div className="flex items-center gap-3 flex-wrap">
                         <SaveButton onClick={saveN8n} saving={savingN8n} saved={savedN8n} />

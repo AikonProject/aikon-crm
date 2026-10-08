@@ -26,7 +26,7 @@ export async function GET() {
 const EDITABLE_FIELDS = [
     'waba_id', 'phone_number_id', 'meta_access_token', 'meta_webhook_verify_token',
     'n8n_base_url', 'n8n_webhook_secret', 'n8n_send_message_webhook', 'n8n_bot_webhook',
-    'n8n_reservation_webhook', 'n8n_campaign_webhook',
+    'n8n_reservation_webhook', 'n8n_campaign_webhook', 'n8n_templates_webhook', 'whatsapp_provider',
     'google_calendar_id', 'google_service_account_json',
 ] as const;
 

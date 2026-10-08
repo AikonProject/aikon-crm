@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireModule } from '@/lib/tenant-plan';
 import { TenantError } from '@/lib/tenant';
+import { n8nHeaders } from '@/lib/n8n';
 
 export async function PATCH(
     request: Request,
@@ -42,7 +43,7 @@ export async function PATCH(
                 try {
                     const { data: creds } = await supabase
                         .from('tenant_credentials')
-                        .select('n8n_reservation_webhook')
+                        .select('n8n_reservation_webhook, n8n_webhook_secret')
                         .eq('tenant_id', TENANT_ID)
                         .maybeSingle();
 
@@ -83,7 +84,7 @@ export async function PATCH(
 
                     await fetch(webhookUrl, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: n8nHeaders(creds?.n8n_webhook_secret),
                         body: JSON.stringify({
                             action,
                             tenant_id: TENANT_ID,
