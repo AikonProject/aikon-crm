@@ -238,27 +238,33 @@ async function handleAiResponse(
     supabase: ReturnType<typeof createAdminClient>,
     body: N8NPayload
 ) {
-    const {
-        tenant_id,
-        conversation_id,
-        contact_id,
-        wa_message_id,
-        content,
-        content_type,
-    } = body;
+    const { tenant_id, conversation_id, contact_id, wa_message_id, content, content_type } = body;
 
-    if (!conversation_id || !contact_id) {
-        return NextResponse.json(
-            { error: 'Missing conversation_id or contact_id' },
-            { status: 400 }
-        );
+    if (!contact_id) {
+        return NextResponse.json({ error: 'Missing contact_id' }, { status: 400 });
+    }
+    const conversationId = conversation_id
+        ?? (await getOrCreateConversation(supabase, tenant_id, contact_id))?.id;
+    if (!conversationId) {
+        return NextResponse.json({ error: 'Conversation not found' }, { status: 400 });
     }
 
+    // Retries from n8n must not duplicate the bot's reply
+    if (wa_message_id) {
+        const { data: existing } = await supabase
+            .from('messages')
+            .select('id')
+            .eq('wa_message_id', wa_message_id)
+            .maybeSingle();
+        if (existing) return NextResponse.json({ message_id: existing.id, duplicate: true });
+    }
+
+    // Conversation summary and contact timestamps are updated by DB triggers
     const { data: message, error } = await supabase
         .from('messages')
         .insert({
             tenant_id,
-            conversation_id,
+            conversation_id: conversationId,
             contact_id,
             direction: 'outbound' as const,
             content_type: (content_type ?? 'text') as MessageType,
@@ -277,22 +283,6 @@ async function handleAiResponse(
         console.error('[n8n webhook] ai_response insert error:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
-
-    // Update conversation
-    const now = new Date().toISOString();
-    await supabase
-        .from('conversations')
-        .update({
-            last_message: content?.substring(0, 255) ?? `[${content_type ?? 'text'}]`,
-            last_message_at: now,
-        })
-        .eq('id', conversation_id);
-
-    // Update contact's last_contacted_at
-    await supabase
-        .from('contacts')
-        .update({ last_contacted_at: now })
-        .eq('id', contact_id);
 
     return NextResponse.json({ message_id: message.id }, { status: 201 });
 }
