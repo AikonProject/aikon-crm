@@ -74,6 +74,8 @@ export async function POST(request: NextRequest) {
                 return await handleInboundMessage(supabase, body);
             case 'templates_sync':
                 return await handleTemplatesSync(supabase, body);
+            case 'template_created':
+                return await handleTemplateCreated(supabase, body);
             case 'ai_note':
                 return await handleAiNote(supabase, body);
             case 'activity':
@@ -546,6 +548,7 @@ async function handleTemplatesSync(
             category: t.category ?? null,
             components: t.components ?? [],
             meta_id: t.id ?? null,
+            rejection_reason: t.rejected_reason && t.rejected_reason !== 'NONE' ? t.rejected_reason : null,
             // PAUSED / DISABLED / IN_APPEAL… can't be sent → pending
             status: (STATUSES as readonly string[]).includes(String(t.status).toUpperCase())
                 ? (String(t.status).toUpperCase() as Status)
@@ -564,6 +567,44 @@ async function handleTemplatesSync(
     }
 
     return NextResponse.json({ synced: rows.length });
+}
+
+/**
+ * Result of creating a template in the provider (after CRM → n8n create_template).
+ * { template_id? | name+language, meta_id?, status?, error_message? }
+ */
+async function handleTemplateCreated(
+    supabase: ReturnType<typeof createAdminClient>,
+    body: N8NPayload
+) {
+    const { tenant_id } = body;
+    if (!body.template_id && !body.name) {
+        return NextResponse.json({ error: 'Missing template_id or name' }, { status: 400 });
+    }
+    const failed = !!body.error_message;
+    const raw = String(body.status ?? (failed ? 'REJECTED' : 'PENDING')).toUpperCase();
+    const status = (['APPROVED', 'PENDING', 'REJECTED'].includes(raw) ? raw : 'PENDING') as 'APPROVED' | 'PENDING' | 'REJECTED';
+
+    let query = supabase
+        .from('message_templates')
+        .update({
+            status: failed ? 'REJECTED' : status,
+            ...(body.meta_id ? { meta_id: body.meta_id } : {}),
+            rejection_reason: failed ? body.error_message : null,
+            updated_at: new Date().toISOString(),
+        })
+        .eq('tenant_id', tenant_id);
+    query = body.template_id
+        ? query.eq('id', body.template_id)
+        : query.eq('name', body.name!).eq('language', body.language ?? 'es');
+
+    const { data, error } = await query.select('id');
+    if (error) {
+        console.error('[n8n webhook] template_created error:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    if (!data?.length) return NextResponse.json({ error: 'Template not found' }, { status: 404 });
+    return NextResponse.json({ updated: data.length });
 }
 
 /**
@@ -841,5 +882,10 @@ type N8NPayload = {
     // appointment (create when no appointment.id, update otherwise)
     appointment?: Record<string, unknown> & { id?: string };
     // templates_sync
-    templates?: { id?: string; name: string; language?: string; category?: string; status?: string; components?: unknown }[];
+    templates?: { id?: string; name: string; language?: string; category?: string; status?: string; components?: unknown; rejected_reason?: string }[];
+    // template_created
+    template_id?: string;
+    name?: string;
+    language?: string;
+    meta_id?: string;
 };

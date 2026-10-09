@@ -37,6 +37,7 @@ Todas las llamadas llevan el header `x-webhook-secret`.
 | `reservation_confirmation` | Confirmar una reserva | `tenant_id, reservation_id, contact_id, guest_name, guest_phone, wa_id, reservation_date, reservation_time, party_size` |
 | `send_campaign` | Crear o enviar una campaña | `tenant_id, campaign_id, campaign_name, scheduled_at, template{name, language, components}, template_variables, recipients[{campaign_message_id, contact_id, name, wa_id}]` |
 | `sync_templates` | Botón "Sincronizar" en Plantillas | `tenant_id` |
+| `create_template` | "Nueva plantilla" en Plantillas | `tenant_id, template_id, name, language, category, components[{ type: 'BODY', text, example? }]` → n8n la crea en el proveedor y responde con `template_created` |
 
 **Plantillas desde el chat:** cuando `content_type = 'template'`, `template = { name, language, components }` y
 `template_variables = { "1": "Ana", ... }`. `message` trae el texto ya renderizado (para guardarlo en el chat).
@@ -76,6 +77,7 @@ Header `x-webhook-secret`. Si el tenant tiene secreto configurado, una llamada s
 | `ai_note` | Nota interna de la IA (resumen, intención, datos capturados). No va a WhatsApp | `contact_id, conversation_id?, content` → aparece en el chat como "Nota de la IA" y en el panel lateral |
 | `activity` | Acción a registrar en la línea de tiempo (p. ej. "IA transfirió a humano") | `contact_id, activity_type, description, performed_by_name? (por defecto 'IA'), metadata?` |
 | `appointment` | El bot agenda, reprograma, confirma o cancela una cita (planes con módulo Citas) | `appointment: { id? (si viene, actualiza), contact_id? \| contact_phone?, title?, start_time, end_time (ISO), meeting_type ('virtual' \| 'presencial' \| 'llamada'), meeting_url?, location?, contact_name?, contact_email?, status ('scheduled' \| 'confirmed' \| 'completed' \| 'cancelled' \| 'no_show'), notes?, description? }` → responde `{ appointment }`. Si no hay `contact_id`, busca o crea el contacto por `contact_phone` |
+| `template_created` | Resultado de `create_template` | `template_id, meta_id?, status ('PENDING' \| 'APPROVED' \| 'REJECTED'), error_message?` (con `error_message` queda rechazada y el CRM muestra el motivo) |
 | `templates_sync` | Lista completa de plantillas del proveedor | `templates[{ id, name, language, category, status, components }]` |
 
 Qué garantiza el CRM:

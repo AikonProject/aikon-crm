@@ -6,6 +6,8 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { PageHeader } from '@/components/layout/page-header';
+import { useSupabaseClient } from '@/lib/supabase/client';
+import { useTenantId } from '@/components/providers/tenant-provider';
 import type { MessageTemplate } from '@/lib/types/database';
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -44,34 +46,43 @@ function NewTemplateDialog({
 }) {
     const [name, setName] = useState('');
     const [content, setContent] = useState('');
-    const [category, setCategory] = useState('');
+    const [category, setCategory] = useState('MARKETING');
     const [language, setLanguage] = useState('es');
+    const [examples, setExamples] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     // Extract variables from {{N}} patterns
-    const variables = Array.from(new Set(content.match(/\{\{(\d+)\}\}/g)?.map((v) => v.replace(/\{\{|\}\}/g, '')) ?? []));
+    const variables = Array.from(new Set(content.match(/\{\{(\d+)\}\}/g)?.map((v) => v.replace(/\{\{|\}\}/g, '')) ?? []))
+        .sort((a, b) => Number(a) - Number(b));
+    // Same rule the server applies: what Meta will receive as the name
+    const metaName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+        .replace(/[\s-]+/g, '_').replace(/[^a-z0-9_]/g, '').replace(/_+/g, '_');
 
     async function handleCreate() {
         if (!name.trim() || !content.trim()) return;
         setLoading(true);
+        setError(null);
         try {
             const res = await fetch('/api/templates', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, content, category: category || null, language, variables: variables.length > 0 ? variables : null }),
+                body: JSON.stringify({ name, content, category, language, examples: variables.map((v) => examples[v] ?? '') }),
             });
+            const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                const d = await res.json().catch(() => ({}));
-                toast.error(d.error || 'Error al crear la plantilla');
+                const msg = data.error || 'Error al crear la plantilla';
+                setError(msg);
+                toast.error(msg);
                 return;
             }
-            const data = await res.json();
             if (data.template) {
                 onCreated(data.template);
-                setName(''); setContent(''); setCategory(''); setLanguage('es');
-                toast.success('Plantilla creada');
+                setName(''); setContent(''); setCategory('MARKETING'); setLanguage('es'); setExamples({});
+                toast.success('Plantilla enviada a Meta para aprobación. El estado se actualizará solo.');
             }
         } catch {
+            setError('Error de conexión al crear la plantilla');
             toast.error('Error de conexión al crear la plantilla');
         } finally {
             setLoading(false);
@@ -101,16 +112,18 @@ function NewTemplateDialog({
                             placeholder="promo_dia_madre"
                             className="w-full px-3 py-2.5 text-[14px] bg-white border border-[#E8E8EC] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20 focus:border-[#818CF8]"
                         />
+                        {name && metaName !== name && (
+                            <p className="text-[11px] text-[#9CA3AF] mt-1">Se guardará como <b className="text-[#4F46E5]">{metaName || '—'}</b> (Meta solo acepta minúsculas, números y _)</p>
+                        )}
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                         <div>
-                            <label className="block text-[13px] font-medium text-[#6B7280] mb-1.5">Categoría</label>
+                            <label className="block text-[13px] font-medium text-[#6B7280] mb-1.5">Categoría <span className="text-red-500">*</span></label>
                             <select
                                 value={category}
                                 onChange={(e) => setCategory(e.target.value)}
                                 className="w-full px-3 py-2.5 text-[14px] bg-white border border-[#E8E8EC] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20 focus:border-[#818CF8]"
                             >
-                                <option value="">Sin categoría</option>
                                 <option value="MARKETING">Marketing</option>
                                 <option value="UTILITY">Utilidad</option>
                                 <option value="AUTHENTICATION">Autenticación</option>
@@ -142,11 +155,28 @@ function NewTemplateDialog({
                             className="w-full px-3 py-2.5 text-[14px] bg-white border border-[#E8E8EC] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20 focus:border-[#818CF8] resize-none"
                         />
                         {variables.length > 0 && (
-                            <p className="text-[11px] text-[#9CA3AF] mt-1">
-                                Variables detectadas: {variables.map((v) => `{{${v}}}`).join(', ')}
-                            </p>
+                            <div className="mt-3 space-y-2">
+                                <p className="text-[12px] font-medium text-[#6B7280]">
+                                    Ejemplos para Meta <span className="text-red-500">*</span>
+                                    <span className="ml-1 text-[11px] text-[#9CA3AF] font-normal">(un valor de muestra por variable)</span>
+                                </p>
+                                {variables.map((v) => (
+                                    <div key={v} className="flex items-center gap-2">
+                                        <span className="text-[11px] px-2 py-0.5 bg-[#EEF0FF] text-[#4F46E5] rounded-full font-medium w-12 text-center">{`{{${v}}}`}</span>
+                                        <input
+                                            value={examples[v] ?? ''}
+                                            onChange={(e) => setExamples((p) => ({ ...p, [v]: e.target.value }))}
+                                            placeholder={v === '1' ? 'Ej: María' : 'Ej: valor de muestra'}
+                                            className="flex-1 px-3 py-1.5 text-[13px] bg-white border border-[#E8E8EC] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20 focus:border-[#818CF8]"
+                                        />
+                                    </div>
+                                ))}
+                            </div>
                         )}
                     </div>
+                    {error && (
+                        <div role="alert" className="px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-[12px] text-red-700">{error}</div>
+                    )}
                 </div>
                 <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#E8E8EC]">
                     <Button variant="outline" onClick={onClose} className="rounded-xl border-[#E8E8EC]">Cancelar</Button>
@@ -171,6 +201,35 @@ export default function TemplatesPage() {
     const [syncMsg, setSyncMsg] = useState('');
     const [showNew, setShowNew] = useState(false);
     const [selected, setSelected] = useState<MessageTemplate | null>(null);
+
+    // Live status: n8n reports creation results and Meta approvals
+    const supabase = useSupabaseClient();
+    const tenantId = useTenantId();
+    useEffect(() => {
+        const channel = supabase
+            .channel('message-templates')
+            .on('postgres_changes', {
+                event: '*', schema: 'public', table: 'message_templates', filter: `tenant_id=eq.${tenantId}`,
+            }, (payload) => {
+                if (payload.eventType === 'DELETE') {
+                    const id = (payload.old as { id?: string })?.id;
+                    setTemplates((prev) => prev.filter((t) => t.id !== id));
+                    return;
+                }
+                const row = payload.new as MessageTemplate;
+                setTemplates((prev) => {
+                    const before = prev.find((t) => t.id === row.id);
+                    if (before && before.status !== row.status) {
+                        if (row.status === 'APPROVED') toast.success(`Plantilla "${row.name}" aprobada`);
+                        if (row.status === 'REJECTED') toast.error(`Plantilla "${row.name}" rechazada${row.rejection_reason ? `: ${row.rejection_reason}` : ''}`);
+                    }
+                    return before ? prev.map((t) => (t.id === row.id ? row : t)) : [row, ...prev];
+                });
+                setSelected((s) => (s?.id === row.id ? row : s));
+            })
+            .subscribe();
+        return () => { supabase.removeChannel(channel); };
+    }, [supabase, tenantId]);
 
     useEffect(() => {
         fetch('/api/templates')
@@ -281,6 +340,9 @@ export default function TemplatesPage() {
                                                     <span className={`text-[12px] font-medium px-2.5 py-1 rounded-full ${badge.className}`}>
                                                         {badge.label}
                                                     </span>
+                                                    {status === 'REJECTED' && t.rejection_reason && (
+                                                        <p className="text-[11px] text-[#DC2626] mt-1 max-w-[220px] truncate" title={t.rejection_reason}>{t.rejection_reason}</p>
+                                                    )}
                                                 </td>
                                                 <td className="px-5 py-3.5 text-[13px] text-[#9CA3AF]">
                                                     {getTemplateVariables(t).length > 0
@@ -307,6 +369,17 @@ export default function TemplatesPage() {
                                 </button>
                             </div>
                             <div className="space-y-3">
+                                {selected.status === 'REJECTED' && selected.rejection_reason && (
+                                    <div className="px-3 py-2 rounded-lg bg-red-50 border border-red-200">
+                                        <p className="text-[11px] font-semibold text-red-700 uppercase tracking-wider mb-0.5">Motivo del rechazo</p>
+                                        <p className="text-[12px] text-red-700 break-words">{selected.rejection_reason}</p>
+                                    </div>
+                                )}
+                                {selected.status === 'PENDING' && (
+                                    <p className="text-[12px] text-[#D97706] bg-[#FFFBEB] rounded-lg px-3 py-2">
+                                        En revisión por Meta. Puede tardar de minutos a horas; el estado se actualiza solo.
+                                    </p>
+                                )}
                                 <div>
                                     <p className="text-[11px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-1">Categoría</p>
                                     <p className="text-[13px] text-[#1A1A2E]">{selected.category ?? '—'}</p>
@@ -348,7 +421,7 @@ export default function TemplatesPage() {
                 open={showNew}
                 onClose={() => setShowNew(false)}
                 onCreated={(t) => {
-                    setTemplates((prev) => [t, ...prev]);
+                    setTemplates((prev) => [t, ...prev.filter((x) => x.id !== t.id)]);
                     setShowNew(false);
                     setSelected(t);
                 }}
