@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { MessageType } from '@/lib/types/database';
 import { refreshCampaignCounts } from '@/lib/campaigns';
+import { logActivity } from '@/lib/activity';
 
 // ============================================================
 // N8N Callback Webhook
@@ -70,6 +71,10 @@ export async function POST(request: NextRequest) {
                 return await handleInboundMessage(supabase, body);
             case 'templates_sync':
                 return await handleTemplatesSync(supabase, body);
+            case 'ai_note':
+                return await handleAiNote(supabase, body);
+            case 'activity':
+                return await handleActivity(supabase, body);
             default:
                 return NextResponse.json(
                     { error: `Unknown action: ${action}` },
@@ -150,6 +155,7 @@ async function handleMessageSent(
             error_message: failed ? body.error_message ?? null : null,
             sender_type: 'human' as const,
             sent_by_name: sent_by_name ?? 'Agente',
+            template_name: body.template_name ?? null,
             is_note: false,
         })
         .select('id')
@@ -555,6 +561,77 @@ async function handleTemplatesSync(
     return NextResponse.json({ synced: rows.length });
 }
 
+/**
+ * A note written by the AI (e.g. "the customer wants a quote for 20 people").
+ * Shown in the chat (as an AI note) and in the contact's notes.
+ */
+async function handleAiNote(
+    supabase: ReturnType<typeof createAdminClient>,
+    body: N8NPayload
+) {
+    const { tenant_id, contact_id, content } = body;
+    if (!contact_id || !content?.trim()) {
+        return NextResponse.json({ error: 'Missing contact_id or content' }, { status: 400 });
+    }
+    const { data: contact } = await supabase
+        .from('contacts').select('id').eq('id', contact_id).eq('tenant_id', tenant_id).maybeSingle();
+    if (!contact) return NextResponse.json({ error: 'Contact not found' }, { status: 404 });
+
+    const conversation = body.conversation_id
+        ? { id: body.conversation_id }
+        : await getOrCreateConversation(supabase, tenant_id, contact_id);
+    if (!conversation) return NextResponse.json({ error: 'Conversation not found' }, { status: 400 });
+
+    const { data: message, error } = await supabase
+        .from('messages')
+        .insert({
+            tenant_id,
+            conversation_id: conversation.id,
+            contact_id,
+            direction: 'outbound' as const,
+            content_type: 'text' as MessageType,
+            content: content.trim(),
+            status: 'sent' as const,
+            sender_type: 'bot' as const,
+            sent_by_name: 'IA',
+            is_note: true,
+        })
+        .select('id')
+        .single();
+    if (error) {
+        console.error('[n8n webhook] ai_note insert error:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    await supabase.from('contact_notes').insert({
+        tenant_id, contact_id, content: `🤖 ${content.trim()}`, created_by: null,
+    });
+    return NextResponse.json({ message_id: message.id }, { status: 201 });
+}
+
+/** An action done by the AI or an automation (e.g. "Creó una reserva para el 12/10"). */
+async function handleActivity(
+    supabase: ReturnType<typeof createAdminClient>,
+    body: N8NPayload
+) {
+    const { tenant_id, contact_id, description } = body;
+    if (!contact_id || !description?.trim()) {
+        return NextResponse.json({ error: 'Missing contact_id or description' }, { status: 400 });
+    }
+    const { data: contact } = await supabase
+        .from('contacts').select('id').eq('id', contact_id).eq('tenant_id', tenant_id).maybeSingle();
+    if (!contact) return NextResponse.json({ error: 'Contact not found' }, { status: 404 });
+
+    await logActivity(supabase, {
+        tenantId: tenant_id,
+        contactId: contact_id,
+        type: body.activity_type ?? 'ai_action',
+        description: description.trim(),
+        performedByName: body.performed_by_name ?? 'IA',
+        channel: 'n8n',
+    });
+    return NextResponse.json({ logged: true }, { status: 201 });
+}
+
 // ============================================================
 // Helpers
 // ============================================================
@@ -681,6 +758,12 @@ type N8NPayload = {
     contact_name?: string;
     media_mime_type?: string;
     media_filename?: string;
+    // ai_note / activity
+    description?: string;
+    activity_type?: string;
+    performed_by_name?: string;
+    // message_sent (templates)
+    template_name?: string;
     // templates_sync
     templates?: { id?: string; name: string; language?: string; category?: string; status?: string; components?: unknown }[];
 };

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getServerTenantId, TenantError } from '@/lib/tenant';
 import { getTenantConfig, hasModule } from '@/lib/tenant-plan';
+import { logActivity } from '@/lib/activity';
 
 export async function GET(
     _request: Request,
@@ -25,7 +26,7 @@ export async function GET(
             withReservations
                 ? run(supabase.from('reservations').select('id, reservation_date, reservation_time, party_size, status, occasion').eq('contact_id', id).eq('tenant_id', TENANT_ID).order('reservation_date', { ascending: false }).limit(5))
                 : Promise.resolve({ data: [], error: null }),
-            run(supabase.from('contact_notes').select('id, content, created_at, user:users(full_name)').eq('contact_id', id).eq('tenant_id', TENANT_ID).order('created_at', { ascending: false }).limit(5)),
+            run(supabase.from('contact_notes').select('id, content, created_at, user:users(full_name)').eq('contact_id', id).eq('tenant_id', TENANT_ID).order('created_at', { ascending: false }).limit(50)),
             run(supabase.from('activity_log').select('id, activity_type, description, created_at, performed_by_name').eq('contact_id', id).eq('tenant_id', TENANT_ID).order('created_at', { ascending: false }).limit(10)),
         ]);
 
@@ -91,6 +92,24 @@ export async function PATCH(
             .single();
 
         if (error) throw error;
+
+        if (body.funnel_stage_id !== undefined) {
+            let stageName = 'sin etapa';
+            if (body.funnel_stage_id) {
+                const { data: stage } = await supabase.from('funnel_stages').select('name')
+                    .eq('id', body.funnel_stage_id).eq('tenant_id', TENANT_ID).maybeSingle();
+                stageName = stage?.name ?? 'otra etapa';
+            }
+            await logActivity(supabase, {
+                tenantId: TENANT_ID, contactId: id, type: 'stage_changed', description: `Movió el contacto a "${stageName}"`,
+            });
+        }
+        if (typeof body.ai_active === 'boolean') {
+            await logActivity(supabase, {
+                tenantId: TENANT_ID, contactId: id, type: body.ai_active ? 'ai_enabled' : 'ai_disabled',
+                description: body.ai_active ? 'Activó la IA para el contacto' : 'Desactivó la IA para el contacto',
+            });
+        }
         return NextResponse.json(data);
     } catch (err) {
         if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });

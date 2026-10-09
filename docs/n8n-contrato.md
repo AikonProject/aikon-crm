@@ -33,10 +33,32 @@ Todas las llamadas llevan el header `x-webhook-secret`.
 
 | `action` | Cuándo | Campos |
 |---|---|---|
-| `send_message` | Un agente escribe en Conversaciones | `tenant_id, conversation_id, contact_id, wa_id, contact_name, message, content_type, media_url, sent_by_name` |
+| `send_message` | Un agente escribe en Conversaciones | `tenant_id, conversation_id, contact_id, wa_id, contact_name, message, content_type, media_url, media_filename, sent_by_name, template, template_variables` |
 | `reservation_confirmation` | Confirmar una reserva | `tenant_id, reservation_id, contact_id, guest_name, guest_phone, wa_id, reservation_date, reservation_time, party_size` |
 | `send_campaign` | Crear o enviar una campaña | `tenant_id, campaign_id, campaign_name, scheduled_at, template{name, language, components}, template_variables, recipients[{campaign_message_id, contact_id, name, wa_id}]` |
 | `sync_templates` | Botón "Sincronizar" en Plantillas | `tenant_id` |
+
+**Plantillas desde el chat:** cuando `content_type = 'template'`, `template = { name, language, components }` y
+`template_variables = { "1": "Ana", ... }`. `message` trae el texto ya renderizado (para guardarlo en el chat).
+El Gateway debe enviar un mensaje tipo `template` al proveedor (no texto), con los parámetros del BODY en orden
+numérico, y reportar `message_sent` con `template_name` y el `content` renderizado. Es la única forma de escribir
+cuando la ventana de 24 h está cerrada.
+
+```js
+// Nodo "Construir mensaje" del Gateway (Code)
+const d = $json.body ?? $json;
+if (d.content_type === 'template' && d.template) {
+  const vars = d.template_variables ?? {};
+  const params = Object.keys(vars).sort((a, b) => Number(a) - Number(b))
+    .map((k) => ({ type: 'text', text: String(vars[k]) }));
+  return [{ json: { ...d, wa_payload: {
+    messaging_product: 'whatsapp', to: d.wa_id, type: 'template',
+    template: { name: d.template.name, language: { code: d.template.language },
+      components: params.length ? [{ type: 'body', parameters: params }] : [] },
+  } } }];
+}
+return [{ json: { ...d, wa_payload: { messaging_product: 'whatsapp', to: d.wa_id, type: 'text', text: { body: d.message } } } }];
+```
 
 n8n responde **202 de inmediato** y trabaja en segundo plano. Responde 401 si el secreto o el tenant no coinciden.
 
@@ -46,11 +68,13 @@ Header `x-webhook-secret`. Si el tenant tiene secreto configurado, una llamada s
 | `action` | Uso | Campos |
 |---|---|---|
 | `inbound_message` | Mensaje del cliente | `wa_id, contact_name, wa_message_id, content, content_type, media_url?, media_mime_type?, media_filename?` → responde `{ contact_id, conversation_id, ai_enabled, duplicate }` |
-| `message_sent` | Resultado de un envío manual o de reserva | `contact_id, conversation_id?, wa_message_id, content, content_type, sent_by_name, status ('sent' \| 'failed'), error_code?, error_message?` |
+| `message_sent` | Resultado de un envío manual o de reserva | `contact_id, conversation_id?, wa_message_id, content, content_type, sent_by_name, template_name?, status ('sent' \| 'failed'), error_code?, error_message?` (con `failed`, el chat muestra el error al agente) |
 | `ai_response` | Respuesta del bot | `contact_id, conversation_id, wa_message_id, content` |
 | `message_status` | Recibo del proveedor | `wa_message_id, status ('sent' \| 'delivered' \| 'read' \| 'failed'), error_code?, error_message?` (también actualiza campañas) |
 | `campaign_message_status` | Resultado por destinatario de una campaña | `campaign_message_id, wa_message_id, status, error_*` (con `sent`, la plantilla aparece en el chat) |
 | `campaign_status` | Opcional | `campaign_id, status ('running' \| 'completed' \| 'cancelled')` |
+| `ai_note` | Nota interna de la IA (resumen, intención, datos capturados). No va a WhatsApp | `contact_id, conversation_id?, content` → aparece en el chat como "Nota de la IA" y en el panel lateral |
+| `activity` | Acción a registrar en la línea de tiempo (p. ej. "IA transfirió a humano") | `contact_id, activity_type, description, performed_by_name? (por defecto 'IA'), metadata?` |
 | `templates_sync` | Lista completa de plantillas del proveedor | `templates[{ id, name, language, category, status, components }]` |
 
 Qué garantiza el CRM:

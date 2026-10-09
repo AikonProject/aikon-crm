@@ -41,8 +41,7 @@ export function ConversationListItem({ conversation, isActive, onClick }: Conver
         ? (contact.nombre ?? 'Sin nombre')
         : 'Contacto desconocido';
     const initials = getInitials(contactName);
-    const lastMsg = (conversation.messages ?? [])[0];
-    const lastMsgText = lastMsg?.content ?? 'Sin mensajes';
+    const lastMsgText = conversation.last_message ?? (conversation.messages ?? [])[0]?.content ?? 'Sin mensajes';
     const timeStr = formatTimeShort(conversation.last_message_at);
     const unread = conversation.unread_count ?? 0;
     const statusColor = statusColors[conversation.status] ?? 'bg-[#9CA3AF]';
@@ -82,7 +81,7 @@ export function ConversationListItem({ conversation, isActive, onClick }: Conver
                     </div>
                 </div>
                 <div className="flex items-center justify-between gap-2">
-                    <p className="text-[12px] text-[#6B7280] truncate">{lastMsgText}</p>
+                    <p className={cn('text-[12px] truncate', unread > 0 ? 'text-[#1A1A2E] font-medium' : 'text-[#6B7280]')}>{lastMsgText}</p>
                     {unread > 0 && (
                         <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#818CF8] text-white text-[10px] font-bold flex items-center justify-center">
                             {unread > 9 ? '9+' : unread}
