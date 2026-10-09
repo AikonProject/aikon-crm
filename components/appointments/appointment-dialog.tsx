@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { format, addMinutes, differenceInMinutes } from 'date-fns';
 import {
-    Video, MapPin, Phone, Mail, MessageCircle, User, Search, X, Trash2, Loader2, Link2, CalendarClock,
+    Video, MapPin, Phone, Mail, MessageCircle, User, X, Trash2, Loader2, Link2, CalendarClock,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { ContactPicker } from '@/components/contacts/contact-picker';
 import {
     APPOINTMENT_COLORS, APPOINTMENT_STATUSES, APPOINTMENT_STATUS_LABELS, APPOINTMENT_STATUS_STYLES,
     MEETING_TYPES, MEETING_TYPE_LABELS, type AppointmentRow,
@@ -125,13 +126,6 @@ export function AppointmentDialog({
     const [formError, setFormError] = useState<string | null>(null);
     const [team, setTeam] = useState<TeamMember[]>([]);
 
-    // Contact search
-    const [query, setQuery] = useState('');
-    const [results, setResults] = useState<ContactOption[]>([]);
-    const [searching, setSearching] = useState(false);
-    const [showResults, setShowResults] = useState(false);
-    const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
     // Reset every time the dialog opens
     useEffect(() => {
         if (!open) return;
@@ -139,8 +133,6 @@ export function AppointmentDialog({
         setContact(appointment?.contact ?? draft?.contact ?? null);
         setConfirmDelete(false);
         setFormError(null);
-        setQuery('');
-        setResults([]);
     }, [open, appointment, draft]);
 
     useEffect(() => {
@@ -150,24 +142,6 @@ export function AppointmentDialog({
             .then((d) => setTeam(Array.isArray(d?.users) ? d.users : []))
             .catch(() => { /* optional field */ });
     }, [open, team.length]);
-
-    useEffect(() => {
-        if (searchTimer.current) clearTimeout(searchTimer.current);
-        const q = query.trim();
-        if (q.length < 2) { setResults([]); return; }
-        searchTimer.current = setTimeout(async () => {
-            setSearching(true);
-            try {
-                const res = await fetch(`/api/contacts?search=${encodeURIComponent(q)}`);
-                const d = await res.json().catch(() => ({}));
-                setResults(Array.isArray(d.contacts) ? d.contacts : []);
-            } catch {
-                setResults([]);
-            } finally {
-                setSearching(false);
-            }
-        }, 250);
-    }, [query]);
 
     const duration = useMemo(() => {
         const s = toDate(form.date, form.startTime);
@@ -192,8 +166,6 @@ export function AppointmentDialog({
 
     function pickContact(c: ContactOption) {
         setContact(c);
-        setShowResults(false);
-        setQuery('');
         setForm((f) => ({
             ...f,
             contact_name: c.nombre,
@@ -348,39 +320,10 @@ export function AppointmentDialog({
                                 )}
                             </div>
                         ) : (
-                            <div className="relative">
-                                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#C4C4CE]" />
-                                <input
-                                    value={query}
-                                    onChange={(e) => { setQuery(e.target.value); setShowResults(true); }}
-                                    onFocus={() => setShowResults(true)}
-                                    onBlur={() => setTimeout(() => setShowResults(false), 150)}
-                                    placeholder="Buscar contacto por nombre, WhatsApp o correo…"
-                                    className={cn(inputCls, 'pl-8')}
-                                />
-                                {searching && <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-[#9CA3AF]" />}
-                                {showResults && query.trim().length >= 2 && (
-                                    <div className="absolute z-30 mt-1 w-full bg-white border border-[#E8E8EC] rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                                        {results.length === 0 && !searching ? (
-                                            <p className="px-3 py-2 text-[12px] text-[#9CA3AF]">
-                                                Sin resultados. Escribe los datos abajo y se creará el contacto.
-                                            </p>
-                                        ) : results.map((c) => (
-                                            <button
-                                                key={c.id}
-                                                type="button"
-                                                onMouseDown={(e) => e.preventDefault()}
-                                                onClick={() => pickContact(c)}
-                                                className="w-full text-left px-3 py-2 hover:bg-[#F9FAFB] flex items-center gap-2"
-                                            >
-                                                <User size={13} className="text-[#9CA3AF]" />
-                                                <span className="text-[13px] text-[#1A1A2E] flex-1 truncate">{c.nombre}</span>
-                                                <span className="text-[11px] text-[#9CA3AF]">{c.wa_id ?? c.email ?? ''}</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
+                            <ContactPicker
+                                onSelect={pickContact}
+                                emptyHint="Escribe los datos abajo y se creará el contacto."
+                            />
                         )}
                     </div>
 

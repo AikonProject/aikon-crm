@@ -17,6 +17,7 @@ import {
     Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { ContactPicker } from '@/components/contacts/contact-picker';
 import type { OrderWithRelations, OrderStats } from '@/app/(dashboard)/orders/page';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -155,10 +156,7 @@ type OrderItem = {
 // ─── CreateOrderModal ────────────────────────────────────────────────────────
 
 function CreateOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-    const [contactSearch, setContactSearch] = useState('');
-    const [contactResults, setContactResults] = useState<Contact[]>([]);
     const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
-    const [contactLoading, setContactLoading] = useState(false);
 
     const [productSearch, setProductSearch] = useState('');
     const [productResults, setProductResults] = useState<Product[]>([]);
@@ -172,29 +170,8 @@ function CreateOrderModal({ onClose, onCreated }: { onClose: () => void; onCreat
     const [notes, setNotes] = useState('');
     const [saving, setSaving] = useState(false);
 
-    const contactDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
     const productDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Contact search
-    useEffect(() => {
-        if (contactDebounce.current) clearTimeout(contactDebounce.current);
-        if (!contactSearch.trim() || selectedContact) {
-            setContactResults([]);
-            return;
-        }
-        contactDebounce.current = setTimeout(async () => {
-            setContactLoading(true);
-            try {
-                const res = await fetch(`/api/contacts?search=${encodeURIComponent(contactSearch)}&page=1`);
-                const data = await res.json();
-                setContactResults((data.contacts ?? []).slice(0, 6));
-            } catch {
-                // ignore
-            } finally {
-                setContactLoading(false);
-            }
-        }, 300);
-    }, [contactSearch, selectedContact]);
 
     // Product search
     useEffect(() => {
@@ -334,50 +311,18 @@ function CreateOrderModal({ onClose, onCreated }: { onClose: () => void; onCreat
                                     )}
                                 </div>
                                 <button
-                                    onClick={() => { setSelectedContact(null); setContactSearch(''); }}
+                                    onClick={() => setSelectedContact(null)}
                                     className="text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
                                 >
                                     <X size={14} />
                                 </button>
                             </div>
                         ) : (
-                            <div className="relative">
-                                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" />
-                                <input
-                                    type="text"
-                                    placeholder="Buscar cliente por nombre..."
-                                    value={contactSearch}
-                                    onChange={(e) => setContactSearch(e.target.value)}
-                                    className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-[#E8E8EC] text-[13px] text-[#1A1A2E] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#818CF8]/30 focus:border-[#818CF8]"
-                                />
-                                {contactLoading && (
-                                    <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] animate-spin" />
-                                )}
-                                {contactResults.length > 0 && (
-                                    <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl border border-[#E8E8EC] shadow-lg z-10 py-1 max-h-[200px] overflow-y-auto">
-                                        {contactResults.map((c) => (
-                                            <button
-                                                key={c.id}
-                                                onClick={() => { setSelectedContact(c); setContactSearch(''); setContactResults([]); }}
-                                                className="w-full flex items-center gap-3 px-3 py-2 hover:bg-[#F9FAFB] transition-colors"
-                                            >
-                                                <div
-                                                    className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0"
-                                                    style={{ backgroundColor: avatarColor(c.nombre) }}
-                                                >
-                                                    {initials(c.nombre)}
-                                                </div>
-                                                <div className="text-left min-w-0">
-                                                    <p className="text-[13px] font-medium text-[#1A1A2E] truncate">{c.nombre}</p>
-                                                    {(c.email || c.wa_id) && (
-                                                        <p className="text-[11px] text-[#9CA3AF] truncate">{c.email ?? c.wa_id}</p>
-                                                    )}
-                                                </div>
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
+                            <ContactPicker
+                                onSelect={(c) => setSelectedContact(c)}
+                                placeholder="Buscar cliente por nombre, WhatsApp o correo…"
+                                inputClassName="py-2.5 rounded-xl"
+                            />
                         )}
                     </div>
 

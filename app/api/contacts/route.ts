@@ -11,8 +11,11 @@ export async function GET(req: NextRequest) {
     try {
         const { searchParams } = new URL(req.url);
         const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
-        const search = searchParams.get('search') ?? '';
+        // Characters that would break the PostgREST or() filter
+        const search = (searchParams.get('search') ?? '').replace(/[,()*%\\]/g, ' ').trim();
         const stageId = searchParams.get('stage_id') ?? '';
+        // Pickers ask for more rows at once (capped)
+        const pageSize = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') ?? String(PAGE_SIZE), 10) || PAGE_SIZE));
 
         const supabase = createAdminClient();
     const TENANT_ID = await getServerTenantId();
@@ -42,8 +45,8 @@ export async function GET(req: NextRequest) {
             query = query.eq('funnel_stage_id', stageId);
         }
 
-        const from = (page - 1) * PAGE_SIZE;
-        const to = from + PAGE_SIZE - 1;
+        const from = (page - 1) * pageSize;
+        const to = from + pageSize - 1;
         query = query.range(from, to);
 
         const { data, error, count } = await query;
@@ -57,8 +60,8 @@ export async function GET(req: NextRequest) {
             contacts: data ?? [],
             total: count ?? 0,
             page,
-            pageSize: PAGE_SIZE,
-            totalPages: Math.ceil((count ?? 0) / PAGE_SIZE),
+            pageSize,
+            totalPages: Math.ceil((count ?? 0) / pageSize),
         });
     } catch (err) {
         if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
