@@ -3,6 +3,9 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import type { MessageType } from '@/lib/types/database';
 import { refreshCampaignCounts } from '@/lib/campaigns';
 import { logActivity } from '@/lib/activity';
+import { getTenantConfig, hasModule } from '@/lib/tenant-plan';
+import { APPOINTMENT_SELECT } from '@/lib/appointments';
+import { buildAppointmentFields, formatWhen, ValidationError } from '@/app/api/appointments/shared';
 
 // ============================================================
 // N8N Callback Webhook
@@ -75,6 +78,8 @@ export async function POST(request: NextRequest) {
                 return await handleAiNote(supabase, body);
             case 'activity':
                 return await handleActivity(supabase, body);
+            case 'appointment':
+                return await handleAppointment(supabase, body);
             default:
                 return NextResponse.json(
                     { error: `Unknown action: ${action}` },
@@ -632,6 +637,75 @@ async function handleActivity(
     return NextResponse.json({ logged: true }, { status: 201 });
 }
 
+/**
+ * The bot schedules, reschedules, confirms or cancels an appointment.
+ * appointment: { id?, contact_id? | contact_phone?, title?, start_time, end_time, meeting_type?,
+ *                meeting_url?, location?, contact_name?, contact_email?, status?, notes?, description? }
+ */
+async function handleAppointment(
+    supabase: ReturnType<typeof createAdminClient>,
+    body: N8NPayload
+) {
+    const { tenant_id } = body;
+    const input = body.appointment;
+    if (!input || typeof input !== 'object') {
+        return NextResponse.json({ error: 'Missing appointment' }, { status: 400 });
+    }
+    if (!hasModule(await getTenantConfig(tenant_id), 'appointments')) {
+        return NextResponse.json({ error: 'El plan del tenant no incluye citas' }, { status: 403 });
+    }
+    if (!input.contact_id && body.contact_id) input.contact_id = body.contact_id;
+
+    try {
+        const isUpdate = typeof input.id === 'string' && input.id.length > 0;
+        let before: { id: string; title: string; start_time: string; contact_id: string | null } | null = null;
+        if (isUpdate) {
+            const { data } = await supabase.from('appointments').select('id, title, start_time, contact_id')
+                .eq('id', input.id as string).eq('tenant_id', tenant_id).maybeSingle();
+            if (!data) return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
+            before = data;
+        }
+        const { fields, contact } = await buildAppointmentFields(supabase, tenant_id, input, isUpdate);
+        const start = (fields.start_time as string | undefined) ?? before?.start_time;
+
+        let result;
+        if (isUpdate) {
+            result = await supabase.from('appointments').update(fields as never)
+                .eq('id', input.id as string).eq('tenant_id', tenant_id).select(APPOINTMENT_SELECT).single();
+        } else {
+            if (new Date(fields.end_time as string) <= new Date(fields.start_time as string)) {
+                return NextResponse.json({ error: 'end_time must be after start_time' }, { status: 400 });
+            }
+            result = await supabase.from('appointments')
+                .insert({ ...fields, tenant_id, created_by: 'IA' } as never)
+                .select(APPOINTMENT_SELECT).single();
+        }
+        if (result.error) {
+            console.error('[n8n webhook] appointment error:', result.error);
+            return NextResponse.json({ error: result.error.message }, { status: 500 });
+        }
+        const saved = result.data as unknown as { id: string; title: string; status: string; contact_id: string | null };
+        const contactId = saved.contact_id ?? contact?.id ?? before?.contact_id;
+        if (contactId) {
+            await logActivity(supabase, {
+                tenantId: tenant_id,
+                contactId,
+                type: isUpdate ? 'appointment_updated' : 'appointment_created',
+                description: isUpdate
+                    ? `IA actualizó la cita "${saved.title}" (${start ? formatWhen(start) : ''})`
+                    : `IA agendó "${saved.title}" para el ${formatWhen(start as string)}`,
+                performedByName: 'IA',
+                channel: 'n8n',
+                metadata: { appointment_id: saved.id },
+            });
+        }
+        return NextResponse.json({ appointment: result.data }, { status: isUpdate ? 200 : 201 });
+    } catch (err) {
+        if (err instanceof ValidationError) return NextResponse.json({ error: err.message }, { status: err.status });
+        throw err;
+    }
+}
+
 // ============================================================
 // Helpers
 // ============================================================
@@ -764,6 +838,8 @@ type N8NPayload = {
     performed_by_name?: string;
     // message_sent (templates)
     template_name?: string;
+    // appointment (create when no appointment.id, update otherwise)
+    appointment?: Record<string, unknown> & { id?: string };
     // templates_sync
     templates?: { id?: string; name: string; language?: string; category?: string; status?: string; components?: unknown }[];
 };

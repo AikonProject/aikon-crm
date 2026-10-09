@@ -12,6 +12,7 @@ export const ROUTE_MODULES: { prefix: string; module: PlanModule }[] = [
     { prefix: '/orders', module: 'orders' },
     { prefix: '/settings/products', module: 'orders' },
     { prefix: '/reservations', module: 'reservations' },
+    { prefix: '/appointments', module: 'appointments' },
     { prefix: '/settings/restaurant', module: 'restaurant' },
     { prefix: '/reports', module: 'reports' },
     { prefix: '/funnel', module: 'funnel' },

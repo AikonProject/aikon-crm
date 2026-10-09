@@ -35,6 +35,7 @@ import { useSidebar } from '@/components/layout/sidebar-provider';
 import { useHasModule, useTenantId } from '@/components/providers/tenant-provider';
 import { ConversationListItem } from '@/components/conversations/conversation-list-item';
 import { MessageBubble } from '@/components/conversations/message-bubble';
+import { ContactAppointments } from '@/components/appointments/contact-appointments';
 import type { Conversation, Message, MessageTemplate, CannedResponse, ConversationStatus } from '@/lib/types/database';
 
 type StatusFilter = 'all' | ConversationStatus;
@@ -200,6 +201,19 @@ export default function ConversationsClient({ initialConversations }: Conversati
     const contactName = activeContact?.nombre ?? '';
 
     useEffect(() => { activeConvIdRef.current = activeConvId; }, [activeConvId]);
+
+    // Deep link: /conversations?contact=<id> opens that contact's chat
+    const deepLinkDone = useRef(false);
+    useEffect(() => {
+        if (deepLinkDone.current) return;
+        const contactId = new URLSearchParams(window.location.search).get('contact');
+        if (!contactId) { deepLinkDone.current = true; return; }
+        const conv = conversations.find((c) => c.contact_id === contactId);
+        if (conv) {
+            deepLinkDone.current = true;
+            setActiveConvId(conv.id);
+        }
+    }, [conversations]);
 
     // Remembered per browser: show/hide notes and actions in the chat
     useEffect(() => {
@@ -1283,6 +1297,7 @@ function ContactPanel({
     onClose: () => void;
 }) {
     const hasReservations = useHasModule('reservations');
+    const hasAppointments = useHasModule('appointments');
     const [data, setData] = useState<ContactPanelData | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -1784,6 +1799,16 @@ function ContactPanel({
                                     );
                                 })}
                             </div>
+                        </div>
+                    )}
+
+                    {/* Appointments of this contact (create / edit / delete in place) */}
+                    {hasAppointments && (
+                        <div className="px-4 py-3 border-b border-[#F3F4F6]">
+                            <ContactAppointments
+                                compact
+                                contact={{ id: contactId, nombre: contactData.nombre, wa_id: contactData.wa_id, email: contactData.email }}
+                            />
                         </div>
                     )}
 

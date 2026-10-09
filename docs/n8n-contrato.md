@@ -75,6 +75,7 @@ Header `x-webhook-secret`. Si el tenant tiene secreto configurado, una llamada s
 | `campaign_status` | Opcional | `campaign_id, status ('running' \| 'completed' \| 'cancelled')` |
 | `ai_note` | Nota interna de la IA (resumen, intención, datos capturados). No va a WhatsApp | `contact_id, conversation_id?, content` → aparece en el chat como "Nota de la IA" y en el panel lateral |
 | `activity` | Acción a registrar en la línea de tiempo (p. ej. "IA transfirió a humano") | `contact_id, activity_type, description, performed_by_name? (por defecto 'IA'), metadata?` |
+| `appointment` | El bot agenda, reprograma, confirma o cancela una cita (planes con módulo Citas) | `appointment: { id? (si viene, actualiza), contact_id? \| contact_phone?, title?, start_time, end_time (ISO), meeting_type ('virtual' \| 'presencial' \| 'llamada'), meeting_url?, location?, contact_name?, contact_email?, status ('scheduled' \| 'confirmed' \| 'completed' \| 'cancelled' \| 'no_show'), notes?, description? }` → responde `{ appointment }`. Si no hay `contact_id`, busca o crea el contacto por `contact_phone` |
 | `templates_sync` | Lista completa de plantillas del proveedor | `templates[{ id, name, language, category, status, components }]` |
 
 Qué garantiza el CRM:
