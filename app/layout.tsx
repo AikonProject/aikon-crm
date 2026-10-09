@@ -2,6 +2,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { DM_Sans } from "next/font/google";
 import "./globals.css";
+import { Toaster } from "@/components/ui/sonner";
 
 const dmSans = DM_Sans({
   subsets: ["latin"],
@@ -24,6 +25,8 @@ export default function RootLayout({
       <body className={`${dmSans.variable} font-sans antialiased`}>
         <ClerkProvider>
           {children}
+          {/* Global feedback: every success / error message in the app */}
+          <Toaster theme="light" position="top-right" richColors closeButton duration={5000} />
         </ClerkProvider>
       </body>
     </html>

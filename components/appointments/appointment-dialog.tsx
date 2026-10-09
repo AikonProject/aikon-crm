@@ -122,6 +122,7 @@ export function AppointmentDialog({
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
+    const [formError, setFormError] = useState<string | null>(null);
     const [team, setTeam] = useState<TeamMember[]>([]);
 
     // Contact search
@@ -137,6 +138,7 @@ export function AppointmentDialog({
         setForm(initialForm(appointment, draft));
         setContact(appointment?.contact ?? draft?.contact ?? null);
         setConfirmDelete(false);
+        setFormError(null);
         setQuery('');
         setResults([]);
     }, [open, appointment, draft]);
@@ -208,12 +210,14 @@ export function AppointmentDialog({
     async function save() {
         const start = toDate(form.date, form.startTime);
         const end = toDate(form.date, form.endTime);
-        if (Number.isNaN(start.getTime())) { toast.error('Selecciona fecha y hora de inicio'); return; }
-        if (end <= start) { toast.error('La hora de fin debe ser posterior a la de inicio'); return; }
+        const fail = (msg: string) => { setFormError(msg); toast.error(msg); };
+        if (Number.isNaN(start.getTime())) { fail('Selecciona fecha y hora de inicio.'); return; }
+        if (end <= start) { fail('La hora de fin debe ser posterior a la de inicio.'); return; }
         if (!contact && !form.contact_name.trim() && !form.contact_phone.trim()) {
-            toast.error('Selecciona un contacto o escribe el nombre / WhatsApp del cliente');
+            fail('Selecciona un contacto existente o escribe el nombre o WhatsApp del cliente.');
             return;
         }
+        setFormError(null);
 
         setSaving(true);
         try {
@@ -241,12 +245,12 @@ export function AppointmentDialog({
                 body: JSON.stringify(payload),
             });
             const d = await res.json().catch(() => ({}));
-            if (!res.ok) { toast.error(d.error || 'No se pudo guardar la cita'); return; }
+            if (!res.ok) { fail(d.error || 'No se pudo guardar la cita.'); return; }
             toast.success(appointment ? 'Cita actualizada' : 'Cita agendada');
             onSaved?.(d.appointment as AppointmentRow);
             onOpenChange(false);
         } catch {
-            toast.error('Error de conexión al guardar la cita');
+            fail('Error de conexión al guardar la cita.');
         } finally {
             setSaving(false);
         }
@@ -331,7 +335,7 @@ export function AppointmentDialog({
 
                     {/* Contact */}
                     <div>
-                        <label className={labelCls}>Contacto</label>
+                        <label className={labelCls}>Contacto <span className="text-red-500">*</span> <span className="normal-case font-normal text-[#9CA3AF]">— busca uno existente o escribe nombre / WhatsApp abajo</span></label>
                         {contact ? (
                             <div className="flex items-center gap-2 bg-[#F5F5FF] border border-[#E0E3FF] rounded-lg px-3 py-2">
                                 <User size={14} className="text-[#818CF8]" />
@@ -483,6 +487,11 @@ export function AppointmentDialog({
                     </div>
                 </div>
 
+                {formError && (
+                    <div role="alert" className="mx-6 mb-3 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-[12px] text-red-700">
+                        {formError}
+                    </div>
+                )}
                 <div className="px-6 py-3 border-t border-[#F3F4F6] flex items-center gap-2 bg-[#FAFAFB]">
                     {appointment && (
                         <button

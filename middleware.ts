@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 const APP_ROUTES = new Set([
     '/dashboard', '/contacts', '/conversations', '/funnel', '/campaigns',
     '/templates', '/reservations', '/settings', '/admin', '/reports',
-    '/orders', '/products', '/pipeline', '/calendar', '/emails', '/messages',
+    '/orders', '/products', '/pipeline', '/calendar', '/emails', '/messages', '/appointments',
 ]);
 
 export default clerkMiddleware(async (_auth, _request) => {
