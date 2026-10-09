@@ -27,6 +27,7 @@ import { formatSmartDate, formatDate } from '@/lib/utils/format';
 import { useSupabaseClient } from '@/lib/supabase/client';
 import { useHasModule, useTenantId } from '@/components/providers/tenant-provider';
 import { MessageBubble } from '@/components/conversations/message-bubble';
+import { ContactAppointments } from '@/components/appointments/contact-appointments';
 import type {
     ConversationRow,
     ReservationRow,
@@ -66,11 +67,12 @@ interface ContactDetailTabsProps {
     contactId: string;
 }
 
-type TabKey = 'info' | 'conversations' | 'reservations' | 'notes' | 'activity';
+type TabKey = 'info' | 'conversations' | 'appointments' | 'reservations' | 'notes' | 'activity';
 
 const TABS: { key: TabKey; label: string }[] = [
     { key: 'info', label: 'Información' },
     { key: 'conversations', label: 'Conversaciones' },
+    { key: 'appointments', label: 'Citas' },
     { key: 'reservations', label: 'Reservas' },
     { key: 'notes', label: 'Notas' },
     { key: 'activity', label: 'Actividad' },
@@ -86,7 +88,9 @@ export function ContactDetailTabs({
     contactId,
 }: ContactDetailTabsProps) {
     const hasReservations = useHasModule('reservations');
-    const tabs = TABS.filter((t) => t.key !== 'reservations' || hasReservations);
+    const hasAppointments = useHasModule('appointments');
+    const tabs = TABS.filter((t) =>
+        (t.key !== 'reservations' || hasReservations) && (t.key !== 'appointments' || hasAppointments));
     const [activeTab, setActiveTab] = useState<TabKey>('info');
     const [notes, setNotes] = useState(initialNotes);
     const [noteText, setNoteText] = useState('');
@@ -147,6 +151,13 @@ export function ContactDetailTabs({
             )}
             {activeTab === 'conversations' && (
                 <ConversationsTab conversations={conversations} />
+            )}
+            {activeTab === 'appointments' && hasAppointments && (
+                <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm p-5">
+                    <ContactAppointments
+                        contact={{ id: contact.id, nombre: contact.nombre, wa_id: contact.wa_id, email: contact.email }}
+                    />
+                </div>
             )}
             {activeTab === 'reservations' && hasReservations && (
                 <ReservationsTab reservations={reservations} />

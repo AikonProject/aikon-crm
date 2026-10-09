@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
 import {
     Search,
@@ -21,6 +21,11 @@ import {
     CalendarCheck,
     Pencil as PencilIcon,
     Plus,
+    Eye,
+    EyeOff,
+    RotateCcw,
+    Clock,
+    Zap,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -30,6 +35,7 @@ import { useSidebar } from '@/components/layout/sidebar-provider';
 import { useHasModule, useTenantId } from '@/components/providers/tenant-provider';
 import { ConversationListItem } from '@/components/conversations/conversation-list-item';
 import { MessageBubble } from '@/components/conversations/message-bubble';
+import { ContactAppointments } from '@/components/appointments/contact-appointments';
 import type { Conversation, Message, MessageTemplate, CannedResponse, ConversationStatus } from '@/lib/types/database';
 
 type StatusFilter = 'all' | ConversationStatus;
@@ -65,6 +71,27 @@ const COMMON_EMOJIS = [
     '🌺','🍀','💐','🌙','☀️','⛅','🌊',
 ];
 
+/** How long we wait for n8n to confirm a sent message before warning the agent. */
+const CONFIRM_TIMEOUT_MS = 45_000;
+const SHOW_NOTES_KEY = 'aikon.chat.showNotesAndActions';
+
+type ActivityItem = {
+    id: string;
+    activity_type: string;
+    description: string | null;
+    performed_by_name: string | null;
+    channel: string | null;
+    created_at: string;
+};
+
+/** A message the agent sent that n8n hasn't confirmed yet. */
+type PendingMessage = Message & {
+    pending_state: 'sending' | 'unconfirmed' | 'failed';
+    pending_error?: string;
+};
+
+type Panel = 'templates' | 'canned' | 'emoji' | null;
+
 function DateSeparator({ date }: { date: string }) {
     const d = new Date(date);
     const now = new Date();
@@ -83,6 +110,26 @@ function DateSeparator({ date }: { date: string }) {
     );
 }
 
+function ActivityChip({ item }: { item: ActivityItem }) {
+    const isAi = item.channel === 'n8n' || item.performed_by_name === 'IA';
+    const time = new Date(item.created_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return (
+        <div className="flex justify-center my-1.5 px-4">
+            <div className={cn(
+                'flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] max-w-[85%]',
+                isAi ? 'bg-violet-50 text-violet-700' : 'bg-[#F3F4F6] text-[#6B7280]'
+            )}>
+                {isAi ? <Bot size={11} className="flex-shrink-0" /> : <Zap size={11} className="flex-shrink-0" />}
+                <span className="truncate">
+                    <span className="font-medium">{item.performed_by_name ?? 'Sistema'}</span>
+                    {' · '}{item.description ?? item.activity_type.replace(/_/g, ' ')}
+                </span>
+                <span className="opacity-60 flex-shrink-0">{time}</span>
+            </div>
+        </div>
+    );
+}
+
 function isSameDay(a: string, b: string) {
     return new Date(a).toDateString() === new Date(b).toDateString();
 }
@@ -90,6 +137,24 @@ function isSameDay(a: string, b: string) {
 /** Returns the value if it's an array, otherwise an empty array (e.g. an API error object). */
 function asArray<T>(value: unknown): T[] {
     return Array.isArray(value) ? (value as T[]) : [];
+}
+
+/** Template body text and its {{n}} / {{name}} placeholders. */
+function templateBody(t: MessageTemplate): { text: string; vars: string[] } {
+    const text = (t.components as Array<{ type: string; text?: string }> | null)
+        ?.find((c) => c.type === 'BODY')?.text ?? '';
+    const vars = [...new Set((text.match(/\{\{\s*\w+\s*\}\}/g) ?? []).map((v) => v.replace(/[{}\s]/g, '')))];
+    return { text, vars };
+}
+
+/** Canned response shortcuts are stored as "/bienvenida"; compare without the slash. */
+function bareShortcut(shortcut: string | null): string {
+    return (shortcut ?? '').replace(/^\/+/, '').toLowerCase();
+}
+
+async function readError(res: Response, fallback: string): Promise<string> {
+    const data = await res.json().catch(() => ({}));
+    return (data as { error?: string }).error || fallback;
 }
 
 interface ConversationsClientProps {
@@ -103,175 +168,236 @@ export default function ConversationsClient({ initialConversations }: Conversati
 
     // State
     const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
-    const [filteredConversations, setFilteredConversations] = useState<Conversation[]>(initialConversations);
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
     const [search, setSearch] = useState('');
     const [activeConvId, setActiveConvId] = useState<string | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
+    const [pending, setPending] = useState<PendingMessage[]>([]);
+    const [activity, setActivity] = useState<ActivityItem[]>([]);
     const [loadingConvs, setLoadingConvs] = useState(false);
     const [loadingMessages, setLoadingMessages] = useState(false);
     const [inputText, setInputText] = useState('');
     const [isNoteMode, setIsNoteMode] = useState(false);
     const [showRightPanel, setShowRightPanel] = useState(true);
+    const [showNotesAndActions, setShowNotesAndActions] = useState(true);
     const [templates, setTemplates] = useState<MessageTemplate[]>([]);
     const [cannedResponses, setCannedResponses] = useState<CannedResponse[]>([]);
-    const [showTemplates, setShowTemplates] = useState(false);
-    const [showCanned, setShowCanned] = useState(false);
+    const [panel, setPanel] = useState<Panel>(null);
+    const [selectedTemplate, setSelectedTemplate] = useState<MessageTemplate | null>(null);
+    const [templateVars, setTemplateVars] = useState<Record<string, string>>({});
     const [sending, setSending] = useState(false);
-    const [showEmoji, setShowEmoji] = useState(false);
+    const [notesVersion, setNotesVersion] = useState(0);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const convSubscriptionRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-    const msgSubscriptionRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-    // Skip the initial fetch on mount — data already loaded server-side
-    const isMountedRef = useRef(false);
+    const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const readTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const statusFilterRef = useRef<StatusFilter>('all');
+    const activeConvIdRef = useRef<string | null>(null);
 
     const activeConversation = conversations.find((c) => c.id === activeConvId) ?? null;
     const activeContact = activeConversation?.contact ?? null;
     const contactName = activeContact?.nombre ?? '';
 
-    // ── Fetch conversations (only when status filter changes after mount) ───
-    const fetchConversations = useCallback(async () => {
-        setLoadingConvs(true);
+    useEffect(() => { activeConvIdRef.current = activeConvId; }, [activeConvId]);
+
+    // Deep link: /conversations?contact=<id> opens that contact's chat
+    const deepLinkDone = useRef(false);
+    useEffect(() => {
+        if (deepLinkDone.current) return;
+        const contactId = new URLSearchParams(window.location.search).get('contact');
+        if (!contactId) { deepLinkDone.current = true; return; }
+        const conv = conversations.find((c) => c.contact_id === contactId);
+        if (conv) {
+            deepLinkDone.current = true;
+            setActiveConvId(conv.id);
+        }
+    }, [conversations]);
+
+    // Remembered per browser: show/hide notes and actions in the chat
+    useEffect(() => {
         try {
-            const params = statusFilter !== 'all' ? `?status=${statusFilter}` : '';
+            if (localStorage.getItem(SHOW_NOTES_KEY) === '0') setShowNotesAndActions(false);
+        } catch { /* storage unavailable */ }
+    }, []);
+    function toggleNotesAndActions() {
+        setShowNotesAndActions((v) => {
+            try { localStorage.setItem(SHOW_NOTES_KEY, v ? '0' : '1'); } catch { /* ignore */ }
+            return !v;
+        });
+    }
+
+    // ── Conversations ──────────────────────────────────────────────────────
+    // silent: realtime refreshes keep the list on screen (no spinner, no flicker)
+    const fetchConversations = useCallback(async (silent = false) => {
+        if (!silent) setLoadingConvs(true);
+        try {
+            const filter = statusFilterRef.current;
+            const params = filter !== 'all' ? `?status=${filter}` : '';
             const res = await fetch(`/api/conversations${params}`);
-            if (res.ok) {
-                const data = await res.json();
-                if (Array.isArray(data)) setConversations(data);
+            if (!res.ok) {
+                if (!silent) toast.error(await readError(res, 'No se pudieron cargar las conversaciones'));
+                return;
             }
+            const data = await res.json();
+            if (Array.isArray(data)) setConversations(data);
+        } catch {
+            if (!silent) toast.error('Error de conexión al cargar las conversaciones');
         } finally {
-            setLoadingConvs(false);
-        }
-    }, [statusFilter]);
-
-    useEffect(() => {
-        // On first mount skip the fetch — initialConversations from server is sufficient
-        if (!isMountedRef.current) {
-            isMountedRef.current = true;
-            return;
-        }
-        fetchConversations();
-    }, [fetchConversations]);
-
-    // ── Filter conversations by search ──────────────────────────────────────
-    useEffect(() => {
-        if (!search.trim()) {
-            setFilteredConversations(conversations);
-            return;
-        }
-        const q = search.toLowerCase();
-        setFilteredConversations(
-            conversations.filter((c) => {
-                const name = (c.contact?.nombre ?? '').toLowerCase();
-                const phone = (c.contact?.wa_id ?? '').toLowerCase();
-                return name.includes(q) || phone.includes(q);
-            })
-        );
-    }, [conversations, search]);
-
-    // ── Fetch messages when conversation changes ────────────────────────────
-    const fetchMessages = useCallback(async (convId: string) => {
-        setLoadingMessages(true);
-        try {
-            const res = await fetch(`/api/conversations/${convId}/messages`);
-            if (res.ok) {
-                const data = await res.json();
-                if (Array.isArray(data)) setMessages(data);
-            }
-        } finally {
-            setLoadingMessages(false);
+            if (!silent) setLoadingConvs(false);
         }
     }, []);
 
+    const scheduleRefresh = useCallback(() => {
+        if (refreshTimer.current) clearTimeout(refreshTimer.current);
+        refreshTimer.current = setTimeout(() => fetchConversations(true), 250);
+    }, [fetchConversations]);
+
+    function changeFilter(filter: StatusFilter) {
+        statusFilterRef.current = filter;
+        setStatusFilter(filter);
+        fetchConversations();
+    }
+
+    const filteredConversations = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        const list = q
+            ? conversations.filter((c) =>
+                (c.contact?.nombre ?? '').toLowerCase().includes(q) ||
+                (c.contact?.wa_id ?? '').toLowerCase().includes(q))
+            : conversations;
+        // The chat the agent is looking at is never "unread"
+        return list.map((c) => (c.id === activeConvId && c.unread_count > 0 ? { ...c, unread_count: 0 } : c));
+    }, [conversations, search, activeConvId]);
+
+    // Mark the open chat as seen (debounced; used when new messages arrive while it's open)
+    const markRead = useCallback((convId: string) => {
+        if (readTimer.current) clearTimeout(readTimer.current);
+        readTimer.current = setTimeout(() => {
+            fetch(`/api/conversations/${convId}/read`, { method: 'POST' }).catch(() => { /* retried on next message */ });
+        }, 400);
+        setConversations((prev) => prev.map((c) => (c.id === convId ? { ...c, unread_count: 0 } : c)));
+    }, []);
+
+    // ── Open a conversation: messages + actions ────────────────────────────
     useEffect(() => {
+        setPending([]);
+        setSelectedTemplate(null);
+        setPanel(null);
         if (!activeConvId) {
             setMessages([]);
+            setActivity([]);
             return;
         }
-        fetchMessages(activeConvId);
+        let cancelled = false;
+        setLoadingMessages(true);
+        setMessages([]);
+        setActivity([]);
+        Promise.all([
+            fetch(`/api/conversations/${activeConvId}/messages`),   // also marks it as read
+            fetch(`/api/conversations/${activeConvId}/activity`),
+        ])
+            .then(async ([mRes, aRes]) => {
+                if (cancelled) return;
+                if (!mRes.ok) {
+                    toast.error(await readError(mRes, 'No se pudieron cargar los mensajes'));
+                } else {
+                    setMessages(asArray<Message>(await mRes.json()));
+                }
+                if (aRes.ok) setActivity(asArray<ActivityItem>(await aRes.json()));
+            })
+            .catch(() => { if (!cancelled) toast.error('Error de conexión al cargar la conversación'); })
+            .finally(() => { if (!cancelled) setLoadingMessages(false); });
 
-        // Update unread_count to 0 in local state
-        setConversations((prev) =>
-            prev.map((c) => (c.id === activeConvId ? { ...c, unread_count: 0 } : c))
-        );
-    }, [activeConvId, fetchMessages]);
+        setConversations((prev) => prev.map((c) => (c.id === activeConvId ? { ...c, unread_count: 0 } : c)));
+        return () => { cancelled = true; };
+    }, [activeConvId]);
 
     // ── Auto-scroll to bottom ───────────────────────────────────────────────
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
+    }, [messages, pending, activity, showNotesAndActions]);
 
-    // ── Realtime: subscribe to messages ────────────────────────────────────
+    // ── Realtime: messages of the open conversation (new + status updates) ─
     useEffect(() => {
         if (!activeConvId) return;
-
-        // Clean up previous subscription
-        if (msgSubscriptionRef.current) {
-            supabase.removeChannel(msgSubscriptionRef.current);
-        }
-
         const channel = supabase
             .channel(`messages:${activeConvId}`)
-            .on(
-                'postgres_changes',
-                {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'messages',
-                    filter: `conversation_id=eq.${activeConvId}`,
-                },
-                (payload) => {
-                    const newMsg = payload.new as Message;
-                    setMessages((prev) => {
-                        // Avoid duplicates (optimistic updates)
-                        if (prev.some((m) => m.id === newMsg.id)) return prev;
-                        return [...prev, newMsg];
+            .on('postgres_changes', {
+                event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${activeConvId}`,
+            }, (payload) => {
+                const msg = payload.new as Message;
+                setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+                // The confirmed copy of something the agent sent replaces its pending bubble
+                if (msg.direction === 'outbound' && msg.sender_type === 'human' && !msg.is_note) {
+                    setPending((prev) => {
+                        const idx = prev.findIndex((p) => (p.content ?? '').trim() === (msg.content ?? '').trim());
+                        return idx === -1 ? prev.slice(1) : prev.filter((_, i) => i !== idx);
                     });
+                    if (msg.status === 'failed') {
+                        toast.error(`WhatsApp rechazó el mensaje: ${msg.error_message ?? 'error del proveedor'}`);
+                    }
                 }
-            )
+                if (msg.direction === 'inbound') markRead(activeConvId);
+                // Notes (agent or AI) also live in the side panel
+                if (msg.is_note) setNotesVersion((v) => v + 1);
+            })
+            .on('postgres_changes', {
+                event: 'UPDATE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${activeConvId}`,
+            }, (payload) => {
+                const msg = payload.new as Message;
+                setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m)));
+            })
             .subscribe();
+        return () => { supabase.removeChannel(channel); };
+    }, [activeConvId, supabase, markRead]);
 
-        msgSubscriptionRef.current = channel;
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
-    }, [activeConvId, supabase]);
-
-    // ── Realtime: subscribe to conversations table ─────────────────────────
+    // ── Realtime: actions on the open conversation's contact ──────────────
+    const activeContactId = activeConversation?.contact_id ?? null;
     useEffect(() => {
-        if (convSubscriptionRef.current) {
-            supabase.removeChannel(convSubscriptionRef.current);
-        }
+        if (!activeContactId) return;
+        const channel = supabase
+            .channel(`activity:${activeContactId}`)
+            .on('postgres_changes', {
+                event: 'INSERT', schema: 'public', table: 'activity_log', filter: `contact_id=eq.${activeContactId}`,
+            }, (payload) => {
+                const item = payload.new as ActivityItem;
+                setActivity((prev) => (prev.some((a) => a.id === item.id) ? prev : [...prev, item]));
+            })
+            .subscribe();
+        return () => { supabase.removeChannel(channel); };
+    }, [activeContactId, supabase]);
 
+    // ── Realtime: conversation list (new chats, previews, unread) ──────────
+    useEffect(() => {
         const channel = supabase
             .channel('conversations-list')
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'conversations',
-                    filter: `tenant_id=eq.${tenantId}`,
-                },
-                () => {
-                    // Refresh the list on any conversation change
-                    fetchConversations();
+            .on('postgres_changes', {
+                event: '*', schema: 'public', table: 'conversations', filter: `tenant_id=eq.${tenantId}`,
+            }, (payload) => {
+                const row = payload.new as Partial<Conversation> | undefined;
+                // Patch the row in place right away, then reconcile with the server
+                if (row?.id) {
+                    setConversations((prev) => prev.map((c) => (
+                        c.id === row.id
+                            ? {
+                                ...c,
+                                ...row,
+                                contact: c.contact,
+                                unread_count: row.id === activeConvIdRef.current ? 0 : (row.unread_count ?? c.unread_count),
+                            }
+                            : c
+                    )));
+                    if (row.id === activeConvIdRef.current && (row.unread_count ?? 0) > 0) markRead(row.id);
                 }
-            )
+                scheduleRefresh();
+            })
             .subscribe();
+        return () => { supabase.removeChannel(channel); };
+    }, [supabase, tenantId, scheduleRefresh, markRead]);
 
-        convSubscriptionRef.current = channel;
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
-    }, [supabase, tenantId, fetchConversations]);
-
-    // ── Fetch templates and canned responses ───────────────────────────────
+    // ── Templates and quick replies ─────────────────────────────────────────
     useEffect(() => {
         async function fetchMeta() {
             const [tRes, cRes] = await Promise.all([
@@ -279,9 +405,8 @@ export default function ConversationsClient({ initialConversations }: Conversati
                 fetch('/api/settings/canned-responses').then((r) => r.json()).catch(() => null),
             ]);
             const allTemplates: MessageTemplate[] = Array.isArray(tRes?.templates) ? tRes.templates : [];
-            setTemplates(allTemplates.filter((t) => t.status === 'APPROVED').slice(0, 20));
-            const cannedData = cRes?.responses ?? cRes ?? [];
-            if (Array.isArray(cannedData)) setCannedResponses(cannedData as CannedResponse[]);
+            setTemplates(allTemplates.filter((t) => t.status === 'APPROVED'));
+            setCannedResponses(asArray<CannedResponse>(cRes?.responses ?? cRes));
         }
         fetchMeta();
     }, []);
@@ -294,6 +419,14 @@ export default function ConversationsClient({ initialConversations }: Conversati
         }
     }, [inputText]);
 
+    // Typing "/" at the start filters quick replies by shortcut
+    const slashQuery = inputText.startsWith('/') ? inputText.slice(1).toLowerCase() : null;
+    const visibleCanned = useMemo(() => {
+        if (slashQuery === null || panel !== 'canned') return cannedResponses;
+        return cannedResponses.filter((cr) =>
+            bareShortcut(cr.shortcut).startsWith(slashQuery) || cr.title.toLowerCase().includes(slashQuery));
+    }, [cannedResponses, slashQuery, panel]);
+
     // ── Emoji insert at cursor ─────────────────────────────────────────────
     function insertEmoji(emoji: string) {
         const ta = textareaRef.current;
@@ -303,92 +436,30 @@ export default function ConversationsClient({ initialConversations }: Conversati
         }
         const start = ta.selectionStart ?? inputText.length;
         const end = ta.selectionEnd ?? inputText.length;
-        const newVal = inputText.slice(0, start) + emoji + inputText.slice(end);
-        setInputText(newVal);
-        setShowEmoji(false);
+        setInputText(inputText.slice(0, start) + emoji + inputText.slice(end));
+        setPanel(null);
         setTimeout(() => {
             ta.focus();
             ta.setSelectionRange(start + emoji.length, start + emoji.length);
         }, 0);
     }
 
-    // ── File upload ────────────────────────────────────────────────────────
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file || !activeConvId) return;
-
-        const contentType = file.type.startsWith('image/') ? 'image'
-            : file.type.startsWith('video/') ? 'video'
-            : 'document';
-
-        setSending(true);
-        try {
-            const formData = new FormData();
-            formData.append('file', file);
-            const uploadRes = await fetch(`/api/conversations/${activeConvId}/attachments`, {
-                method: 'POST',
-                body: formData,
-            });
-            const upload = await uploadRes.json().catch(() => ({}));
-            if (!uploadRes.ok) {
-                toast.error(upload.error || 'Error al subir el archivo');
-                return;
-            }
-            const publicUrl = upload.url as string;
-
-            const res = await fetch(`/api/conversations/${activeConvId}/messages`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    content: file.name,
-                    content_type: contentType,
-                    media_url: publicUrl,
-                    media_filename: file.name,
-                    media_mime_type: file.type,
-                    sent_by_name: 'Agente',
-                    is_note: false,
-                }),
-            });
-            if (res.ok) {
-                const saved = await res.json();
-                setMessages((prev) => [...prev, saved as Message]);
-            }
-        } catch (err) {
-            console.error('File upload failed:', err);
-            toast.error('Error al subir el archivo');
-        } finally {
-            setSending(false);
-            if (e.target) e.target.value = '';
-        }
-    };
-
-    // ── Send message ───────────────────────────────────────────────────────
-    const handleSend = async () => {
-        console.log('[handleSend] called', { inputText: inputText.trim(), activeConvId, hasConversation: !!activeConversation, sending });
-        if (!inputText.trim() || !activeConvId || !activeConversation || sending) {
-            console.warn('[handleSend] aborted — condition failed', { noText: !inputText.trim(), noConvId: !activeConvId, noConversation: !activeConversation, sending });
-            return;
-        }
-
-        const text = inputText.trim();
-        setInputText('');
-        setSending(true);
-
-        // Optimistic update
-        const optimisticMsg: Message = {
-            id: `optimistic-${Date.now()}`,
+    // ── Pending bubbles (sent, waiting for n8n) ────────────────────────────
+    function addPending(conv: Conversation, content: string, contentType: Message['content_type'] = 'text'): PendingMessage {
+        const msg: PendingMessage = {
+            id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             tenant_id: '',
-            contact_id: activeConversation.contact_id,
-            conversation_id: activeConvId,
-            content: text,
-            content_type: 'text',
+            contact_id: conv.contact_id,
+            conversation_id: conv.id,
+            content,
+            content_type: contentType,
             direction: 'outbound',
             status: 'pending',
             delivery_status: 'sending',
             sender_type: 'human',
             sent_by: null,
-            sent_by_name: 'Agente',
-            is_note: isNoteMode,
+            sent_by_name: null,
+            is_note: false,
             media_url: null,
             media_mime_type: null,
             media_filename: null,
@@ -398,47 +469,172 @@ export default function ConversationsClient({ initialConversations }: Conversati
             error_code: null,
             error_message: null,
             created_at: new Date().toISOString(),
+            pending_state: 'sending',
         };
-        setMessages((prev) => [...prev, optimisticMsg]);
+        setPending((prev) => [...prev, msg]);
+        // n8n confirms through realtime; if it doesn't, tell the agent
+        setTimeout(() => {
+            setPending((prev) => prev.map((p) => (p.id === msg.id && p.pending_state === 'sending'
+                ? { ...p, pending_state: 'unconfirmed' }
+                : p)));
+        }, CONFIRM_TIMEOUT_MS);
+        return msg;
+    }
 
+    function failPending(id: string, error: string) {
+        setPending((prev) => prev.map((p) => (p.id === id ? { ...p, pending_state: 'failed', pending_error: error } : p)));
+    }
+
+    function retryPending(p: PendingMessage) {
+        setPending((prev) => prev.filter((x) => x.id !== p.id));
+        setInputText(p.content ?? '');
+        textareaRef.current?.focus();
+    }
+
+    // ── File upload ────────────────────────────────────────────────────────
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !activeConvId || !activeConversation) return;
+
+        const contentType = file.type.startsWith('image/') ? 'image'
+            : file.type.startsWith('video/') ? 'video'
+            : 'document';
+
+        setSending(true);
+        const toastId = toast.loading(`Subiendo ${file.name}…`);
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const uploadRes = await fetch(`/api/conversations/${activeConvId}/attachments`, {
+                method: 'POST',
+                body: formData,
+            });
+            if (!uploadRes.ok) {
+                toast.error(await readError(uploadRes, 'Error al subir el archivo'), { id: toastId });
+                return;
+            }
+            const upload = await uploadRes.json();
+
+            const res = await fetch(`/api/conversations/${activeConvId}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    content: file.name,
+                    content_type: contentType,
+                    media_url: upload.url,
+                    media_filename: file.name,
+                    media_mime_type: file.type,
+                    is_note: false,
+                }),
+            });
+            if (!res.ok) {
+                toast.error(await readError(res, 'No se pudo enviar el archivo'), { id: toastId });
+                return;
+            }
+            addPending(activeConversation, file.name, contentType);
+            toast.success('Archivo enviado a WhatsApp', { id: toastId });
+        } catch {
+            toast.error('Error de conexión al enviar el archivo', { id: toastId });
+        } finally {
+            setSending(false);
+            if (e.target) e.target.value = '';
+        }
+    };
+
+    // ── Send text message or note ──────────────────────────────────────────
+    const handleSend = async () => {
+        const text = inputText.trim();
+        if (!text || !activeConvId || !activeConversation || sending) return;
+        if (!isNoteMode && windowClosed) {
+            toast.error('La ventana de 24 h está cerrada. Envía una plantilla para retomar la conversación.');
+            return;
+        }
+
+        setInputText('');
+        setPanel(null);
+        setSending(true);
+
+        if (isNoteMode) {
+            try {
+                const res = await fetch(`/api/conversations/${activeConvId}/messages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: text, is_note: true }),
+                });
+                if (!res.ok) {
+                    toast.error(await readError(res, 'No se pudo guardar la nota'));
+                    setInputText(text);
+                    return;
+                }
+                const saved = (await res.json()) as Message;
+                setMessages((prev) => (prev.some((m) => m.id === saved.id) ? prev : [...prev, saved]));
+                setNotesVersion((v) => v + 1);
+                toast.success('Nota guardada');
+            } catch {
+                toast.error('Error de conexión al guardar la nota');
+                setInputText(text);
+            } finally {
+                setSending(false);
+            }
+            return;
+        }
+
+        const optimistic = addPending(activeConversation, text);
+        try {
+            const res = await fetch(`/api/conversations/${activeConvId}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: text, content_type: 'text', is_note: false }),
+            });
+            if (!res.ok) {
+                const error = await readError(res, 'Error al enviar el mensaje');
+                failPending(optimistic.id, error);
+                toast.error(error);
+            }
+        } catch {
+            failPending(optimistic.id, 'Error de conexión');
+            toast.error('Error de conexión al enviar el mensaje');
+        } finally {
+            setSending(false);
+        }
+    };
+
+    // ── Send WhatsApp template ─────────────────────────────────────────────
+    const handleSendTemplate = async () => {
+        if (!selectedTemplate || !activeConvId || !activeConversation || sending) return;
+        const { text, vars } = templateBody(selectedTemplate);
+        const missing = vars.filter((v) => !(templateVars[v] ?? '').trim());
+        if (missing.length > 0) {
+            toast.error(`Completa las variables: ${missing.map((v) => `{{${v}}}`).join(', ')}`);
+            return;
+        }
+        const rendered = text.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k) => templateVars[k] ?? m);
+
+        setSending(true);
+        const optimistic = addPending(activeConversation, rendered, 'template');
         try {
             const res = await fetch(`/api/conversations/${activeConvId}/messages`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    content: text,
-                    content_type: 'text',
-                    sent_by_name: 'Agente',
-                    is_note: isNoteMode,
+                    content_type: 'template',
+                    template_id: selectedTemplate.id,
+                    template_variables: templateVars,
                 }),
             });
-
-            if (res.status === 201) {
-                // Note saved directly — replace optimistic with real record
-                const saved = await res.json();
-                setMessages((prev) =>
-                    prev.map((m) => (m.id === optimisticMsg.id ? (saved as Message) : m))
-                );
-                setConversations((prev) =>
-                    prev.map((c) =>
-                        c.id === activeConvId
-                            ? { ...c, last_message_at: (saved as Message).created_at }
-                            : c
-                    )
-                );
-            } else if (res.status === 202) {
-                // Queued to WhatsApp via n8n — remove optimistic, real message
-                // arrives via realtime subscription once n8n inserts it
-                setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
-            } else {
-                // Error — remove optimistic message
-                const errData = await res.json().catch(() => ({}));
-                toast.error(errData.error || 'Error al enviar mensaje');
-                setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
+            if (!res.ok) {
+                const error = await readError(res, 'No se pudo enviar la plantilla');
+                failPending(optimistic.id, error);
+                toast.error(error);
+                return;
             }
+            toast.success(`Plantilla "${selectedTemplate.name}" enviada a WhatsApp`);
+            setSelectedTemplate(null);
+            setTemplateVars({});
+            setPanel(null);
         } catch {
-            toast.error('Error de conexión al enviar mensaje');
-            setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
+            failPending(optimistic.id, 'Error de conexión');
+            toast.error('Error de conexión al enviar la plantilla');
         } finally {
             setSending(false);
         }
@@ -447,44 +643,85 @@ export default function ConversationsClient({ initialConversations }: Conversati
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
+            // With the quick-reply list open from "/", Enter picks the first match
+            if (panel === 'canned' && slashQuery !== null && visibleCanned.length > 0) {
+                pickCanned(visibleCanned[0]);
+                return;
+            }
             handleSend();
         }
+        if (e.key === 'Escape') setPanel(null);
     };
+
+    function pickCanned(cr: CannedResponse) {
+        setInputText(cr.content);
+        setPanel(null);
+        textareaRef.current?.focus();
+    }
 
     // ── Toggle AI ──────────────────────────────────────────────────────────
     const handleAiToggle = async () => {
         if (!activeConvId || !activeConversation) return;
+        const convId = activeConvId;
         const newValue = !activeConversation.ai_enabled;
-
-        // Optimistic
-        setConversations((prev) =>
-            prev.map((c) => (c.id === activeConvId ? { ...c, ai_enabled: newValue } : c))
-        );
-
-        await fetch(`/api/conversations/${activeConvId}/ai-toggle`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ai_enabled: newValue }),
-        });
-    };
-
-    // ── Resolve conversation ───────────────────────────────────────────────
-    const handleResolve = async () => {
-        if (!activeConvId) return;
-        const { error } = await supabase
-            .from('conversations')
-            .update({ status: 'resolved' })
-            .eq('id', activeConvId)
-            .eq('tenant_id', tenantId);
-
-        if (error) {
-            toast.error('Error al resolver conversación: ' + error.message);
-        } else {
-            setConversations((prev) =>
-                prev.map((c) => (c.id === activeConvId ? { ...c, status: 'resolved' } : c))
-            );
+        setConversations((prev) => prev.map((c) => (c.id === convId ? { ...c, ai_enabled: newValue } : c)));
+        try {
+            const res = await fetch(`/api/conversations/${convId}/ai-toggle`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ai_enabled: newValue }),
+            });
+            if (!res.ok) throw new Error(await readError(res, 'No se pudo cambiar el modo de la IA'));
+            toast.success(newValue ? 'La IA responderá en esta conversación' : 'Tomaste el control: la IA no responderá');
+        } catch (err) {
+            setConversations((prev) => prev.map((c) => (c.id === convId ? { ...c, ai_enabled: !newValue } : c)));
+            toast.error(err instanceof Error ? err.message : 'No se pudo cambiar el modo de la IA');
         }
     };
+
+    // ── Change status (resolve / reopen) ───────────────────────────────────
+    const handleStatus = async (status: ConversationStatus) => {
+        if (!activeConvId) return;
+        const convId = activeConvId;
+        try {
+            const res = await fetch(`/api/conversations/${convId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status }),
+            });
+            if (!res.ok) {
+                toast.error(await readError(res, 'No se pudo cambiar el estado'));
+                return;
+            }
+            setConversations((prev) => prev.map((c) => (c.id === convId ? { ...c, status } : c)));
+            toast.success(status === 'resolved' ? 'Conversación resuelta' : 'Conversación reabierta');
+        } catch {
+            toast.error('Error de conexión al cambiar el estado');
+        }
+    };
+
+    // ── 24h WhatsApp window ────────────────────────────────────────────────
+    const windowClosed = !!activeConversation?.window_expires_at
+        && new Date(activeConversation.window_expires_at).getTime() < Date.now();
+
+    // ── Timeline: messages + notes + actions, oldest first ─────────────────
+    type TimelineItem =
+        | { kind: 'message'; at: string; message: Message; pending?: PendingMessage }
+        | { kind: 'activity'; at: string; item: ActivityItem };
+    const timeline = useMemo<TimelineItem[]>(() => {
+        const items: TimelineItem[] = [
+            ...messages
+                .filter((m) => showNotesAndActions || !m.is_note)
+                .map((m) => ({ kind: 'message' as const, at: m.created_at, message: m })),
+            ...(showNotesAndActions ? activity.map((a) => ({ kind: 'activity' as const, at: a.created_at, item: a })) : []),
+        ];
+        items.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+        // Pending bubbles always go last (they haven't been saved yet)
+        return [...items, ...pending.map((p) => ({ kind: 'message' as const, at: p.created_at, message: p, pending: p }))];
+    }, [messages, activity, pending, showNotesAndActions]);
+
+    const hiddenCount = showNotesAndActions ? 0 : messages.filter((m) => m.is_note).length + activity.length;
+    const selectedTemplateInfo = selectedTemplate ? templateBody(selectedTemplate) : null;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Render
@@ -496,15 +733,13 @@ export default function ConversationsClient({ initialConversations }: Conversati
         >
             {/* ── LEFT PANEL: Conversation list ────────────────────────────── */}
             <div className="w-[360px] flex-shrink-0 bg-white border-r border-[#E8E8EC] flex flex-col h-full">
-                {/* Header */}
                 <div className="px-4 pt-5 pb-3 border-b border-[#E8E8EC]">
                     <h1 className="text-[18px] font-bold text-[#1A1A2E] mb-3">Conversaciones</h1>
-                    {/* Filter tabs */}
                     <div className="flex items-center gap-1 mb-3">
                         {STATUS_FILTERS.map((f) => (
                             <button
                                 key={f.key}
-                                onClick={() => setStatusFilter(f.key)}
+                                onClick={() => changeFilter(f.key)}
                                 className={cn(
                                     'px-3 py-1 rounded-full text-[12px] font-medium transition-all',
                                     statusFilter === f.key
@@ -516,20 +751,19 @@ export default function ConversationsClient({ initialConversations }: Conversati
                             </button>
                         ))}
                     </div>
-                    {/* Search */}
                     <div className="relative">
                         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" />
                         <input
+                            id="conversation-search"
                             type="text"
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Buscar conversación..."
+                            placeholder="Buscar por nombre o teléfono..."
                             className="w-full pl-9 pr-4 py-2 text-[13px] bg-[#F3F4F6] border-none rounded-xl focus:outline-none focus:ring-2 focus:ring-[#818CF8]/30 transition-all"
                         />
                     </div>
                 </div>
 
-                {/* List */}
                 <div className="flex-1 overflow-y-auto">
                     {loadingConvs ? (
                         <div className="flex items-center justify-center h-32">
@@ -557,7 +791,6 @@ export default function ConversationsClient({ initialConversations }: Conversati
             {/* ── CENTER PANEL: Chat area ──────────────────────────────────── */}
             <div className="flex-1 flex flex-col h-full min-w-0">
                 {!activeConversation ? (
-                    /* Empty state */
                     <div className="flex-1 flex flex-col items-center justify-center text-center">
                         <div className="w-20 h-20 rounded-2xl bg-[#F3F4FF] flex items-center justify-center mb-4">
                             <MessageCircle size={40} className="text-[#818CF8]" />
@@ -570,24 +803,35 @@ export default function ConversationsClient({ initialConversations }: Conversati
                 ) : (
                     <>
                         {/* Chat header */}
-                        <div className="flex items-center justify-between px-5 py-3.5 bg-white border-b border-[#E8E8EC] flex-shrink-0">
-                            <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-between gap-3 px-5 py-3.5 bg-white border-b border-[#E8E8EC] flex-shrink-0">
+                            <div className="flex items-center gap-3 min-w-0">
                                 <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#818CF8] to-[#A78BFA] flex items-center justify-center flex-shrink-0">
                                     <span className="text-white text-[12px] font-semibold">{getInitials(contactName)}</span>
                                 </div>
-                                <div>
+                                <div className="min-w-0">
                                     <div className="flex items-center gap-2">
-                                        <span className="text-[15px] font-semibold text-[#1A1A2E]">{contactName}</span>
-                                        <span className={cn('text-[11px] font-medium px-2 py-0.5 rounded-full', STATUS_COLORS[activeConversation.status])}>
+                                        <span className="text-[15px] font-semibold text-[#1A1A2E] truncate">{contactName}</span>
+                                        <span className={cn('text-[11px] font-medium px-2 py-0.5 rounded-full flex-shrink-0', STATUS_COLORS[activeConversation.status])}>
                                             {STATUS_LABELS[activeConversation.status] ?? activeConversation.status}
                                         </span>
                                     </div>
-                                    <p className="text-[12px] text-[#9CA3AF]">
-                                        {activeContact?.wa_id ?? ''}
-                                    </p>
+                                    <p className="text-[12px] text-[#9CA3AF]">{activeContact?.wa_id ?? ''}</p>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                                {/* Show / hide notes and actions */}
+                                <button
+                                    onClick={toggleNotesAndActions}
+                                    className={cn(
+                                        'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all',
+                                        showNotesAndActions ? 'bg-[#F3F4F6] text-[#6B7280] hover:bg-[#E8E8EC]' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                                    )}
+                                    title={showNotesAndActions ? 'Ver solo mensajes' : 'Mostrar notas y acciones'}
+                                >
+                                    {showNotesAndActions ? <EyeOff size={14} /> : <Eye size={14} />}
+                                    {showNotesAndActions ? 'Solo mensajes' : `Notas y acciones${hiddenCount ? ` (${hiddenCount})` : ''}`}
+                                </button>
+
                                 {/* AI Toggle */}
                                 <button
                                     onClick={handleAiToggle}
@@ -597,65 +841,70 @@ export default function ConversationsClient({ initialConversations }: Conversati
                                             ? 'bg-[#EEF0FF] text-[#4F46E5] hover:bg-[#E0E2FF]'
                                             : 'bg-orange-50 text-orange-600 hover:bg-orange-100'
                                     )}
-                                    title={activeConversation.ai_enabled ? 'IA activa — click para tomar control' : 'Humano en control — click para ceder a IA'}
+                                    title={activeConversation.ai_enabled ? 'La IA responde. Clic para tomar el control.' : 'Tú tienes el control. Clic para que responda la IA.'}
                                 >
                                     {activeConversation.ai_enabled ? (
-                                        <>
-                                            <Bot size={14} />
-                                            Ceder a IA
-                                        </>
+                                        <><Bot size={14} /> IA activa · Tomar control</>
                                     ) : (
-                                        <>
-                                            <User size={14} />
-                                            Tomar control
-                                        </>
+                                        <><User size={14} /> Control humano · Ceder a IA</>
                                     )}
                                 </button>
 
-                                {/* Resolve */}
-                                {activeConversation.status !== 'resolved' && (
+                                {/* Resolve / reopen */}
+                                {activeConversation.status !== 'resolved' ? (
                                     <button
-                                        onClick={handleResolve}
+                                        onClick={() => handleStatus('resolved')}
                                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-all"
                                     >
-                                        <CheckCheck size={14} />
-                                        Resolver
+                                        <CheckCheck size={14} /> Resolver
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => handleStatus('open')}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold bg-[#F3F4F6] text-[#6B7280] hover:bg-[#E8E8EC] transition-all"
+                                    >
+                                        <RotateCcw size={14} /> Reabrir
                                     </button>
                                 )}
 
-                                {/* Toggle right panel */}
                                 <button
                                     onClick={() => setShowRightPanel((v) => !v)}
                                     className={cn(
                                         'w-8 h-8 rounded-lg flex items-center justify-center transition-colors',
                                         showRightPanel ? 'bg-[#F3F4FF] text-[#818CF8]' : 'text-[#9CA3AF] hover:bg-[#F3F4F6]'
                                     )}
-                                    title="Toggle panel de contacto"
+                                    title={showRightPanel ? 'Ocultar panel del contacto' : 'Mostrar panel del contacto'}
                                 >
                                     <PanelRight size={18} />
                                 </button>
                             </div>
                         </div>
 
-                        {/* Messages area */}
+                        {/* Timeline */}
                         <div className="flex-1 overflow-y-auto py-4 bg-[#F8F8FA]">
                             {loadingMessages ? (
                                 <div className="flex items-center justify-center h-32">
                                     <div className="w-6 h-6 border-2 border-[#818CF8] border-t-transparent rounded-full animate-spin" />
                                 </div>
-                            ) : messages.length === 0 ? (
+                            ) : timeline.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center h-full text-center px-8">
                                     <MessageSquare size={32} className="text-[#E8E8EC] mb-3" />
-                                    <p className="text-[13px] text-[#9CA3AF]">Sin mensajes aún. Sé el primero en escribir.</p>
+                                    <p className="text-[13px] text-[#9CA3AF]">Sin mensajes aún.</p>
                                 </div>
                             ) : (
-                                messages.map((msg, idx) => {
-                                    const prevMsg = messages[idx - 1];
-                                    const showDate = !prevMsg || !isSameDay(prevMsg.created_at, msg.created_at);
+                                timeline.map((entry, idx) => {
+                                    const prev = timeline[idx - 1];
+                                    const showDate = !prev || !isSameDay(prev.at, entry.at);
                                     return (
-                                        <div key={msg.id}>
-                                            {showDate && <DateSeparator date={msg.created_at} />}
-                                            <MessageBubble message={msg} />
+                                        <div key={entry.kind === 'message' ? entry.message.id : `a-${entry.item.id}`}>
+                                            {showDate && <DateSeparator date={entry.at} />}
+                                            {entry.kind === 'activity' ? (
+                                                <ActivityChip item={entry.item} />
+                                            ) : entry.pending ? (
+                                                <PendingBubble message={entry.pending} onRetry={() => retryPending(entry.pending!)} />
+                                            ) : (
+                                                <MessageBubble message={entry.message} />
+                                            )}
                                         </div>
                                     );
                                 })
@@ -665,34 +914,84 @@ export default function ConversationsClient({ initialConversations }: Conversati
 
                         {/* Input area */}
                         <div className="bg-white border-t border-[#E8E8EC] p-4 flex-shrink-0">
+                            {windowClosed && !isNoteMode && (
+                                <div className="flex items-center justify-between gap-3 mb-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200">
+                                    <p className="text-[12px] text-amber-800">
+                                        Pasaron más de 24 h desde el último mensaje del cliente. WhatsApp solo permite enviar una <strong>plantilla aprobada</strong>.
+                                    </p>
+                                    <button
+                                        onClick={() => setPanel('templates')}
+                                        className="text-[12px] font-semibold text-amber-800 underline whitespace-nowrap"
+                                    >
+                                        Elegir plantilla
+                                    </button>
+                                </div>
+                            )}
                             {isNoteMode && (
                                 <div className="flex items-center gap-2 mb-2 px-2">
                                     <StickyNote size={13} className="text-amber-500" />
-                                    <span className="text-[12px] text-amber-600 font-medium">Modo nota interna</span>
+                                    <span className="text-[12px] text-amber-600 font-medium">Nota interna: no se envía al cliente, se guarda en el chat y en el contacto</span>
                                 </div>
                             )}
+
+                            {/* Template composer */}
+                            {selectedTemplate && selectedTemplateInfo && (
+                                <div className="mb-2 rounded-xl border border-[#C7D2FE] bg-[#F5F7FF] p-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <p className="text-[12px] font-semibold text-[#4F46E5] flex items-center gap-1.5">
+                                            <FileText size={13} /> Plantilla: {selectedTemplate.name}
+                                        </p>
+                                        <button onClick={() => { setSelectedTemplate(null); setTemplateVars({}); }} title="Cancelar">
+                                            <X size={14} className="text-[#9CA3AF]" />
+                                        </button>
+                                    </div>
+                                    <p className="text-[12px] text-[#374151] whitespace-pre-wrap mb-2">
+                                        {selectedTemplateInfo.text.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k) => templateVars[k] || m)}
+                                    </p>
+                                    {selectedTemplateInfo.vars.length > 0 && (
+                                        <div className="grid grid-cols-2 gap-2 mb-2">
+                                            {selectedTemplateInfo.vars.map((v) => (
+                                                <input
+                                                    key={v}
+                                                    id={`template-var-${v}`}
+                                                    value={templateVars[v] ?? ''}
+                                                    onChange={(e) => setTemplateVars((p) => ({ ...p, [v]: e.target.value }))}
+                                                    placeholder={`{{${v}}}`}
+                                                    className="px-2.5 py-1.5 text-[12px] bg-white border border-[#E8E8EC] rounded-lg focus:outline-none focus:border-[#818CF8]"
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className="flex justify-end">
+                                        <button
+                                            onClick={handleSendTemplate}
+                                            disabled={sending}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold bg-[#4F46E5] text-white hover:bg-[#4338CA] disabled:opacity-60"
+                                        >
+                                            <Send size={13} /> Enviar plantilla
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className={cn(
                                 'flex items-end gap-2 rounded-xl border px-3 py-2 transition-colors',
-                                isNoteMode
-                                    ? 'border-amber-300 bg-amber-50'
-                                    : 'border-[#E8E8EC] bg-white'
+                                isNoteMode ? 'border-amber-300 bg-amber-50' : 'border-[#E8E8EC] bg-white'
                             )}>
                                 {/* Emoji picker */}
                                 <div className="relative">
                                     <button
-                                        onClick={() => setShowEmoji((v) => !v)}
+                                        onClick={() => setPanel((p) => (p === 'emoji' ? null : 'emoji'))}
                                         className="text-[#9CA3AF] hover:text-[#6B7280] transition-colors p-1"
                                         title="Emoji"
                                     >
                                         <Smile size={20} />
                                     </button>
-                                    {showEmoji && (
+                                    {panel === 'emoji' && (
                                         <div className="absolute bottom-10 left-0 w-72 bg-white border border-[#E8E8EC] rounded-xl shadow-lg z-20 p-2">
                                             <div className="flex items-center justify-between px-1 mb-2">
                                                 <span className="text-[11px] font-semibold text-[#9CA3AF]">Emojis</span>
-                                                <button onClick={() => setShowEmoji(false)}>
-                                                    <X size={13} className="text-[#9CA3AF]" />
-                                                </button>
+                                                <button onClick={() => setPanel(null)}><X size={13} className="text-[#9CA3AF]" /></button>
                                             </div>
                                             <div className="grid grid-cols-10 gap-0.5">
                                                 {COMMON_EMOJIS.map((emoji) => (
@@ -710,42 +1009,41 @@ export default function ConversationsClient({ initialConversations }: Conversati
                                 </div>
 
                                 {/* Attach file */}
-                                <>
-                                    <button
-                                        onClick={() => fileInputRef.current?.click()}
-                                        className="text-[#9CA3AF] hover:text-[#6B7280] transition-colors p-1"
-                                        title="Adjuntar archivo"
-                                    >
-                                        <Paperclip size={20} />
-                                    </button>
-                                    <input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        accept="image/*,video/*,application/pdf,.doc,.docx"
-                                        className="hidden"
-                                        onChange={handleFileUpload}
-                                    />
-                                </>
+                                <button
+                                    onClick={() => fileInputRef.current?.click()}
+                                    disabled={isNoteMode || windowClosed || sending}
+                                    className="text-[#9CA3AF] hover:text-[#6B7280] transition-colors p-1 disabled:opacity-40"
+                                    title={windowClosed ? 'Ventana de 24 h cerrada' : 'Adjuntar archivo'}
+                                >
+                                    <Paperclip size={20} />
+                                </button>
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept="image/*,video/*,application/pdf,.doc,.docx"
+                                    className="hidden"
+                                    onChange={handleFileUpload}
+                                />
 
                                 {/* Textarea */}
                                 <textarea
+                                    id="chat-input"
                                     ref={textareaRef}
                                     value={inputText}
                                     onChange={(e) => {
                                         const val = e.target.value;
                                         setInputText(val);
-                                        // Auto-open canned responses when user types // at start
-                                        if (val === '//') {
-                                            setShowCanned(true);
-                                            setShowTemplates(false);
-                                        } else if (!val.startsWith('//')) {
-                                            // Close canned if user clears the //
-                                            if (val === '') setShowCanned(false);
-                                        }
+                                        // "/" at the start opens quick replies; deleting it closes them
+                                        if (val.startsWith('/') && !isNoteMode) setPanel('canned');
+                                        else if (panel === 'canned' && !val.startsWith('/')) setPanel(null);
                                     }}
                                     onKeyDown={handleKeyDown}
                                     rows={1}
-                                    placeholder={isNoteMode ? 'Escribe una nota interna...' : 'Escribe un mensaje...'}
+                                    placeholder={
+                                        isNoteMode ? 'Escribe una nota interna...'
+                                            : windowClosed ? 'Ventana de 24 h cerrada: usa una plantilla'
+                                            : 'Escribe un mensaje o "/" para respuestas rápidas...'
+                                    }
                                     className="flex-1 resize-none bg-transparent text-[14px] text-[#1A1A2E] placeholder:text-[#9CA3AF] focus:outline-none min-h-[36px] max-h-[120px] py-1.5"
                                     style={{ height: '36px' }}
                                 />
@@ -753,38 +1051,47 @@ export default function ConversationsClient({ initialConversations }: Conversati
                                 {/* Templates */}
                                 <div className="relative">
                                     <button
-                                        onClick={() => { setShowTemplates((v) => !v); setShowCanned(false); }}
-                                        className="text-[#9CA3AF] hover:text-[#818CF8] transition-colors p-1"
-                                        title="Plantillas"
+                                        onClick={() => setPanel((p) => (p === 'templates' ? null : 'templates'))}
+                                        disabled={isNoteMode}
+                                        className={cn('transition-colors p-1 disabled:opacity-40', panel === 'templates' ? 'text-[#818CF8]' : 'text-[#9CA3AF] hover:text-[#818CF8]')}
+                                        title="Plantillas de WhatsApp"
                                     >
                                         <FileText size={18} />
                                     </button>
-                                    {showTemplates && templates.length > 0 && (
-                                        <div className="absolute bottom-10 right-0 w-72 bg-white border border-[#E8E8EC] rounded-xl shadow-lg z-20 overflow-hidden">
+                                    {panel === 'templates' && (
+                                        <div className="absolute bottom-10 right-0 w-80 bg-white border border-[#E8E8EC] rounded-xl shadow-lg z-20 overflow-hidden">
                                             <div className="px-3 py-2 border-b border-[#E8E8EC] flex items-center justify-between">
-                                                <span className="text-[12px] font-semibold text-[#1A1A2E]">Plantillas</span>
-                                                <button onClick={() => setShowTemplates(false)}><X size={14} className="text-[#9CA3AF]" /></button>
+                                                <span className="text-[12px] font-semibold text-[#1A1A2E]">Plantillas aprobadas</span>
+                                                <button onClick={() => setPanel(null)}><X size={14} className="text-[#9CA3AF]" /></button>
                                             </div>
-                                            <div className="max-h-52 overflow-y-auto">
-                                                {templates.map((t) => {
-                                                    const body = (t.components as Array<{ type: string; text?: string }> | null)
-                                                        ?.find((c) => c.type === 'BODY')?.text ?? '';
-                                                    return (
-                                                        <button
-                                                            key={t.id}
-                                                            onClick={() => {
-                                                                setInputText(body);
-                                                                setShowTemplates(false);
-                                                                textareaRef.current?.focus();
-                                                            }}
-                                                            className="w-full text-left px-3 py-2.5 hover:bg-[#F9FAFB] transition-colors border-b border-[#F3F4F6] last:border-0"
-                                                        >
-                                                            <p className="text-[12px] font-semibold text-[#1A1A2E]">{t.name}</p>
-                                                            <p className="text-[11px] text-[#9CA3AF] truncate">{body}</p>
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
+                                            {templates.length === 0 ? (
+                                                <div className="px-3 py-4 text-center">
+                                                    <p className="text-[12px] text-[#6B7280]">No hay plantillas aprobadas por Meta.</p>
+                                                    <Link href="/settings/templates" className="text-[12px] text-[#818CF8] hover:underline">
+                                                        Ir a Plantillas y sincronizar
+                                                    </Link>
+                                                </div>
+                                            ) : (
+                                                <div className="max-h-60 overflow-y-auto">
+                                                    {templates.map((t) => {
+                                                        const { text } = templateBody(t);
+                                                        return (
+                                                            <button
+                                                                key={t.id}
+                                                                onClick={() => {
+                                                                    setSelectedTemplate(t);
+                                                                    setTemplateVars({});
+                                                                    setPanel(null);
+                                                                }}
+                                                                className="w-full text-left px-3 py-2.5 hover:bg-[#F9FAFB] transition-colors border-b border-[#F3F4F6] last:border-0"
+                                                            >
+                                                                <p className="text-[12px] font-semibold text-[#1A1A2E]">{t.name} <span className="font-normal text-[#9CA3AF]">· {t.language}</span></p>
+                                                                <p className="text-[11px] text-[#9CA3AF] line-clamp-2">{text}</p>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -792,46 +1099,57 @@ export default function ConversationsClient({ initialConversations }: Conversati
                                 {/* Quick replies */}
                                 <div className="relative">
                                     <button
-                                        onClick={() => { setShowCanned((v) => !v); setShowTemplates(false); }}
-                                        className="text-[#9CA3AF] hover:text-[#818CF8] transition-colors p-1"
-                                        title="Respuestas rápidas"
+                                        onClick={() => setPanel((p) => (p === 'canned' ? null : 'canned'))}
+                                        disabled={isNoteMode}
+                                        className={cn('transition-colors p-1 disabled:opacity-40', panel === 'canned' ? 'text-[#818CF8]' : 'text-[#9CA3AF] hover:text-[#818CF8]')}
+                                        title="Respuestas rápidas (escribe /)"
                                     >
                                         <MessageSquare size={18} />
                                     </button>
-                                    {showCanned && cannedResponses.length > 0 && (
-                                        <div className="absolute bottom-10 right-0 w-72 bg-white border border-[#E8E8EC] rounded-xl shadow-lg z-20 overflow-hidden">
+                                    {panel === 'canned' && (
+                                        <div className="absolute bottom-10 right-0 w-80 bg-white border border-[#E8E8EC] rounded-xl shadow-lg z-20 overflow-hidden">
                                             <div className="px-3 py-2 border-b border-[#E8E8EC] flex items-center justify-between">
                                                 <span className="text-[12px] font-semibold text-[#1A1A2E]">Respuestas rápidas</span>
-                                                <button onClick={() => setShowCanned(false)}><X size={14} className="text-[#9CA3AF]" /></button>
+                                                <button onClick={() => setPanel(null)}><X size={14} className="text-[#9CA3AF]" /></button>
                                             </div>
-                                            <div className="max-h-52 overflow-y-auto">
-                                                {cannedResponses.map((cr) => (
-                                                    <button
-                                                        key={cr.id}
-                                                        onClick={() => {
-                                                            setInputText(cr.content);
-                                                            setShowCanned(false);
-                                                            textareaRef.current?.focus();
-                                                        }}
-                                                        className="w-full text-left px-3 py-2.5 hover:bg-[#F9FAFB] transition-colors border-b border-[#F3F4F6] last:border-0"
-                                                    >
-                                                        <p className="text-[12px] font-semibold text-[#818CF8]">/{cr.shortcut}</p>
-                                                        <p className="text-[11px] text-[#9CA3AF] truncate">{cr.content}</p>
-                                                    </button>
-                                                ))}
-                                            </div>
+                                            {cannedResponses.length === 0 ? (
+                                                <div className="px-3 py-4 text-center">
+                                                    <p className="text-[12px] text-[#6B7280]">Aún no tienes respuestas rápidas.</p>
+                                                    <Link href="/settings" className="text-[12px] text-[#818CF8] hover:underline">
+                                                        Crear en Configuración → Respuestas rápidas
+                                                    </Link>
+                                                </div>
+                                            ) : visibleCanned.length === 0 ? (
+                                                <p className="px-3 py-4 text-center text-[12px] text-[#6B7280]">Ninguna respuesta empieza por &quot;/{slashQuery}&quot;.</p>
+                                            ) : (
+                                                <div className="max-h-60 overflow-y-auto">
+                                                    {visibleCanned.map((cr) => (
+                                                        <button
+                                                            key={cr.id}
+                                                            onClick={() => pickCanned(cr)}
+                                                            className="w-full text-left px-3 py-2.5 hover:bg-[#F9FAFB] transition-colors border-b border-[#F3F4F6] last:border-0"
+                                                        >
+                                                            <p className="text-[12px] font-semibold text-[#818CF8]">
+                                                                /{bareShortcut(cr.shortcut) || cr.title}
+                                                                <span className="font-normal text-[#9CA3AF]"> · {cr.title}</span>
+                                                            </p>
+                                                            <p className="text-[11px] text-[#9CA3AF] line-clamp-2">{cr.content}</p>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
 
                                 {/* Note toggle */}
                                 <button
-                                    onClick={() => setIsNoteMode((v) => !v)}
+                                    onClick={() => { setIsNoteMode((v) => !v); setPanel(null); }}
                                     className={cn(
                                         'transition-colors p-1 rounded',
                                         isNoteMode ? 'text-amber-500 bg-amber-100' : 'text-[#9CA3AF] hover:text-amber-500'
                                     )}
-                                    title={isNoteMode ? 'Cambiar a mensaje' : 'Cambiar a nota interna'}
+                                    title={isNoteMode ? 'Cambiar a mensaje' : 'Escribir nota interna'}
                                 >
                                     <StickyNote size={18} />
                                 </button>
@@ -839,15 +1157,16 @@ export default function ConversationsClient({ initialConversations }: Conversati
                                 {/* Send */}
                                 <button
                                     onClick={handleSend}
-                                    disabled={!inputText.trim() || sending}
+                                    disabled={!inputText.trim() || sending || (!isNoteMode && windowClosed)}
                                     className={cn(
                                         'w-9 h-9 rounded-xl flex items-center justify-center transition-all flex-shrink-0',
-                                        inputText.trim() && !sending
-                                            ? 'bg-[#818CF8] hover:bg-[#6366F1] text-white'
+                                        inputText.trim() && !sending && (isNoteMode || !windowClosed)
+                                            ? isNoteMode ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-[#818CF8] hover:bg-[#6366F1] text-white'
                                             : 'bg-[#F3F4F6] text-[#C4C4CE] cursor-not-allowed'
                                     )}
+                                    title={isNoteMode ? 'Guardar nota' : 'Enviar'}
                                 >
-                                    <Send size={16} />
+                                    {isNoteMode ? <StickyNote size={16} /> : <Send size={16} />}
                                 </button>
                             </div>
                         </div>
@@ -866,6 +1185,10 @@ export default function ConversationsClient({ initialConversations }: Conversati
                     funnelStage={activeContact.funnel_stage as { id?: string; name: string; color: string | null } | null | undefined}
                     conversationId={activeConversation.id}
                     assignedTo={activeConversation.assigned_to}
+                    notesVersion={notesVersion}
+                    onNoteAdded={(note) => {
+                        setMessages((prev) => (prev.some((m) => m.id === note.id) ? prev : [...prev, note]));
+                    }}
                     onAssign={(userId) => {
                         setConversations((prev) =>
                             prev.map((c) => c.id === activeConversation.id ? { ...c, assigned_to: userId } : c)
@@ -877,6 +1200,36 @@ export default function ConversationsClient({ initialConversations }: Conversati
         </div>
     );
 }
+
+/** A message the agent sent that WhatsApp hasn't confirmed yet. */
+function PendingBubble({ message, onRetry }: { message: PendingMessage; onRetry: () => void }) {
+    const state = message.pending_state;
+    return (
+        <div className="flex justify-end px-4 my-0.5">
+            <div className="max-w-[70%]">
+                <div className={cn(
+                    'rounded-2xl rounded-tr-sm px-4 py-2.5 text-white',
+                    state === 'failed' ? 'bg-red-500' : 'bg-[#4F46E5] opacity-70'
+                )}>
+                    <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+                </div>
+                <div className="flex items-center justify-end gap-1.5 mt-0.5 px-1 text-[11px]">
+                    {state === 'sending' && (<><Clock size={11} className="text-[#9CA3AF]" /><span className="text-[#9CA3AF]">Enviando…</span></>)}
+                    {state === 'unconfirmed' && (
+                        <span className="text-amber-600">Sin confirmación de WhatsApp todavía. Revisa n8n si no aparece.</span>
+                    )}
+                    {state === 'failed' && (
+                        <>
+                            <span className="text-red-600">No se envió: {message.pending_error}</span>
+                            <button onClick={onRetry} className="font-semibold text-red-700 underline">Reintentar</button>
+                        </>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ContactPanel — rich ManyChat-style right panel (editable)
@@ -925,6 +1278,8 @@ function ContactPanel({
     funnelStage,
     conversationId,
     assignedTo,
+    notesVersion,
+    onNoteAdded,
     onAssign,
     onClose,
 }: {
@@ -936,10 +1291,13 @@ function ContactPanel({
     funnelStage: { id?: string; name: string; color: string | null } | null | undefined;
     conversationId: string;
     assignedTo: string | null;
+    notesVersion: number;
+    onNoteAdded: (note: Message) => void;
     onAssign: (userId: string | null) => void;
     onClose: () => void;
 }) {
     const hasReservations = useHasModule('reservations');
+    const hasAppointments = useHasModule('appointments');
     const [data, setData] = useState<ContactPanelData | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -1013,6 +1371,49 @@ function ContactPanel({
             .finally(() => setLoading(false));
     }, [contactId]);
 
+    // Notes: new note in the chat (agent or AI) → refresh the panel list
+    const [noteDraft, setNoteDraft] = useState('');
+    const [savingNote, setSavingNote] = useState(false);
+    const [showAllNotes, setShowAllNotes] = useState(false);
+    useEffect(() => {
+        if (notesVersion === 0) return;
+        let cancelled = false;
+        fetch(`/api/contacts/${contactId}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => {
+                if (cancelled || !d) return;
+                setData((prev) => (prev ? { ...prev, notes: d.notes ?? [], activity: d.activity ?? prev.activity } : prev));
+            })
+            .catch(() => { /* the chat already shows the note */ });
+        return () => { cancelled = true; };
+    }, [notesVersion, contactId]);
+
+    async function addNote() {
+        const content = noteDraft.trim();
+        if (!content || savingNote) return;
+        setSavingNote(true);
+        try {
+            const res = await fetch(`/api/conversations/${conversationId}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content, is_note: true }),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) { toast.error(d.error || 'No se pudo guardar la nota'); return; }
+            setNoteDraft('');
+            setData((prev) => (prev ? {
+                ...prev,
+                notes: [{ id: `local-${d.id}`, content, created_at: d.created_at ?? new Date().toISOString(), user: null }, ...prev.notes],
+            } : prev));
+            onNoteAdded(d as Message);
+            toast.success('Nota guardada');
+        } catch {
+            toast.error('Error de conexión al guardar la nota');
+        } finally {
+            setSavingNote(false);
+        }
+    }
+
     // ── Save individual field ──────────────────────────────────────────────
     async function saveField(key: string, value: string) {
         setEditingField(null);
@@ -1029,39 +1430,70 @@ function ContactPanel({
 
     // ── Save funnel stage ──────────────────────────────────────────────────
     async function saveStage(stageId: string) {
-        setCurrentStageId(stageId);
+        const previous = currentStageId;
+        setCurrentStageId(stageId || null);
         try {
             const res = await fetch(`/api/contacts/${contactId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ funnel_stage_id: stageId || null }),
             });
-            if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Error al cambiar etapa'); }
-        } catch { toast.error('Error de conexión al cambiar etapa'); }
+            if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                setCurrentStageId(previous);
+                toast.error(d.error || 'Error al cambiar etapa');
+                return;
+            }
+            const name = stages.find((s) => s.id === stageId)?.name;
+            toast.success(name ? `Etapa cambiada a ${name}` : 'Etapa eliminada');
+        } catch {
+            setCurrentStageId(previous);
+            toast.error('Error de conexión al cambiar etapa');
+        }
     }
 
     // ── Save agent assignment ─────────────────────────────────────────────
     async function saveAssignment(userId: string | null) {
+        const previous = currentAssignedTo;
         setCurrentAssignedTo(userId);
         onAssign(userId);
+        const revert = () => { setCurrentAssignedTo(previous); onAssign(previous); };
         try {
             const res = await fetch(`/api/conversations/${conversationId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ assigned_to: userId }),
             });
-            if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Error al asignar agente'); }
-        } catch { toast.error('Error de conexión al asignar agente'); }
+            if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                revert();
+                toast.error(d.error || 'Error al asignar agente');
+                return;
+            }
+            const name = teamMembers.find((m) => m.id === userId)?.full_name;
+            toast.success(name ? `Conversación asignada a ${name}` : 'Conversación sin asignar');
+        } catch {
+            revert();
+            toast.error('Error de conexión al asignar agente');
+        }
     }
 
     // ── Remove tag from contact ────────────────────────────────────────────
     async function removeTag(tagId: string) {
+        const removed = contactTags.find((t) => t.id === tagId);
         setContactTags((prev) => prev.filter((t) => t.id !== tagId));
-        await fetch(`/api/contacts/${contactId}/tags`, {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tag_id: tagId }),
-        });
+        try {
+            const res = await fetch(`/api/contacts/${contactId}/tags`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tag_id: tagId }),
+            });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'No se pudo quitar la etiqueta');
+            toast.success(`Etiqueta "${removed?.name ?? ''}" quitada`);
+        } catch (err) {
+            if (removed) setContactTags((prev) => [...prev, removed]);
+            toast.error(err instanceof Error ? err.message : 'No se pudo quitar la etiqueta');
+        }
     }
 
     // ── Add tag to contact ────────────────────────────────────────────────
@@ -1072,11 +1504,18 @@ function ContactPanel({
         }
         setContactTags((prev) => [...prev, tag]);
         setShowAddTag(false);
-        await fetch(`/api/contacts/${contactId}/tags`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tag_id: tag.id }),
-        });
+        try {
+            const res = await fetch(`/api/contacts/${contactId}/tags`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tag_id: tag.id }),
+            });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'No se pudo agregar la etiqueta');
+            toast.success(`Etiqueta "${tag.name}" agregada`);
+        } catch (err) {
+            setContactTags((prev) => prev.filter((t) => t.id !== tag.id));
+            toast.error(err instanceof Error ? err.message : 'No se pudo agregar la etiqueta');
+        }
     }
 
     const availableTags = allTags.filter((t) => !contactTags.some((ct) => ct.id === t.id));
@@ -1363,20 +1802,70 @@ function ContactPanel({
                         </div>
                     )}
 
-                    {/* Notes */}
-                    {data && data.notes.length > 0 && (
+                    {/* Appointments of this contact (create / edit / delete in place) */}
+                    {hasAppointments && (
+                        <div className="px-4 py-3 border-b border-[#F3F4F6]">
+                            <ContactAppointments
+                                compact
+                                contact={{ id: contactId, nombre: contactData.nombre, wa_id: contactData.wa_id, email: contactData.email }}
+                            />
+                        </div>
+                    )}
+
+                    {/* Notes — same notes as the chat (agent + AI) */}
+                    {data && (
                         <div className="px-4 py-3 border-b border-[#F3F4F6]">
                             <p className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-2 flex items-center gap-1">
                                 <StickyNote size={10} /> Notas ({data.notes.length})
                             </p>
-                            <div className="space-y-2">
-                                {data.notes.slice(0, 3).map((note) => (
-                                    <div key={note.id} className="bg-amber-50 rounded-lg px-2.5 py-2">
-                                        <p className="text-[11px] text-[#1A1A2E] line-clamp-2">{note.content}</p>
-                                        <p className="text-[10px] text-[#9CA3AF] mt-0.5">{formatSmartDateShort(note.created_at)}</p>
-                                    </div>
-                                ))}
+                            <div className="flex gap-1.5 mb-2">
+                                <textarea
+                                    value={noteDraft}
+                                    onChange={(e) => setNoteDraft(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addNote(); }
+                                    }}
+                                    rows={2}
+                                    placeholder="Escribe una nota interna…"
+                                    className="flex-1 text-[11px] text-[#1A1A2E] bg-amber-50/60 border border-amber-200 rounded-lg px-2 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-amber-300/50 placeholder:text-[#C4C4CE]"
+                                />
+                                <button
+                                    onClick={addNote}
+                                    disabled={!noteDraft.trim() || savingNote}
+                                    className="self-end px-2 py-1.5 rounded-lg bg-amber-500 text-white text-[11px] font-medium disabled:opacity-40 hover:bg-amber-600 transition-colors"
+                                    title="Guardar nota"
+                                >
+                                    {savingNote ? '…' : <Plus size={12} />}
+                                </button>
                             </div>
+                            {data.notes.length === 0 ? (
+                                <p className="text-[11px] text-[#C4C4CE] italic">Sin notas todavía.</p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {(showAllNotes ? data.notes : data.notes.slice(0, 5)).map((note) => {
+                                        const isAi = note.content.startsWith('🤖');
+                                        return (
+                                            <div key={note.id} className={cn('rounded-lg px-2.5 py-2', isAi ? 'bg-violet-50' : 'bg-amber-50')}>
+                                                <p className="text-[11px] text-[#1A1A2E] whitespace-pre-wrap break-words">
+                                                    {isAi ? note.content.replace(/^🤖\s*/, '') : note.content}
+                                                </p>
+                                                <p className="text-[10px] text-[#9CA3AF] mt-0.5 flex items-center gap-1">
+                                                    {isAi ? <><Bot size={9} className="text-violet-500" /> IA</> : (note.user?.full_name ?? 'Agente')}
+                                                    <span>· {formatSmartDateShort(note.created_at)}</span>
+                                                </p>
+                                            </div>
+                                        );
+                                    })}
+                                    {data.notes.length > 5 && (
+                                        <button
+                                            onClick={() => setShowAllNotes((v) => !v)}
+                                            className="text-[11px] text-[#818CF8] hover:underline"
+                                        >
+                                            {showAllNotes ? 'Ver menos' : `Ver todas (${data.notes.length})`}
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -1398,7 +1887,7 @@ function ContactPanel({
                         </div>
                     )}
 
-                    {data && contactTags.length === 0 && data.custom_fields.length === 0 && data.reservations.length === 0 && data.notes.length === 0 && data.activity.length === 0 && (
+                    {data && contactTags.length === 0 && data.custom_fields.length === 0 && data.reservations.length === 0 && data.activity.length === 0 && (
                         <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
                             <p className="text-[12px] text-[#9CA3AF]">No hay más información de este contacto.</p>
                             <Link href={`/contacts/${contactId}`} className="mt-2 text-[12px] text-[#818CF8] hover:underline">

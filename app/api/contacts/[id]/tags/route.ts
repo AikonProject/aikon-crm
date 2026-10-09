@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getServerTenantId, TenantError } from '@/lib/tenant';
+import { logActivity } from '@/lib/activity';
 
 export async function POST(
     request: Request,
@@ -23,6 +24,11 @@ export async function POST(
             .single();
         if (!contact) return NextResponse.json({ error: 'Contact not found' }, { status: 404 });
 
+        // The tag must belong to the same tenant
+        const { data: tag } = await supabase
+            .from('tags').select('name').eq('id', tag_id).eq('tenant_id', TENANT_ID).maybeSingle();
+        if (!tag) return NextResponse.json({ error: 'Etiqueta no encontrada' }, { status: 404 });
+
         const { error } = await supabase
             .from('contact_tags')
             .insert({ contact_id: id, tag_id })
@@ -30,6 +36,11 @@ export async function POST(
             .single();
 
         if (error && error.code !== '23505') throw error; // ignore duplicate
+        if (!error) {
+            await logActivity(supabase, {
+                tenantId: TENANT_ID, contactId: id, type: 'tag_added', description: `Agregó la etiqueta "${tag.name}"`,
+            });
+        }
         return NextResponse.json({ success: true });
     } catch (err) {
         if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
@@ -58,12 +69,20 @@ export async function DELETE(
             .single();
         if (!contact) return NextResponse.json({ error: 'Contact not found' }, { status: 404 });
 
-        await supabase
+        const { data: tag } = await supabase
+            .from('tags').select('name').eq('id', tag_id).eq('tenant_id', TENANT_ID).maybeSingle();
+
+        const { error } = await supabase
             .from('contact_tags')
             .delete()
             .eq('contact_id', id)
             .eq('tag_id', tag_id);
+        if (error) throw error;
 
+        await logActivity(supabase, {
+            tenantId: TENANT_ID, contactId: id, type: 'tag_removed',
+            description: `Quitó la etiqueta "${tag?.name ?? 'sin nombre'}"`,
+        });
         return NextResponse.json({ success: true });
     } catch (err) {
         if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });

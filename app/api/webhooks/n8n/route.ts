@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { MessageType } from '@/lib/types/database';
 import { refreshCampaignCounts } from '@/lib/campaigns';
+import { logActivity } from '@/lib/activity';
+import { getTenantConfig, hasModule } from '@/lib/tenant-plan';
+import { APPOINTMENT_SELECT } from '@/lib/appointments';
+import { buildAppointmentFields, formatWhen, ValidationError } from '@/app/api/appointments/shared';
 
 // ============================================================
 // N8N Callback Webhook
@@ -70,6 +74,12 @@ export async function POST(request: NextRequest) {
                 return await handleInboundMessage(supabase, body);
             case 'templates_sync':
                 return await handleTemplatesSync(supabase, body);
+            case 'ai_note':
+                return await handleAiNote(supabase, body);
+            case 'activity':
+                return await handleActivity(supabase, body);
+            case 'appointment':
+                return await handleAppointment(supabase, body);
             default:
                 return NextResponse.json(
                     { error: `Unknown action: ${action}` },
@@ -150,6 +160,7 @@ async function handleMessageSent(
             error_message: failed ? body.error_message ?? null : null,
             sender_type: 'human' as const,
             sent_by_name: sent_by_name ?? 'Agente',
+            template_name: body.template_name ?? null,
             is_note: false,
         })
         .select('id')
@@ -555,6 +566,146 @@ async function handleTemplatesSync(
     return NextResponse.json({ synced: rows.length });
 }
 
+/**
+ * A note written by the AI (e.g. "the customer wants a quote for 20 people").
+ * Shown in the chat (as an AI note) and in the contact's notes.
+ */
+async function handleAiNote(
+    supabase: ReturnType<typeof createAdminClient>,
+    body: N8NPayload
+) {
+    const { tenant_id, contact_id, content } = body;
+    if (!contact_id || !content?.trim()) {
+        return NextResponse.json({ error: 'Missing contact_id or content' }, { status: 400 });
+    }
+    const { data: contact } = await supabase
+        .from('contacts').select('id').eq('id', contact_id).eq('tenant_id', tenant_id).maybeSingle();
+    if (!contact) return NextResponse.json({ error: 'Contact not found' }, { status: 404 });
+
+    const conversation = body.conversation_id
+        ? { id: body.conversation_id }
+        : await getOrCreateConversation(supabase, tenant_id, contact_id);
+    if (!conversation) return NextResponse.json({ error: 'Conversation not found' }, { status: 400 });
+
+    const { data: message, error } = await supabase
+        .from('messages')
+        .insert({
+            tenant_id,
+            conversation_id: conversation.id,
+            contact_id,
+            direction: 'outbound' as const,
+            content_type: 'text' as MessageType,
+            content: content.trim(),
+            status: 'sent' as const,
+            sender_type: 'bot' as const,
+            sent_by_name: 'IA',
+            is_note: true,
+        })
+        .select('id')
+        .single();
+    if (error) {
+        console.error('[n8n webhook] ai_note insert error:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    await supabase.from('contact_notes').insert({
+        tenant_id, contact_id, content: `🤖 ${content.trim()}`, created_by: null,
+    });
+    return NextResponse.json({ message_id: message.id }, { status: 201 });
+}
+
+/** An action done by the AI or an automation (e.g. "Creó una reserva para el 12/10"). */
+async function handleActivity(
+    supabase: ReturnType<typeof createAdminClient>,
+    body: N8NPayload
+) {
+    const { tenant_id, contact_id, description } = body;
+    if (!contact_id || !description?.trim()) {
+        return NextResponse.json({ error: 'Missing contact_id or description' }, { status: 400 });
+    }
+    const { data: contact } = await supabase
+        .from('contacts').select('id').eq('id', contact_id).eq('tenant_id', tenant_id).maybeSingle();
+    if (!contact) return NextResponse.json({ error: 'Contact not found' }, { status: 404 });
+
+    await logActivity(supabase, {
+        tenantId: tenant_id,
+        contactId: contact_id,
+        type: body.activity_type ?? 'ai_action',
+        description: description.trim(),
+        performedByName: body.performed_by_name ?? 'IA',
+        channel: 'n8n',
+    });
+    return NextResponse.json({ logged: true }, { status: 201 });
+}
+
+/**
+ * The bot schedules, reschedules, confirms or cancels an appointment.
+ * appointment: { id?, contact_id? | contact_phone?, title?, start_time, end_time, meeting_type?,
+ *                meeting_url?, location?, contact_name?, contact_email?, status?, notes?, description? }
+ */
+async function handleAppointment(
+    supabase: ReturnType<typeof createAdminClient>,
+    body: N8NPayload
+) {
+    const { tenant_id } = body;
+    const input = body.appointment;
+    if (!input || typeof input !== 'object') {
+        return NextResponse.json({ error: 'Missing appointment' }, { status: 400 });
+    }
+    if (!hasModule(await getTenantConfig(tenant_id), 'appointments')) {
+        return NextResponse.json({ error: 'El plan del tenant no incluye citas' }, { status: 403 });
+    }
+    if (!input.contact_id && body.contact_id) input.contact_id = body.contact_id;
+
+    try {
+        const isUpdate = typeof input.id === 'string' && input.id.length > 0;
+        let before: { id: string; title: string; start_time: string; contact_id: string | null } | null = null;
+        if (isUpdate) {
+            const { data } = await supabase.from('appointments').select('id, title, start_time, contact_id')
+                .eq('id', input.id as string).eq('tenant_id', tenant_id).maybeSingle();
+            if (!data) return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
+            before = data;
+        }
+        const { fields, contact } = await buildAppointmentFields(supabase, tenant_id, input, isUpdate);
+        const start = (fields.start_time as string | undefined) ?? before?.start_time;
+
+        let result;
+        if (isUpdate) {
+            result = await supabase.from('appointments').update(fields as never)
+                .eq('id', input.id as string).eq('tenant_id', tenant_id).select(APPOINTMENT_SELECT).single();
+        } else {
+            if (new Date(fields.end_time as string) <= new Date(fields.start_time as string)) {
+                return NextResponse.json({ error: 'end_time must be after start_time' }, { status: 400 });
+            }
+            result = await supabase.from('appointments')
+                .insert({ ...fields, tenant_id, created_by: 'IA' } as never)
+                .select(APPOINTMENT_SELECT).single();
+        }
+        if (result.error) {
+            console.error('[n8n webhook] appointment error:', result.error);
+            return NextResponse.json({ error: result.error.message }, { status: 500 });
+        }
+        const saved = result.data as unknown as { id: string; title: string; status: string; contact_id: string | null };
+        const contactId = saved.contact_id ?? contact?.id ?? before?.contact_id;
+        if (contactId) {
+            await logActivity(supabase, {
+                tenantId: tenant_id,
+                contactId,
+                type: isUpdate ? 'appointment_updated' : 'appointment_created',
+                description: isUpdate
+                    ? `IA actualizó la cita "${saved.title}" (${start ? formatWhen(start) : ''})`
+                    : `IA agendó "${saved.title}" para el ${formatWhen(start as string)}`,
+                performedByName: 'IA',
+                channel: 'n8n',
+                metadata: { appointment_id: saved.id },
+            });
+        }
+        return NextResponse.json({ appointment: result.data }, { status: isUpdate ? 200 : 201 });
+    } catch (err) {
+        if (err instanceof ValidationError) return NextResponse.json({ error: err.message }, { status: err.status });
+        throw err;
+    }
+}
+
 // ============================================================
 // Helpers
 // ============================================================
@@ -681,6 +832,14 @@ type N8NPayload = {
     contact_name?: string;
     media_mime_type?: string;
     media_filename?: string;
+    // ai_note / activity
+    description?: string;
+    activity_type?: string;
+    performed_by_name?: string;
+    // message_sent (templates)
+    template_name?: string;
+    // appointment (create when no appointment.id, update otherwise)
+    appointment?: Record<string, unknown> & { id?: string };
     // templates_sync
     templates?: { id?: string; name: string; language?: string; category?: string; status?: string; components?: unknown }[];
 };

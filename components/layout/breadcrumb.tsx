@@ -16,6 +16,7 @@ const ROUTE_LABELS: Record<string, string> = {
     settings: 'Configuración',
     integrations: 'Integraciones',
     reservations: 'Reservas',
+    appointments: 'Citas',
     orders: 'Ventas',
     restaurant: 'Restaurante',
     templates: 'Plantillas',

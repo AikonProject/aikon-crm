@@ -39,7 +39,7 @@ export type Tenant = {
 
 export type PlanModule =
     | 'chat' | 'contacts' | 'funnel' | 'campaigns' | 'orders'
-    | 'reports' | 'reservations' | 'restaurant';
+    | 'reports' | 'reservations' | 'restaurant' | 'appointments';
 
 export type Plan = {
     id: string;
@@ -428,7 +428,8 @@ export type ActivityLog = {
 // Appointment types
 // ============================================================
 
-export type AppointmentStatus = 'scheduled' | 'completed' | 'cancelled' | 'no_show';
+export type AppointmentStatus = 'scheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no_show';
+export type AppointmentMeetingType = 'virtual' | 'presencial' | 'llamada';
 
 export type Appointment = {
     id: string;
@@ -445,6 +446,14 @@ export type Appointment = {
     google_event_id: string | null;
     google_calendar_id: string | null;
     google_meet_link: string | null;
+    meeting_type: AppointmentMeetingType;
+    meeting_url: string | null;
+    contact_name: string | null;
+    contact_phone: string | null;
+    contact_email: string | null;
+    notes: string | null;
+    color: string | null;
+    service_id: string | null;
     created_by: string | null;
     reminder_sent: boolean;
     created_at: string;

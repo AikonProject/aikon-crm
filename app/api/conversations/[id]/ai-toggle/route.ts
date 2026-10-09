@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireModule } from '@/lib/tenant-plan';
 import { TenantError } from '@/lib/tenant';
+import { logActivity } from '@/lib/activity';
 
 export async function PATCH(
     request: NextRequest,
@@ -32,6 +33,13 @@ export async function PATCH(
             console.error('Error toggling ai_enabled:', error);
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
+
+        await logActivity(supabase, {
+            tenantId: TENANT_ID,
+            contactId: (data as { contact_id: string }).contact_id,
+            type: body.ai_enabled ? 'ai_enabled' : 'ai_disabled',
+            description: body.ai_enabled ? 'Activó la IA en la conversación' : 'Tomó el control (IA desactivada)',
+        });
 
         return NextResponse.json(data);
     } catch (err) {

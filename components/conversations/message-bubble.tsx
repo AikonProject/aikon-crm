@@ -147,12 +147,17 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
     // ── Internal note ────────────────────────────────────────────────────────
     if (isNote) {
+        const isAiNote = senderType === 'bot';
         return (
             <div className="flex justify-center my-1 px-4">
-                <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl px-4 py-2 max-w-[80%] text-center">
-                    <p className="text-xs font-semibold text-amber-600 mb-0.5">Nota interna</p>
-                    <p className="text-sm italic">{message.content}</p>
-                    <p className="text-[11px] text-amber-500 mt-1">{formatTime(message.created_at)}</p>
+                <div className={isAiNote
+                    ? 'bg-violet-50 border border-violet-200 text-violet-900 rounded-xl px-4 py-2 max-w-[80%] text-center'
+                    : 'bg-amber-50 border border-amber-200 text-amber-900 rounded-xl px-4 py-2 max-w-[80%] text-center'}>
+                    <p className={`text-xs font-semibold mb-0.5 flex items-center justify-center gap-1 ${isAiNote ? 'text-violet-600' : 'text-amber-600'}`}>
+                        {isAiNote ? <><Bot size={11} /> Nota de la IA</> : <>Nota interna{message.sent_by_name ? ` · ${message.sent_by_name}` : ''}</>}
+                    </p>
+                    <p className="text-sm italic whitespace-pre-wrap break-words">{message.content}</p>
+                    <p className={`text-[11px] mt-1 ${isAiNote ? 'text-violet-400' : 'text-amber-500'}`}>{formatTime(message.created_at)}</p>
                 </div>
             </div>
         );
@@ -160,17 +165,28 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
     // ── Outbound (bot or human agent) ─────────────────────────────────────
     if (isOutbound) {
+        const failed = message.delivery_status === 'failed' || message.status === 'failed';
         return (
             <div className="flex justify-end px-4 my-0.5">
                 <div className="max-w-[70%]">
                     <SenderLabel senderType={senderType} name={message.sent_by_name} />
-                    <div className={`${outboundBg(senderType)} text-white rounded-2xl rounded-tr-sm px-4 py-2.5`}>
+                    <div className={`${outboundBg(senderType)} text-white rounded-2xl rounded-tr-sm px-4 py-2.5 ${failed ? 'ring-2 ring-red-300' : ''}`}>
+                        {message.template_name && (
+                            <p className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-white/70 mb-1">
+                                <FileText size={10} /> Plantilla · {message.template_name}
+                            </p>
+                        )}
                         <MessageContent message={message} />
                     </div>
                     <div className="flex items-center justify-end gap-1 mt-0.5 px-1">
                         <p className="text-[11px] text-[#9CA3AF]">{formatTime(message.created_at)}</p>
-                        <DeliveryIcon status={message.delivery_status} />
+                        <DeliveryIcon status={failed ? 'failed' : message.delivery_status} />
                     </div>
+                    {failed && (
+                        <p className="text-[11px] text-red-500 text-right px-1">
+                            No entregado{message.error_message ? `: ${message.error_message}` : ''}
+                        </p>
+                    )}
                 </div>
             </div>
         );

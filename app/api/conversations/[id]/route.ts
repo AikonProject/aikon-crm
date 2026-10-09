@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireModule } from '@/lib/tenant-plan';
 import { TenantError } from '@/lib/tenant';
+import { logActivity } from '@/lib/activity';
 
 // ---------------------------------------------------------------------------
 // PATCH /api/conversations/[id] — update conversation fields
@@ -43,6 +44,30 @@ export async function PATCH(
         if (error) {
             console.error('[PATCH /api/conversations/[id]]', error);
             return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        const STATUS_LABELS: Record<string, string> = {
+            open: 'Reabrió la conversación', resolved: 'Marcó la conversación como resuelta',
+            pending: 'Marcó la conversación como pendiente', snoozed: 'Pospuso la conversación',
+        };
+        const row = data as { contact_id: string };
+        if (updates.status) {
+            await logActivity(supabase, {
+                tenantId: TENANT_ID, contactId: row.contact_id, type: 'status_changed',
+                description: STATUS_LABELS[updates.status as string] ?? `Cambió el estado a ${updates.status}`,
+            });
+        }
+        if ('assigned_to' in updates) {
+            let assignee = 'nadie';
+            if (updates.assigned_to) {
+                const { data: user } = await supabase.from('users').select('full_name')
+                    .eq('id', updates.assigned_to as string).eq('tenant_id', TENANT_ID).maybeSingle();
+                assignee = user?.full_name ?? 'un agente';
+            }
+            await logActivity(supabase, {
+                tenantId: TENANT_ID, contactId: row.contact_id, type: 'assigned',
+                description: updates.assigned_to ? `Asignó la conversación a ${assignee}` : 'Quitó la asignación',
+            });
         }
 
         return NextResponse.json(data);

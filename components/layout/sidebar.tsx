@@ -8,6 +8,7 @@ import {
     MessageCircle,
     Kanban,
     CalendarCheck,
+    CalendarClock,
     Megaphone,
     BarChart3,
     Settings,
@@ -42,6 +43,7 @@ const menuItems: MenuItem[] = [
     { label: 'Plantillas', href: '/settings/templates', icon: FileText },
     { label: 'Campañas', href: '/campaigns', icon: Megaphone },
     { label: 'Reservas', href: '/reservations', icon: CalendarCheck },
+    { label: 'Citas', href: '/appointments', icon: CalendarClock },
     { label: 'Reportes', href: '/reports', icon: BarChart3 },
     { label: 'Configuración', href: '/settings', icon: Settings },
     { label: 'Restaurante', href: '/settings/restaurant', icon: UtensilsCrossed },
@@ -72,14 +74,14 @@ export function Sidebar({
     const supabase = useSupabaseClient();
 
     useEffect(() => {
+        // Badge = number of chats with unread messages (same as the dots in the inbox)
         async function fetchUnread() {
-            const { data } = await supabase
+            const { count, error } = await supabase
                 .from('conversations')
-                .select('unread_count')
+                .select('id', { count: 'exact', head: true })
                 .eq('tenant_id', tenantId)
                 .gt('unread_count', 0);
-            const total = data?.reduce((sum, c) => sum + (c.unread_count ?? 0), 0) ?? 0;
-            setUnreadCount(total);
+            if (!error) setUnreadCount(count ?? 0);
         }
         fetchUnread();
 
