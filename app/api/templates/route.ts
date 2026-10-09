@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireModule } from '@/lib/tenant-plan';
 import { TenantError } from '@/lib/tenant';
+import { n8nHeaders } from '@/lib/n8n';
 
 export async function GET() {
     try {
@@ -23,38 +24,132 @@ export async function GET() {
     }
 }
 
+const CATEGORIES = ['MARKETING', 'UTILITY', 'AUTHENTICATION'];
+
+/** Meta only accepts lowercase letters, numbers and underscores. */
+function toTemplateName(raw: string): string {
+    return raw
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase().trim()
+        .replace(/[\s-]+/g, '_')
+        .replace(/[^a-z0-9_]/g, '')
+        .replace(/_+/g, '_')
+        .slice(0, 512);
+}
+
+/**
+ * Creates the template in the CRM (PENDING) and asks the tenant's n8n to create
+ * it in the provider (Meta). n8n answers with action template_created.
+ */
 export async function POST(req: NextRequest) {
     try {
-        const body = await req.json();
-        const { name, content, category, language = 'es' } = body;
+        const body = await req.json().catch(() => null);
+        if (!body) return NextResponse.json({ error: 'Datos inválidos.' }, { status: 400 });
 
-        if (!name || !content) {
-            return NextResponse.json({ error: 'name and content are required' }, { status: 400 });
+        const name = toTemplateName(String(body.name ?? ''));
+        const content = String(body.content ?? '').trim();
+        const language = String(body.language ?? 'es');
+        const category = String(body.category ?? '').toUpperCase();
+        const examples: string[] = Array.isArray(body.examples) ? body.examples.map((e: unknown) => String(e ?? '').trim()) : [];
+
+        if (!name) return NextResponse.json({ error: 'El nombre es obligatorio (minúsculas, números y _).' }, { status: 400 });
+        if (!content) return NextResponse.json({ error: 'El contenido es obligatorio.' }, { status: 400 });
+        if (!CATEGORIES.includes(category)) {
+            return NextResponse.json({ error: 'Elige una categoría: Marketing, Utilidad o Autenticación.' }, { status: 400 });
+        }
+
+        // Meta rules for variables: {{1}}, {{2}}… in order, not at the start or end, with an example each
+        const vars = Array.from(new Set((content.match(/\{\{(\d+)\}\}/g) ?? []).map((v) => Number(v.replace(/\D/g, '')))))
+            .sort((a, b) => a - b);
+        if (vars.some((v, i) => v !== i + 1)) {
+            return NextResponse.json({ error: 'Las variables deben ser consecutivas: {{1}}, {{2}}, {{3}}…' }, { status: 400 });
+        }
+        if (/^\s*\{\{\d+\}\}/.test(content) || /\{\{\d+\}\}[\s.!?]*$/.test(content)) {
+            return NextResponse.json({ error: 'Meta no permite que el mensaje empiece o termine con una variable.' }, { status: 400 });
+        }
+        if (vars.length > 0 && (examples.length < vars.length || examples.slice(0, vars.length).some((e) => !e))) {
+            return NextResponse.json({ error: 'Escribe un ejemplo para cada variable (Meta lo exige para aprobarla).' }, { status: 400 });
         }
 
         const supabase = createAdminClient();
-    const TENANT_ID = await requireModule('chat');
-        const { data, error } = await supabase
+        const TENANT_ID = await requireModule('chat');
+
+        const { data: credentials } = await supabase
+            .from('tenant_credentials')
+            .select('n8n_templates_webhook, n8n_send_message_webhook, n8n_webhook_secret')
+            .eq('tenant_id', TENANT_ID)
+            .maybeSingle();
+        const webhookUrl = credentials?.n8n_templates_webhook || credentials?.n8n_send_message_webhook;
+        if (!webhookUrl) {
+            return NextResponse.json(
+                { error: 'Falta configurar el webhook de n8n en Configuración → Integraciones.' },
+                { status: 422 }
+            );
+        }
+
+        const { data: existing } = await supabase
+            .from('message_templates')
+            .select('id')
+            .eq('tenant_id', TENANT_ID).eq('name', name).eq('language', language)
+            .maybeSingle();
+        if (existing) {
+            return NextResponse.json({ error: `Ya existe una plantilla "${name}" en ese idioma.` }, { status: 409 });
+        }
+
+        const bodyComponent: Record<string, unknown> = { type: 'BODY', text: content };
+        if (vars.length > 0) bodyComponent.example = { body_text: [examples.slice(0, vars.length)] };
+        const components = [bodyComponent];
+
+        const { data: inserted, error } = await supabase
             .from('message_templates')
             .insert({
                 tenant_id: TENANT_ID,
                 name,
-                category: category ?? null,
+                category,
                 language,
-                // Same shape Meta uses, so the body text and {{N}} variables are read the same way
-                components: [{ type: 'BODY', text: content }],
-                // Approval happens in Meta; the n8n sync updates the status
+                components,
                 status: 'PENDING',
             })
             .select()
             .single();
+        const template = inserted as { id: string } | null;
+        if (error || !template) {
+            console.error('[POST /api/templates]', error);
+            return NextResponse.json({ error: 'No se pudo guardar la plantilla.' }, { status: 500 });
+        }
 
-        if (error) throw error;
+        // Ask n8n to create it in the provider; if n8n can't be reached, undo
+        let res: Response | null = null;
+        try {
+            res = await fetch(webhookUrl, {
+                method: 'POST',
+                headers: n8nHeaders(credentials?.n8n_webhook_secret),
+                signal: AbortSignal.timeout(10000),
+                body: JSON.stringify({
+                    action: 'create_template',
+                    tenant_id: TENANT_ID,
+                    template_id: template.id,
+                    name,
+                    language,
+                    category,
+                    components,
+                }),
+            });
+        } catch {
+            res = null;
+        }
+        if (!res?.ok) {
+            await supabase.from('message_templates').delete().eq('id', template.id);
+            return NextResponse.json(
+                { error: res ? `n8n respondió con error (${res.status}). La plantilla no se creó.` : 'No se pudo contactar a n8n. La plantilla no se creó.' },
+                { status: 502 }
+            );
+        }
 
-        return NextResponse.json({ template: data }, { status: 201 });
+        return NextResponse.json({ template }, { status: 201 });
     } catch (err) {
         if (err instanceof TenantError) return NextResponse.json({ error: err.message }, { status: err.status });
         console.error('[POST /api/templates]', err);
-        return NextResponse.json({ error: 'Error creating template' }, { status: 500 });
+        return NextResponse.json({ error: 'Error al crear la plantilla' }, { status: 500 });
     }
 }

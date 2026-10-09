@@ -218,6 +218,7 @@ export type MessageTemplate = {
     status: 'APPROVED' | 'PENDING' | 'REJECTED';
     components: unknown | null; // jsonb
     meta_id: string | null;
+    rejection_reason?: string | null;
     created_at: string;
     updated_at: string;
 };
