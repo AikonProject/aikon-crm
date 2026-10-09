@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getServerTenantId, TenantError } from '@/lib/tenant';
+import { getTenantConfig, hasModule } from '@/lib/tenant-plan';
 
 export async function GET(
     _request: Request,
@@ -10,6 +11,7 @@ export async function GET(
         const { id } = await params;
         const supabase = createAdminClient();
         const TENANT_ID = await getServerTenantId();
+        const withReservations = hasModule(await getTenantConfig(TENANT_ID), 'reservations');
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const run = <T>(q: any): Promise<{ data: T | null; error: unknown }> => q;
@@ -20,7 +22,9 @@ export async function GET(
             // No FK between contact_field_values and custom_fields (joined by field_key), so fetch both
             run(supabase.from('contact_field_values').select('field_key, value').eq('contact_id', id).eq('tenant_id', TENANT_ID)),
             run(supabase.from('custom_fields').select('field_key, label, field_type').eq('tenant_id', TENANT_ID)),
-            run(supabase.from('reservations').select('id, reservation_date, reservation_time, party_size, status, occasion').eq('contact_id', id).eq('tenant_id', TENANT_ID).order('reservation_date', { ascending: false }).limit(5)),
+            withReservations
+                ? run(supabase.from('reservations').select('id, reservation_date, reservation_time, party_size, status, occasion').eq('contact_id', id).eq('tenant_id', TENANT_ID).order('reservation_date', { ascending: false }).limit(5))
+                : Promise.resolve({ data: [], error: null }),
             run(supabase.from('contact_notes').select('id, content, created_at, user:users(full_name)').eq('contact_id', id).eq('tenant_id', TENANT_ID).order('created_at', { ascending: false }).limit(5)),
             run(supabase.from('activity_log').select('id, activity_type, description, created_at, performed_by_name').eq('contact_id', id).eq('tenant_id', TENANT_ID).order('created_at', { ascending: false }).limit(10)),
         ]);

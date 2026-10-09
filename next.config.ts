@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
         destination: '/funnel',
         permanent: true,
       },
+      {
+        source: '/login',
+        destination: '/sign-in',
+        permanent: true,
+      },
     ];
   },
 };

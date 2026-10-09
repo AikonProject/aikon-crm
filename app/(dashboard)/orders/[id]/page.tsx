@@ -15,7 +15,7 @@ export type OrderDetail = {
     created_at: string;
     updated_at: string;
     contact: { id: string; nombre: string; wa_id: string | null; email: string | null } | null;
-    items: { id: string; product_name: string; quantity: number; unit_price: number; subtotal: number; notes: string | null }[];
+    items: { id: string; product_id: string | null; product_name: string; quantity: number; unit_price: number; subtotal: number; notes: string | null }[];
 };
 
 async function getOrder(id: string) {
@@ -28,7 +28,7 @@ async function getOrder(id: string) {
             `
             id, status, subtotal, discount, total, notes, source, created_at, updated_at,
             contact:contacts ( id, nombre, wa_id, email ),
-            items:order_items ( id, product_name, quantity, unit_price, subtotal, notes )
+            items:order_items ( id, product_id, product_name, quantity, unit_price, subtotal, notes )
             `
         )
         .eq('id', id)

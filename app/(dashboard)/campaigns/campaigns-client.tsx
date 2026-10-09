@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Plus, Send, CheckCircle, Eye, MessageSquare, MoreHorizontal, Copy, XCircle } from 'lucide-react';
+import { Plus, Send, CheckCircle, Eye, MessageSquare, Copy, XCircle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
@@ -33,6 +33,7 @@ function pct(num: number, denom: number): string {
 export default function CampaignsPage() {
     const [campaigns, setCampaigns] = useState<CampaignWithCount[]>([]);
     const [loading, setLoading] = useState(true);
+    const [sendingId, setSendingId] = useState<string | null>(null);
 
     useEffect(() => {
         fetch('/api/campaigns')
@@ -48,8 +49,25 @@ export default function CampaignsPage() {
     const totalSent = campaigns.reduce((s, c) => s + c.sent_count, 0);
     const totalDelivered = campaigns.reduce((s, c) => s + c.delivered_count, 0);
     const totalRead = campaigns.reduce((s, c) => s + c.read_count, 0);
-    // "Responded" is not tracked yet — use a reasonable placeholder
-    const totalResponded = 0;
+    const totalResponded = campaigns.reduce((s, c) => s + (c.replied_count ?? 0), 0);
+
+    async function handleSend(id: string) {
+        setSendingId(id);
+        try {
+            const res = await fetch(`/api/campaigns/${id}/send`, { method: 'POST' });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                toast.error(d.error || 'Error al enviar la campaña');
+                return;
+            }
+            setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, status: d.status } : c)));
+            toast.success(d.status === 'scheduled' ? 'Campaña programada en n8n' : `Campaña enviada a n8n (${d.recipients} contactos)`);
+        } catch {
+            toast.error('Error de conexión al enviar la campaña');
+        } finally {
+            setSendingId(null);
+        }
+    }
 
     async function handleCancel(id: string) {
         try {
@@ -78,6 +96,9 @@ export default function CampaignsPage() {
                     name: `${campaign.name} (copia)`,
                     description: campaign.description,
                     template_id: campaign.template_id,
+                    template_variables: campaign.template_variables,
+                    segment_filters: campaign.segment_filters,
+                    send: false,
                 }),
             });
             if (!res.ok) {
@@ -163,7 +184,7 @@ export default function CampaignsPage() {
                                                 )}
                                             </td>
                                             <td className="px-5 py-3.5 text-[13px] text-[#6B7280]">
-                                                {campaign.template?.name ?? '—'}
+                                                {campaign.template_name ?? campaign.template?.name ?? '—'}
                                             </td>
                                             <td className="px-5 py-3.5 text-[14px] text-[#1A1A2E] font-medium">
                                                 {campaign.contact_count.toLocaleString()}
@@ -206,12 +227,16 @@ export default function CampaignsPage() {
                                                             <XCircle size={15} />
                                                         </button>
                                                     )}
-                                                    <button
-                                                        title="Más opciones"
-                                                        className="p-1.5 rounded-lg hover:bg-[#F3F4F6] text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
-                                                    >
-                                                        <MoreHorizontal size={15} />
-                                                    </button>
+                                                    {campaign.status === 'draft' && (
+                                                        <button
+                                                            title="Enviar"
+                                                            onClick={() => handleSend(campaign.id)}
+                                                            disabled={sendingId === campaign.id}
+                                                            className="p-1.5 rounded-lg hover:bg-[#EEF0FF] text-[#9CA3AF] hover:text-[#4F46E5] transition-colors disabled:opacity-50"
+                                                        >
+                                                            {sendingId === campaign.id ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>

@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { PageHeader } from '@/components/layout/page-header';
+import { useHasModule } from '@/components/providers/tenant-provider';
 
 type AiConfig = {
     system_prompt?: string;
@@ -40,6 +41,7 @@ function SectionCard({ title, subtitle, icon: Icon, children }: {
 }
 
 export default function AiSettingsClient() {
+    const hasReservations = useHasModule('reservations');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
@@ -148,7 +150,7 @@ export default function AiSettingsClient() {
                         { key: 'create_reservations' as const, label: 'Crear reservas', desc: 'Crear y gestionar reservas de clientes' },
                         { key: 'answer_faqs' as const, label: 'Responder preguntas frecuentes', desc: 'Usar la base de conocimiento para responder' },
                         { key: 'send_templates' as const, label: 'Enviar plantillas', desc: 'Enviar mensajes predefinidos de WhatsApp' },
-                    ].map((tool) => (
+                    ].filter((tool) => tool.key !== 'create_reservations' || hasReservations).map((tool) => (
                         <div key={tool.key} className="flex items-center justify-between py-2">
                             <div>
                                 <p className="text-[13px] font-medium text-[#1A1A2E]">{tool.label}</p>

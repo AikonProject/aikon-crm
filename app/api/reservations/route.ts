@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requireModule } from '@/lib/tenant-plan';
 import { TenantError } from '@/lib/tenant';
 import type { ReservationStatus } from '@/lib/types/database';
+import { n8nHeaders } from '@/lib/n8n';
 
 export async function GET(request: Request) {
     try {
@@ -95,7 +96,7 @@ export async function POST(request: Request) {
         try {
             const { data: creds } = await supabase
                 .from('tenant_credentials')
-                .select('n8n_reservation_webhook')
+                .select('n8n_reservation_webhook, n8n_webhook_secret')
                 .eq('tenant_id', TENANT_ID)
                 .maybeSingle();
 
@@ -105,7 +106,7 @@ export async function POST(request: Request) {
                 const row = data as any;
                 await fetch(webhookUrl, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: n8nHeaders(creds?.n8n_webhook_secret),
                     signal: AbortSignal.timeout(4000),
                     body: JSON.stringify({
                         action: 'reservation_new',

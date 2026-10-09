@@ -1,0 +1,1355 @@
+[
+  {
+    "id": "TC001",
+    "title": "Login con Clerk y carga del dashboard",
+    "description": "Un usuario con organización activa entra y ve el dashboard. [Cuenta: cualquiera]",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Ir a /sign-in e iniciar sesión con email y contraseña"
+      },
+      {
+        "type": "assertion",
+        "description": "Redirige a /dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Aikon CRM' y el nombre del plan"
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "Rutas privadas sin sesión",
+    "description": "Sin sesión, una ruta privada redirige al login. [Cuenta: sin sesión]",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Abrir /contacts en una sesión nueva sin login"
+      },
+      {
+        "type": "assertion",
+        "description": "Redirige a /sign-in"
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "Sidebar según plan crm_basic",
+    "description": "Los ítems del menú coinciden con los módulos del plan crm_basic. [Cuenta: crm_basic]",
+    "category": "plan-gating",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Iniciar sesión y abrir /dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Dashboard'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Contactos'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Conversaciones'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Funnel'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Plantillas'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Configuración'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar NO muestra 'Productos'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar NO muestra 'Ventas'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar NO muestra 'Campañas'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar NO muestra 'Reservas'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar NO muestra 'Reportes'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar NO muestra 'Restaurante'"
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Sidebar según plan crm_pro",
+    "description": "Los ítems del menú coinciden con los módulos del plan crm_pro. [Cuenta: crm_pro]",
+    "category": "plan-gating",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Iniciar sesión y abrir /dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Dashboard'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Contactos'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Conversaciones'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Funnel'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Productos'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Ventas'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Plantillas'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Campañas'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Reportes'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Configuración'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar NO muestra 'Reservas'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar NO muestra 'Restaurante'"
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Sidebar según plan restaurant_basic",
+    "description": "Los ítems del menú coinciden con los módulos del plan restaurant_basic. [Cuenta: restaurant_basic]",
+    "category": "plan-gating",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Iniciar sesión y abrir /dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Dashboard'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Contactos'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Conversaciones'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Funnel'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Plantillas'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Reservas'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Configuración'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Restaurante'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar NO muestra 'Productos'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar NO muestra 'Ventas'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar NO muestra 'Campañas'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar NO muestra 'Reportes'"
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Sidebar según plan restaurant_pro",
+    "description": "Los ítems del menú coinciden con los módulos del plan restaurant_pro. [Cuenta: restaurant_pro]",
+    "category": "plan-gating",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Iniciar sesión y abrir /dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Dashboard'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Contactos'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Conversaciones'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Funnel'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Productos'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Ventas'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Plantillas'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Campañas'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Reservas'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Reportes'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Configuración'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar muestra 'Restaurante'"
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "Bloqueo de rutas fuera del plan (CRM Básico)",
+    "description": "Escribir directamente la URL de un módulo no contratado redirige al dashboard. [Cuenta: crm_basic]",
+    "category": "plan-gating",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Abrir /orders escribiendo la URL"
+      },
+      {
+        "type": "assertion",
+        "description": "Redirige a /dashboard"
+      },
+      {
+        "type": "action",
+        "description": "Abrir /reservations"
+      },
+      {
+        "type": "assertion",
+        "description": "Redirige a /dashboard"
+      },
+      {
+        "type": "action",
+        "description": "Abrir /campaigns"
+      },
+      {
+        "type": "assertion",
+        "description": "Redirige a /dashboard"
+      },
+      {
+        "type": "action",
+        "description": "Abrir /settings/restaurant"
+      },
+      {
+        "type": "assertion",
+        "description": "Redirige a /dashboard"
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "Dashboard sin módulo de ventas no muestra pedidos",
+    "description": "En planes sin 'orders' el dashboard no debe mostrar 'Pedidos hoy' ni el botón 'Nuevo Pedido' ni dar errores 403. [Cuenta: crm_basic y restaurant_basic]",
+    "category": "plan-gating",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Abrir /dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "No aparece la tarjeta 'Pedidos hoy'"
+      },
+      {
+        "type": "assertion",
+        "description": "No aparece el botón 'Nuevo Pedido'"
+      },
+      {
+        "type": "assertion",
+        "description": "No aparece un toast de error ni un bloque 'Pedidos recientes' vacío"
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Dashboard de restaurante muestra reservas de hoy",
+    "description": "En planes de restaurante aparecen la tarjeta y la lista de reservas de hoy. [Cuenta: restaurant_basic]",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Abrir /dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Aparece la tarjeta 'Reservas hoy'"
+      },
+      {
+        "type": "action",
+        "description": "Clic en 'Ver todas' de reservas"
+      },
+      {
+        "type": "assertion",
+        "description": "Navega a /reservations"
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "Todos los accesos rápidos del dashboard navegan",
+    "description": "Cada botón de acceso rápido lleva a una página permitida por el plan. [Cuenta: cada plan]",
+    "category": "buttons",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Clic en cada botón de accesos rápidos del dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Cada clic navega a una ruta que carga (no vuelve a /dashboard ni da 404)"
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "Crear contacto",
+    "description": "Crear un contacto desde el diálogo. [Cuenta: cualquiera]",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Ir a /contacts y clic en 'Nuevo contacto'"
+      },
+      {
+        "type": "action",
+        "description": "Llenar nombre 'TS Prueba', teléfono '+573000000001' y guardar"
+      },
+      {
+        "type": "assertion",
+        "description": "Aparece un toast de éxito"
+      },
+      {
+        "type": "assertion",
+        "description": "'TS Prueba' aparece en la tabla"
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Buscar y filtrar contactos por etapa",
+    "description": "Búsqueda y pestañas por etapa. [Cuenta: cualquiera]",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Escribir 'TS Prueba' en el buscador"
+      },
+      {
+        "type": "assertion",
+        "description": "La tabla muestra solo coincidencias"
+      },
+      {
+        "type": "action",
+        "description": "Clic en la pestaña de la etapa 'Nuevo'"
+      },
+      {
+        "type": "assertion",
+        "description": "Solo se ven contactos de esa etapa y el contador coincide"
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Exportar CSV de contactos",
+    "description": "El botón descarga un CSV. [Cuenta: cualquiera]",
+    "category": "buttons",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Clic en 'Exportar CSV' en /contacts"
+      },
+      {
+        "type": "assertion",
+        "description": "Se descarga un archivo .csv con encabezados"
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "Importar CSV de contactos",
+    "description": "Importar un CSV válido. [Cuenta: cualquiera]",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Clic en 'Importar CSV' y subir un CSV con columnas nombre y teléfono"
+      },
+      {
+        "type": "assertion",
+        "description": "Aparece un resumen de importados"
+      },
+      {
+        "type": "assertion",
+        "description": "Los nuevos contactos aparecen en la tabla"
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "Detalle de contacto: editar y toggle IA",
+    "description": "Editar datos y cambiar la IA desde el detalle. [Cuenta: cualquiera]",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Abrir el contacto 'TS Prueba'"
+      },
+      {
+        "type": "action",
+        "description": "Clic en 'Editar', cambiar el email y guardar"
+      },
+      {
+        "type": "assertion",
+        "description": "El email nuevo se muestra"
+      },
+      {
+        "type": "action",
+        "description": "Clic en el botón de IA"
+      },
+      {
+        "type": "assertion",
+        "description": "El estado de la IA cambia y persiste al recargar"
+      }
+    ]
+  },
+  {
+    "id": "TC016",
+    "title": "Detalle de contacto: Email y sin botón Llamar",
+    "description": "El botón Email abre mailto: y no existe botón Llamar. [Cuenta: cualquiera]",
+    "category": "buttons",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Abrir un contacto con teléfono y email"
+      },
+      {
+        "type": "assertion",
+        "description": "No existe un botón 'Llamar'"
+      },
+      {
+        "type": "action",
+        "description": "Clic en 'Email'"
+      },
+      {
+        "type": "assertion",
+        "description": "Se abre un enlace mailto: con el email del contacto"
+      }
+    ]
+  },
+  {
+    "id": "TC017",
+    "title": "Notas, etiquetas y campos personalizados del contacto",
+    "description": "CRUD de los datos secundarios del contacto. [Cuenta: cualquiera]",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "En el detalle del contacto agregar una nota"
+      },
+      {
+        "type": "assertion",
+        "description": "La nota aparece en la lista"
+      },
+      {
+        "type": "action",
+        "description": "Asignar la etiqueta 'VIP'"
+      },
+      {
+        "type": "assertion",
+        "description": "Aparece la etiqueta 'VIP'"
+      },
+      {
+        "type": "action",
+        "description": "Llenar el campo 'Ciudad' y guardar"
+      },
+      {
+        "type": "assertion",
+        "description": "El valor persiste al recargar"
+      }
+    ]
+  },
+  {
+    "id": "TC018",
+    "title": "Abrir conversación y ver mensajes",
+    "description": "La bandeja carga y al abrir una conversación se ven los mensajes sin errores. [Cuenta: cualquiera]",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Ir a /conversations"
+      },
+      {
+        "type": "assertion",
+        "description": "Se ve la lista de conversaciones"
+      },
+      {
+        "type": "action",
+        "description": "Clic en la primera conversación"
+      },
+      {
+        "type": "assertion",
+        "description": "Se muestran los mensajes y el campo de texto"
+      },
+      {
+        "type": "assertion",
+        "description": "No aparece pantalla de error"
+      }
+    ]
+  },
+  {
+    "id": "TC019",
+    "title": "Filtros de conversaciones",
+    "description": "Pestañas Todos, Abiertos, Pendientes y Resueltos. [Cuenta: cualquiera]",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Clic en cada pestaña de filtro"
+      },
+      {
+        "type": "assertion",
+        "description": "La lista cambia según el estado"
+      }
+    ]
+  },
+  {
+    "id": "TC020",
+    "title": "Enviar mensaje manual",
+    "description": "El agente envía un mensaje (va a n8n). [Cuenta: tenant con n8n configurado]",
+    "category": "integration",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "En una conversación escribir 'Hola desde TestSprite' y enviar"
+      },
+      {
+        "type": "assertion",
+        "description": "El mensaje aparece en la conversación o queda en estado enviando"
+      },
+      {
+        "type": "assertion",
+        "description": "No aparece un toast de error 'webhook no configurado'"
+      }
+    ]
+  },
+  {
+    "id": "TC021",
+    "title": "Nota interna, toggle IA y cambio de estado",
+    "description": "Acciones del panel de conversación. [Cuenta: cualquiera]",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Escribir una nota interna"
+      },
+      {
+        "type": "assertion",
+        "description": "La nota se ve diferenciada (no se envía al cliente)"
+      },
+      {
+        "type": "action",
+        "description": "Desactivar la IA de la conversación"
+      },
+      {
+        "type": "assertion",
+        "description": "El indicador de IA cambia"
+      },
+      {
+        "type": "action",
+        "description": "Marcar la conversación como resuelta"
+      },
+      {
+        "type": "assertion",
+        "description": "Pasa al filtro 'Resueltos'"
+      }
+    ]
+  },
+  {
+    "id": "TC022",
+    "title": "Enviar plantilla desde conversación",
+    "description": "Seleccionar y enviar una plantilla aprobada. [Cuenta: cualquiera]",
+    "category": "integration",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Abrir el selector de plantillas en la conversación"
+      },
+      {
+        "type": "assertion",
+        "description": "Se listan las plantillas aprobadas sin error 400"
+      },
+      {
+        "type": "action",
+        "description": "Elegir una y enviar"
+      },
+      {
+        "type": "assertion",
+        "description": "Aparece la confirmación"
+      }
+    ]
+  },
+  {
+    "id": "TC023",
+    "title": "Crear deal y moverlo entre etapas",
+    "description": "Kanban del funnel. [Cuenta: cualquiera]",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Ir a /funnel y clic en 'Nuevo Deal'"
+      },
+      {
+        "type": "action",
+        "description": "Llenar título y contacto y guardar"
+      },
+      {
+        "type": "assertion",
+        "description": "El deal aparece en la primera etapa"
+      },
+      {
+        "type": "action",
+        "description": "Arrastrar el deal a 'Interesado'"
+      },
+      {
+        "type": "assertion",
+        "description": "El deal queda en 'Interesado' tras recargar"
+      }
+    ]
+  },
+  {
+    "id": "TC024",
+    "title": "'Agregar contacto' desde una etapa del funnel",
+    "description": "El botón lleva a contactos filtrados por esa etapa. [Cuenta: cualquiera]",
+    "category": "buttons",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Clic en '+ Agregar contacto' en la columna 'Contactado'"
+      },
+      {
+        "type": "assertion",
+        "description": "Navega a /contacts con la pestaña 'Contactado' seleccionada y el diálogo 'Nuevo contacto' abierto"
+      },
+      {
+        "type": "action",
+        "description": "Crear el contacto 'TS Funnel'"
+      },
+      {
+        "type": "assertion",
+        "description": "'TS Funnel' aparece en la etapa 'Contactado'"
+      }
+    ]
+  },
+  {
+    "id": "TC025",
+    "title": "Gestionar etapas del funnel",
+    "description": "CRUD y reordenamiento de etapas. [Cuenta: cualquiera]",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Clic en 'Gestionar etapas'"
+      },
+      {
+        "type": "action",
+        "description": "Crear la etapa 'TS Etapa'"
+      },
+      {
+        "type": "assertion",
+        "description": "Aparece en la lista"
+      },
+      {
+        "type": "action",
+        "description": "Arrastrarla a la primera posición"
+      },
+      {
+        "type": "assertion",
+        "description": "El orden persiste al recargar"
+      },
+      {
+        "type": "action",
+        "description": "Eliminar 'TS Etapa'"
+      },
+      {
+        "type": "assertion",
+        "description": "Desaparece"
+      }
+    ]
+  },
+  {
+    "id": "TC026",
+    "title": "CRUD de productos y categorías",
+    "description": "Gestión del catálogo. [Cuenta: crm_pro]",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Ir a /settings/products, pestaña Categorías, crear 'TS Cat'"
+      },
+      {
+        "type": "assertion",
+        "description": "Aparece 'TS Cat'"
+      },
+      {
+        "type": "action",
+        "description": "Pestaña Productos: crear 'TS Producto' con precio 10000 en 'TS Cat'"
+      },
+      {
+        "type": "assertion",
+        "description": "Aparece en la lista con el precio formateado"
+      },
+      {
+        "type": "action",
+        "description": "Editar el precio a 12000"
+      },
+      {
+        "type": "assertion",
+        "description": "Se actualiza"
+      },
+      {
+        "type": "action",
+        "description": "Eliminar el producto"
+      },
+      {
+        "type": "assertion",
+        "description": "Desaparece"
+      }
+    ]
+  },
+  {
+    "id": "TC027",
+    "title": "Crear pedido y cambiar estado",
+    "description": "Flujo de ventas. [Cuenta: crm_pro]",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Ir a /orders y crear un pedido para 'TS Prueba' con 'TS Producto'"
+      },
+      {
+        "type": "assertion",
+        "description": "El pedido aparece como 'Pendiente' con el total correcto"
+      },
+      {
+        "type": "action",
+        "description": "Abrir el detalle del pedido y cambiar el estado a 'Confirmado'"
+      },
+      {
+        "type": "assertion",
+        "description": "El estado se actualiza"
+      },
+      {
+        "type": "action",
+        "description": "Volver a /orders y filtrar por 'Confirmado'"
+      },
+      {
+        "type": "assertion",
+        "description": "El pedido aparece en ese filtro"
+      }
+    ]
+  },
+  {
+    "id": "TC028",
+    "title": "Crear campaña con el asistente",
+    "description": "Asistente de 3 pasos. [Cuenta: crm_pro]",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Ir a /campaigns y clic en 'Nueva Campaña'"
+      },
+      {
+        "type": "assertion",
+        "description": "Solo se listan plantillas aprobadas"
+      },
+      {
+        "type": "action",
+        "description": "Completar nombre, plantilla, variables y la etapa 'Nuevo'"
+      },
+      {
+        "type": "assertion",
+        "description": "Se muestra el conteo de contactos del segmento"
+      },
+      {
+        "type": "action",
+        "description": "Paso Programar: 'Enviar ahora' y confirmar"
+      },
+      {
+        "type": "assertion",
+        "description": "Si el tenant tiene el webhook de campañas, el estado es 'Enviando'; si no, aparece el aviso 'guardada como borrador' con el motivo"
+      }
+    ]
+  },
+  {
+    "id": "TC029",
+    "title": "Enviar campaña en borrador",
+    "description": "El botón ✈ de una campaña en borrador la envía a n8n. [Cuenta: crm_pro]",
+    "category": "buttons",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "En /campaigns clic en ✈ (Enviar) de una campaña en borrador"
+      },
+      {
+        "type": "assertion",
+        "description": "Toast de éxito y el estado cambia a 'Enviando' o 'Programada', o un toast con el error de configuración de n8n"
+      }
+    ]
+  },
+  {
+    "id": "TC030",
+    "title": "Reportes por rango y exportación",
+    "description": "Cambio de rango y exportación. [Cuenta: crm_pro]",
+    "category": "buttons",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Ir a /reports y cambiar a 'Últimos 90 días'"
+      },
+      {
+        "type": "assertion",
+        "description": "Las métricas y gráficas se recalculan"
+      },
+      {
+        "type": "action",
+        "description": "Clic en 'Exportar CSV'"
+      },
+      {
+        "type": "assertion",
+        "description": "Se descarga un CSV"
+      }
+    ]
+  },
+  {
+    "id": "TC031",
+    "title": "Configurar horarios, mesas, menús y eventos",
+    "description": "CRUD de las pestañas de restaurante. [Cuenta: restaurant_basic]",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Ir a /settings/restaurant, pestaña Horarios, agregar lunes 12:00-22:00 y guardar"
+      },
+      {
+        "type": "assertion",
+        "description": "El horario aparece"
+      },
+      {
+        "type": "action",
+        "description": "Pestaña Mesas: crear 'Mesa TS' de 4 personas"
+      },
+      {
+        "type": "assertion",
+        "description": "Aparece la mesa"
+      },
+      {
+        "type": "action",
+        "description": "Pestaña Menús: crear un menú con un plato"
+      },
+      {
+        "type": "assertion",
+        "description": "Aparece el menú"
+      },
+      {
+        "type": "action",
+        "description": "Pestaña Eventos: crear un evento"
+      },
+      {
+        "type": "assertion",
+        "description": "Aparece el evento"
+      },
+      {
+        "type": "action",
+        "description": "Pestaña Página de reservas: cambiar el texto y clic en 'Guardar'"
+      },
+      {
+        "type": "assertion",
+        "description": "Toast de éxito y persiste al recargar"
+      }
+    ]
+  },
+  {
+    "id": "TC032",
+    "title": "Crear y gestionar reserva interna",
+    "description": "Reservas desde el CRM. [Cuenta: restaurant_basic]",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Ir a /reservations y clic en 'Nueva reserva'"
+      },
+      {
+        "type": "action",
+        "description": "Llenar cliente, fecha de mañana, 20:00 y 4 personas, y guardar"
+      },
+      {
+        "type": "assertion",
+        "description": "La reserva aparece como 'Pendiente'"
+      },
+      {
+        "type": "action",
+        "description": "Abrir el detalle y cambiar a 'Confirmada'"
+      },
+      {
+        "type": "assertion",
+        "description": "El estado cambia"
+      },
+      {
+        "type": "action",
+        "description": "Ir a /reservations/calendar"
+      },
+      {
+        "type": "assertion",
+        "description": "La reserva aparece en el día correcto"
+      },
+      {
+        "type": "action",
+        "description": "Clic en 'Ver lista'"
+      },
+      {
+        "type": "assertion",
+        "description": "Vuelve a /reservations"
+      }
+    ]
+  },
+  {
+    "id": "TC033",
+    "title": "Reserva pública por slug",
+    "description": "El cliente final reserva sin login. [Cuenta: sin sesión]",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Abrir /{slug-del-restaurante} sin sesión"
+      },
+      {
+        "type": "assertion",
+        "description": "Se ve el nombre, la imagen de fondo y el formulario"
+      },
+      {
+        "type": "action",
+        "description": "Elegir fecha, hora y personas; llenar nombre y teléfono; confirmar"
+      },
+      {
+        "type": "assertion",
+        "description": "Se muestra la confirmación y el menú"
+      },
+      {
+        "type": "action",
+        "description": "En el CRM del restaurante abrir /reservations"
+      },
+      {
+        "type": "assertion",
+        "description": "La nueva reserva aparece"
+      }
+    ]
+  },
+  {
+    "id": "TC034",
+    "title": "Slug inexistente",
+    "description": "Un slug que no existe muestra un mensaje claro. [Cuenta: sin sesión]",
+    "category": "functional",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Abrir /no-existe-xyz"
+      },
+      {
+        "type": "assertion",
+        "description": "Se muestra 'no encontrado', no una pantalla rota"
+      }
+    ]
+  },
+  {
+    "id": "TC035",
+    "title": "Configuración general",
+    "description": "Guardar nombre, slug y logo. [Cuenta: cualquiera]",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Ir a /settings, pestaña General, cambiar el nombre y guardar"
+      },
+      {
+        "type": "assertion",
+        "description": "Toast de éxito y persiste al recargar"
+      },
+      {
+        "type": "assertion",
+        "description": "En un negocio de servicios el título NO dice 'Información del restaurante'"
+      }
+    ]
+  },
+  {
+    "id": "TC036",
+    "title": "Invitar usuario al equipo",
+    "description": "El botón 'Invitar usuario' abre un flujo de invitación. [Cuenta: admin de cualquier plan]",
+    "category": "buttons",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Como administrador, ir a /settings, pestaña Equipo, y clic en 'Invitar usuario'"
+      },
+      {
+        "type": "assertion",
+        "description": "Se abre un diálogo con email y rol"
+      },
+      {
+        "type": "action",
+        "description": "Invitar un email de prueba como Agente"
+      },
+      {
+        "type": "assertion",
+        "description": "Aparece en 'Invitaciones pendientes' y Clerk envía el correo"
+      },
+      {
+        "type": "action",
+        "description": "Revocar la invitación"
+      },
+      {
+        "type": "assertion",
+        "description": "Desaparece de la lista"
+      }
+    ]
+  },
+  {
+    "id": "TC037",
+    "title": "Etiquetas, campos personalizados y respuestas rápidas",
+    "description": "CRUD en las pestañas de configuración. [Cuenta: cualquiera]",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Crear la etiqueta 'TS Tag'"
+      },
+      {
+        "type": "assertion",
+        "description": "Aparece"
+      },
+      {
+        "type": "action",
+        "description": "Crear el campo 'TS Campo' de tipo texto"
+      },
+      {
+        "type": "assertion",
+        "description": "Aparece"
+      },
+      {
+        "type": "action",
+        "description": "Crear la respuesta rápida '/hola'"
+      },
+      {
+        "type": "assertion",
+        "description": "Aparece y se puede usar en conversaciones"
+      }
+    ]
+  },
+  {
+    "id": "TC038",
+    "title": "Acceso a Agente IA e Integraciones desde la UI",
+    "description": "Las páginas /settings/ai y /settings/integrations deben ser alcanzables desde la navegación. [Cuenta: cualquiera]",
+    "category": "buttons",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Ir a /settings"
+      },
+      {
+        "type": "assertion",
+        "description": "Hay botones 'Agente IA' e 'Integraciones' en el encabezado"
+      },
+      {
+        "type": "action",
+        "description": "Clic en 'Integraciones'"
+      },
+      {
+        "type": "assertion",
+        "description": "Carga /settings/integrations con los valores guardados de WhatsApp"
+      },
+      {
+        "type": "action",
+        "description": "Cambiar Phone Number ID y guardar"
+      },
+      {
+        "type": "assertion",
+        "description": "Persiste al recargar"
+      }
+    ]
+  },
+  {
+    "id": "TC039",
+    "title": "Guardar configuración del Agente IA",
+    "description": "Prompt, tono y herramientas del bot. [Cuenta: cualquiera]",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Abrir /settings/ai, cambiar la longitud a 'Corta', activar 'Crear reservas' y guardar"
+      },
+      {
+        "type": "assertion",
+        "description": "Toast de éxito y persiste al recargar"
+      }
+    ]
+  },
+  {
+    "id": "TC040",
+    "title": "Sincronizar plantillas de WhatsApp",
+    "description": "El botón de sincronización trae plantillas de Meta. [Cuenta: tenant con credenciales Meta]",
+    "category": "integration",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Ir a /settings/templates y clic en sincronizar"
+      },
+      {
+        "type": "assertion",
+        "description": "Toast con el número de plantillas sincronizadas, sin error"
+      }
+    ]
+  },
+  {
+    "id": "TC041",
+    "title": "Admin: cambiar plan de un tenant",
+    "description": "El super admin cambia el plan y el sidebar del tenant cambia. [Cuenta: super_admin]",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Ir a /admin"
+      },
+      {
+        "type": "assertion",
+        "description": "Se listan los tenants"
+      },
+      {
+        "type": "action",
+        "description": "Cambiar 'CRM Prueba' a 'crm_basic'"
+      },
+      {
+        "type": "assertion",
+        "description": "Toast de éxito"
+      },
+      {
+        "type": "action",
+        "description": "Entrar como usuario de 'CRM Prueba'"
+      },
+      {
+        "type": "assertion",
+        "description": "El sidebar ya no muestra Ventas, Campañas ni Reportes"
+      },
+      {
+        "type": "action",
+        "description": "Restaurar el plan 'crm_pro'"
+      }
+    ]
+  },
+  {
+    "id": "TC042",
+    "title": "Admin no accesible para usuarios normales",
+    "description": "Un usuario sin super_admin no ve ni accede a /admin. [Cuenta: crm_basic]",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "assertion",
+        "description": "El sidebar no muestra 'Admin'"
+      },
+      {
+        "type": "action",
+        "description": "Abrir /admin directamente"
+      },
+      {
+        "type": "assertion",
+        "description": "Redirige o muestra 'Prohibido'"
+      }
+    ]
+  },
+  {
+    "id": "TC043",
+    "title": "Contacto sin módulo de reservas",
+    "description": "En planes sin reservas, el detalle de contacto y el panel de chat no muestran reservas. [Cuenta: crm_basic y crm_pro]",
+    "category": "plan-gating",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Abrir el detalle de un contacto"
+      },
+      {
+        "type": "assertion",
+        "description": "No existe la pestaña 'Reservas'; sí están Información, Conversaciones, Notas y Actividad"
+      },
+      {
+        "type": "action",
+        "description": "En /conversations abrir el panel del contacto"
+      },
+      {
+        "type": "assertion",
+        "description": "No aparece el botón ni la sección 'Reservas'"
+      }
+    ]
+  },
+  {
+    "id": "TC044",
+    "title": "Editar artículos y descuento de un pedido",
+    "description": "En planes con ventas se pueden editar los productos de un pedido. [Cuenta: crm_pro]",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Abrir un pedido 'Pendiente' y clic en 'Editar' en Artículos"
+      },
+      {
+        "type": "action",
+        "description": "Cambiar la cantidad del primer artículo a 3, agregar 'TS Producto' y poner un descuento de 1000"
+      },
+      {
+        "type": "action",
+        "description": "Clic en 'Guardar cambios'"
+      },
+      {
+        "type": "assertion",
+        "description": "Toast 'Pedido actualizado'; el subtotal y el total se recalculan y persisten al recargar"
+      }
+    ]
+  },
+  {
+    "id": "TC045",
+    "title": "Adjuntar archivo en conversación",
+    "description": "El clip sube el archivo y lo envía. [Cuenta: tenant con n8n]",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "En una conversación, clic en el clip y elegir una imagen < 16 MB"
+      },
+      {
+        "type": "assertion",
+        "description": "El mensaje con la imagen aparece en el chat sin el toast 'Error al subir el archivo'"
+      }
+    ]
+  }
+]

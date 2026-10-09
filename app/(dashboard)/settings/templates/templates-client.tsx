@@ -189,7 +189,15 @@ export default function TemplatesPage() {
         try {
             const res = await fetch('/api/templates/sync', { method: 'POST' });
             const data = await res.json();
-            if (res.ok) {
+            if (res.ok && data.requested) {
+                // n8n syncs in the background and pushes the list to the CRM
+                setSyncMsg('Sincronización solicitada a n8n. La lista se actualizará en unos segundos.');
+                toast.success('Sincronización solicitada');
+                setTimeout(async () => {
+                    const refresh = await fetch('/api/templates').then((r) => r.json()).catch(() => null);
+                    if (refresh?.templates) setTemplates(refresh.templates);
+                }, 8000);
+            } else if (res.ok) {
                 setSyncMsg(`${data.synced} plantillas sincronizadas desde Meta.`);
                 toast.success(`${data.synced} plantillas sincronizadas`);
                 // Refresh list

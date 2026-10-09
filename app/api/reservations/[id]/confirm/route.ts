@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireModule } from '@/lib/tenant-plan';
 import { TenantError } from '@/lib/tenant';
+import { n8nHeaders } from '@/lib/n8n';
 
 type ReservationRow = {
     id: string;
@@ -49,7 +50,7 @@ export async function POST(
         // 2. Fetch tenant credentials for n8n webhook
         const { data: creds } = await supabase
             .from('tenant_credentials')
-            .select('n8n_send_message_webhook')
+            .select('n8n_send_message_webhook, n8n_webhook_secret')
             .eq('tenant_id', TENANT_ID)
             .single();
 
@@ -66,11 +67,12 @@ export async function POST(
         try {
             await fetch(webhookUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: n8nHeaders(creds?.n8n_webhook_secret),
                 body: JSON.stringify({
                     action: 'reservation_confirmation',
                     tenant_id: TENANT_ID,
                     reservation_id: id,
+                    contact_id: reservation.contact_id ?? null,
                     guest_name: reservation.guest_name,
                     guest_phone: reservation.guest_phone ?? null,
                     wa_id: waId,

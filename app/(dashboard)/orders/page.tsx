@@ -136,8 +136,12 @@ async function getPageData() {
     };
 }
 
-export default async function OrdersPage() {
-    const { orders, total, totalPages, stats } = await getPageData();
+export default async function OrdersPage({
+    searchParams,
+}: {
+    searchParams: Promise<{ new?: string }>;
+}) {
+    const [{ orders, total, totalPages, stats }, query] = await Promise.all([getPageData(), searchParams]);
 
     return (
         <>
@@ -147,6 +151,7 @@ export default async function OrdersPage() {
                 initialTotal={total}
                 initialTotalPages={totalPages}
                 stats={stats}
+                openCreate={query.new === '1'}
             />
         </>
     );

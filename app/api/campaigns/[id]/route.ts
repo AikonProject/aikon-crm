@@ -14,7 +14,7 @@ export async function GET(
 
         const { data: campaign, error } = await supabase
             .from('campaigns')
-            .select('*, template:message_templates(id, name, category, language, content, variables)')
+            .select('*, template:message_templates(id, name, category, language, components)')
             .eq('id', id)
             .eq('tenant_id', TENANT_ID)
             .single();
@@ -23,7 +23,7 @@ export async function GET(
 
         const { data: messages } = await supabase
             .from('campaign_messages')
-            .select('*, contact:contacts(id, first_name, last_name, phone)')
+            .select('*, contact:contacts(id, nombre, wa_id)')
             .eq('campaign_id', id)
             .eq('tenant_id', TENANT_ID)
             .order('created_at', { ascending: false })
@@ -47,9 +47,17 @@ export async function PATCH(
         const supabase = createAdminClient();
     const TENANT_ID = await requireModule('campaigns');
 
+        // Delivery counters and status transitions come from n8n, not from the UI
+        const allowed = ['name', 'description', 'scheduled_at'];
+        const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        for (const key of allowed) {
+            if (body[key] !== undefined) update[key] = body[key];
+        }
+        if (body.status === 'cancelled') update.status = 'cancelled';
+
         const { data, error } = await supabase
             .from('campaigns')
-            .update({ ...body, updated_at: new Date().toISOString() })
+            .update(update)
             .eq('id', id)
             .eq('tenant_id', TENANT_ID)
             .select()

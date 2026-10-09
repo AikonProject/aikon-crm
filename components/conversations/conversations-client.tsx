@@ -27,7 +27,7 @@ import { toast } from 'sonner';
 import { getInitials } from '@/lib/utils/format';
 import { useSupabaseClient } from '@/lib/supabase/client';
 import { useSidebar } from '@/components/layout/sidebar-provider';
-import { useTenantId } from '@/components/providers/tenant-provider';
+import { useHasModule, useTenantId } from '@/components/providers/tenant-provider';
 import { ConversationListItem } from '@/components/conversations/conversation-list-item';
 import { MessageBubble } from '@/components/conversations/message-bubble';
 import type { Conversation, Message, MessageTemplate, CannedResponse, ConversationStatus } from '@/lib/types/database';
@@ -317,19 +317,24 @@ export default function ConversationsClient({ initialConversations }: Conversati
         const file = e.target.files?.[0];
         if (!file || !activeConvId) return;
 
-        const isImage = file.type.startsWith('image/');
-        const contentType = isImage ? 'image' : 'document';
-        const path = `${activeConvId}/${Date.now()}-${file.name}`;
+        const contentType = file.type.startsWith('image/') ? 'image'
+            : file.type.startsWith('video/') ? 'video'
+            : 'document';
 
         setSending(true);
         try {
-            const { error: uploadError } = await supabase.storage
-                .from('chat-media')
-                .upload(path, file, { upsert: true });
-
-            if (uploadError) throw uploadError;
-
-            const { data: { publicUrl } } = supabase.storage.from('chat-media').getPublicUrl(path);
+            const formData = new FormData();
+            formData.append('file', file);
+            const uploadRes = await fetch(`/api/conversations/${activeConvId}/attachments`, {
+                method: 'POST',
+                body: formData,
+            });
+            const upload = await uploadRes.json().catch(() => ({}));
+            if (!uploadRes.ok) {
+                toast.error(upload.error || 'Error al subir el archivo');
+                return;
+            }
+            const publicUrl = upload.url as string;
 
             const res = await fetch(`/api/conversations/${activeConvId}/messages`, {
                 method: 'POST',
@@ -934,6 +939,7 @@ function ContactPanel({
     onAssign: (userId: string | null) => void;
     onClose: () => void;
 }) {
+    const hasReservations = useHasModule('reservations');
     const [data, setData] = useState<ContactPanelData | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -1191,13 +1197,13 @@ function ContactPanel({
                         <UserCheck size={12} className="text-[#818CF8]" />
                         Perfil completo
                     </Link>
-                    <Link
+                    {hasReservations && <Link
                         href={`/reservations`}
                         className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border border-[#E8E8EC] hover:bg-[#F9FAFB] text-[11px] font-medium text-[#6B7280] transition-colors"
                     >
                         <CalendarCheck size={12} className="text-[#818CF8]" />
                         Reservas
-                    </Link>
+                    </Link>}
                 </div>
             </div>
 

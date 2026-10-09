@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireModule } from '@/lib/tenant-plan';
 import { TenantError } from '@/lib/tenant';
+import { n8nHeaders } from '@/lib/n8n';
 
 export async function GET(
     request: NextRequest,
@@ -117,7 +118,7 @@ export async function POST(
         // n8n will send via WhatsApp, get the wa_message_id, then insert into DB.
         const { data: credentials } = await supabase
             .from('tenant_credentials')
-            .select('n8n_send_message_webhook')
+            .select('n8n_send_message_webhook, n8n_webhook_secret')
             .eq('tenant_id', TENANT_ID)
             .maybeSingle();
 
@@ -135,9 +136,10 @@ export async function POST(
 
         const webhookRes = await fetch(webhookUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: n8nHeaders(credentials?.n8n_webhook_secret),
             signal: AbortSignal.timeout(10000),
             body: JSON.stringify({
+                action: 'send_message',
                 tenant_id: TENANT_ID,
                 conversation_id: id,
                 contact_id: contact?.id,

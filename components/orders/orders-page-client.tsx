@@ -575,6 +575,8 @@ interface OrdersPageClientProps {
     initialTotal: number;
     initialTotalPages: number;
     stats: OrderStats;
+    /** Open the "new order" modal on load (/orders?new=1). */
+    openCreate?: boolean;
 }
 
 export function OrdersPageClient({
@@ -582,6 +584,7 @@ export function OrdersPageClient({
     initialTotal,
     initialTotalPages,
     stats,
+    openCreate = false,
 }: OrdersPageClientProps) {
     const router = useRouter();
     const [, startTransition] = useTransition();
@@ -595,7 +598,7 @@ export function OrdersPageClient({
     const [statusFilter, setStatusFilter] = useState<string>('');
     const [loading, setLoading] = useState(false);
 
-    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [showCreateModal, setShowCreateModal] = useState(openCreate);
 
     const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 

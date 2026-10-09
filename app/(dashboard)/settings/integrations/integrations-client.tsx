@@ -78,6 +78,9 @@ export default function IntegrationsClient() {
     const [sendMsgWebhook, setSendMsgWebhook] = useState('');
     const [botWebhook, setBotWebhook] = useState('');
     const [reservationWebhook, setReservationWebhook] = useState('');
+    const [campaignWebhook, setCampaignWebhook] = useState('');
+    const [templatesWebhook, setTemplatesWebhook] = useState('');
+    const [provider, setProvider] = useState('');
     const [webhookSecret, setWebhookSecret] = useState('');
     const [savingN8n, setSavingN8n] = useState(false);
     const [savedN8n, setSavedN8n] = useState(false);
@@ -96,21 +99,25 @@ export default function IntegrationsClient() {
             .then((d) => {
                 const c: CredMap = d.credentials ?? {};
                 setCreds(c);
-                // WhatsApp
-                setWabaId(c.whatsapp?.waba_id ?? '');
-                setPhoneNumberId(c.whatsapp?.phone_number_id ?? '');
-                setMetaToken(c.whatsapp?.meta_access_token ?? '');
-                setWebhookVerifyToken(c.whatsapp?.webhook_verify_token ?? '');
-                // n8n (flat column names from DB)
+                // Flat column names from tenant_credentials
                 const flat = c as unknown as Record<string, string>;
+                // WhatsApp
+                setWabaId(flat.waba_id ?? '');
+                setPhoneNumberId(flat.phone_number_id ?? '');
+                setMetaToken(flat.meta_access_token ?? '');
+                setWebhookVerifyToken(flat.meta_webhook_verify_token ?? '');
+                // n8n
                 setN8nBaseUrl(flat.n8n_base_url ?? '');
                 setSendMsgWebhook(flat.n8n_send_message_webhook ?? '');
                 setBotWebhook(flat.n8n_bot_webhook ?? '');
                 setReservationWebhook(flat.n8n_reservation_webhook ?? '');
+                setCampaignWebhook(flat.n8n_campaign_webhook ?? '');
+                setTemplatesWebhook(flat.n8n_templates_webhook ?? '');
+                setProvider(flat.whatsapp_provider ?? '');
                 setWebhookSecret(flat.n8n_webhook_secret ?? '');
                 // Google Calendar
-                setCalendarId(c.google_calendar?.calendar_id ?? '');
-                setServiceAccountJson(c.google_calendar?.service_account_json ?? '');
+                setCalendarId(flat.google_calendar_id ?? '');
+                setServiceAccountJson(flat.google_service_account_json ?? '');
             })
             .finally(() => setLoading(false));
     }, []);
@@ -121,7 +128,7 @@ export default function IntegrationsClient() {
             const res = await fetch('/api/settings/credentials', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ provider: 'whatsapp', credentials: { waba_id: wabaId, phone_number_id: phoneNumberId, meta_access_token: metaToken, webhook_verify_token: webhookVerifyToken } }),
+                body: JSON.stringify({ waba_id: wabaId, phone_number_id: phoneNumberId, meta_access_token: metaToken, meta_webhook_verify_token: webhookVerifyToken }),
             });
             if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Error al guardar credenciales de WhatsApp'); setSavingMeta(false); return; }
             setSavedMeta(true); setTimeout(() => setSavedMeta(false), 2500);
@@ -148,6 +155,9 @@ export default function IntegrationsClient() {
                     n8n_send_message_webhook: sendMsgWebhook,
                     n8n_bot_webhook: botWebhook,
                     n8n_reservation_webhook: reservationWebhook,
+                    n8n_campaign_webhook: campaignWebhook,
+                    n8n_templates_webhook: templatesWebhook,
+                    whatsapp_provider: provider,
                     n8n_webhook_secret: webhookSecret,
                 }),
             });
@@ -175,7 +185,7 @@ export default function IntegrationsClient() {
             const res = await fetch('/api/settings/credentials', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ provider: 'google_calendar', credentials: { calendar_id: calendarId, service_account_json: serviceAccountJson } }),
+                body: JSON.stringify({ google_calendar_id: calendarId, google_service_account_json: serviceAccountJson }),
             });
             if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Error al guardar Google Calendar'); setSavingGcal(false); return; }
             setSavedGcal(true); setTimeout(() => setSavedGcal(false), 2500);
@@ -233,6 +243,9 @@ export default function IntegrationsClient() {
                     <FieldRow label="Send Message Webhook URL" value={sendMsgWebhook} onChange={setSendMsgWebhook} placeholder="https://mi-n8n.ejemplo.com/webhook/..." />
                     <FieldRow label="Bot Webhook URL" value={botWebhook} onChange={setBotWebhook} placeholder="https://mi-n8n.ejemplo.com/webhook/..." />
                     <FieldRow label="Reservas Webhook URL" value={reservationWebhook} onChange={setReservationWebhook} placeholder="https://mi-n8n.ejemplo.com/webhook/reservas" />
+                    <FieldRow label="Campañas Webhook URL" value={campaignWebhook} onChange={setCampaignWebhook} placeholder="https://mi-n8n.ejemplo.com/webhook/campanas" />
+                    <FieldRow label="Plantillas Webhook URL" value={templatesWebhook} onChange={setTemplatesWebhook} placeholder="https://mi-n8n.ejemplo.com/webhook/plantillas" />
+                    <FieldRow label="Proveedor de WhatsApp (informativo)" value={provider} onChange={setProvider} placeholder="meta, zenvia, …" />
                     <FieldRow label="Webhook Secret" value={webhookSecret} onChange={setWebhookSecret} type="password" placeholder="secreto compartido" />
                     <div className="flex items-center gap-3 flex-wrap">
                         <SaveButton onClick={saveN8n} saving={savingN8n} saved={savedN8n} />

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireModule } from '@/lib/tenant-plan';
 import { TenantError } from '@/lib/tenant';
@@ -20,8 +20,9 @@ type OrderStatus = (typeof ALL_STATUSES)[number];
 
 // ---------------------------------------------------------------------------
 // GET /api/orders/stats  — order metrics for the tenant
+// ?from=YYYY-MM-DD adds `period`: orders and revenue per day since that date
 // ---------------------------------------------------------------------------
-export async function GET() {
+export async function GET(req: NextRequest) {
     try {
         const supabase  = createAdminClient();
         const TENANT_ID = await requireModule('orders');
@@ -104,7 +105,36 @@ export async function GET() {
             }
         }
 
+        // Optional period breakdown (Reports page)
+        const from = req.nextUrl.searchParams.get('from');
+        let period = null;
+        if (from && /^\d{4}-\d{2}-\d{2}$/.test(from)) {
+            const { data: periodRows } = await supabase
+                .from('orders')
+                .select('total, status, created_at')
+                .eq('tenant_id', TENANT_ID)
+                .gte('created_at', `${from}T00:00:00Z`);
+            const rows = (periodRows ?? []) as { total: number; status: string; created_at: string }[];
+            const byDay: Record<string, { count: number; revenue: number }> = {};
+            let revenue = 0;
+            for (const row of rows) {
+                const day = row.created_at.slice(0, 10);
+                byDay[day] ??= { count: 0, revenue: 0 };
+                byDay[day].count++;
+                if (!CANCELLED_STATUSES.includes(row.status)) {
+                    byDay[day].revenue += row.total ?? 0;
+                    revenue += row.total ?? 0;
+                }
+            }
+            period = {
+                orders: rows.length,
+                revenue: Math.round(revenue * 100) / 100,
+                by_day: Object.entries(byDay).map(([date, v]) => ({ date, ...v })),
+            };
+        }
+
         return NextResponse.json({
+            period,
             total_orders,
             total_revenue:   Math.round(total_revenue * 100) / 100,
             average_ticket:  Math.round(average_ticket * 100) / 100,

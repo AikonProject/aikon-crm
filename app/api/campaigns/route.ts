@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requireModule } from '@/lib/tenant-plan';
 import { TenantError } from '@/lib/tenant';
 import type { Campaign } from '@/lib/types/database';
+import { dispatchCampaign } from '@/lib/campaigns';
 
 export async function GET() {
     try {
@@ -50,8 +51,10 @@ export async function POST(req: NextRequest) {
             name,
             description,
             template_id,
+            template_variables,
             scheduled_at,
             segment_filters,
+            send = true,
         } = body;
 
         if (!name) {
@@ -77,7 +80,20 @@ export async function POST(req: NextRequest) {
         const { data: contacts, error: contactError } = await query;
         if (contactError) throw contactError;
 
-        const status = scheduled_at ? 'scheduled' : 'draft';
+        let templateName: string | null = null;
+        if (template_id) {
+            const { data: template } = await supabase
+                .from('message_templates')
+                .select('name')
+                .eq('id', template_id)
+                .eq('tenant_id', TENANT_ID)
+                .maybeSingle();
+            if (!template) return NextResponse.json({ error: 'Plantilla no encontrada' }, { status: 400 });
+            templateName = template.name;
+        }
+
+        // Starts as draft; dispatchCampaign moves it to running/scheduled once n8n accepts it
+        const status = 'draft';
 
         const { data: campaignRaw, error: campaignError } = await supabase
             .from('campaigns')
@@ -87,6 +103,10 @@ export async function POST(req: NextRequest) {
                 description: description ?? null,
                 status,
                 template_id: template_id ?? null,
+                template_name: templateName,
+                template_variables: template_variables ?? {},
+                segment_filters: segment_filters ?? {},
+                total_contacts: (contacts ?? []).length,
                 scheduled_at: scheduled_at ?? null,
                 sent_count: 0,
                 delivered_count: 0,
@@ -119,8 +139,20 @@ export async function POST(req: NextRequest) {
             if (msgError) throw msgError;
         }
 
+        // Hand it to n8n right away (scheduled ones carry scheduled_at)
+        let dispatch = null;
+        if (send && (contacts ?? []).length > 0) {
+            dispatch = await dispatchCampaign(supabase, TENANT_ID, campaign.id);
+            if (dispatch.ok) campaign.status = dispatch.status;
+        }
+
         return NextResponse.json(
-            { campaign, contact_count: (contacts ?? []).length },
+            {
+                campaign,
+                contact_count: (contacts ?? []).length,
+                // When n8n could not take it, the campaign stays as draft and can be resent
+                dispatch_error: dispatch && !dispatch.ok ? dispatch.error : null,
+            },
             { status: 201 }
         );
     } catch (err) {
