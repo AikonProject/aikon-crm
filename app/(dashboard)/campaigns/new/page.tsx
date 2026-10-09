@@ -6,7 +6,9 @@ import { ChevronLeft, ChevronRight, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
-import type { MessageTemplate, FunnelStage } from '@/lib/types/database';
+import type { MessageTemplate } from '@/lib/types/database';
+import { ContactFilterBuilder } from '@/components/contacts/contact-filter-builder';
+import { EMPTY_FILTER, cleanFilter, type ContactFilter } from '@/lib/contact-filter';
 
 const STEPS = [
     { id: 1, label: 'Información' },
@@ -16,10 +18,6 @@ const STEPS = [
     { id: 5, label: 'Confirmar' },
 ];
 
-type SegmentFilters = {
-    funnel_stage_id: string;
-    source: string;
-};
 
 export default function NewCampaignPage() {
     const router = useRouter();
@@ -37,10 +35,9 @@ export default function NewCampaignPage() {
     const [variableValues, setVariableValues] = useState<Record<string, string>>({});
 
     // Step 3
-    const [funnelStages, setFunnelStages] = useState<FunnelStage[]>([]);
-    const [segmentFilters, setSegmentFilters] = useState<SegmentFilters>({ funnel_stage_id: '', source: '' });
+    const [filter, setFilter] = useState<ContactFilter>(EMPTY_FILTER);
     const [previewCount, setPreviewCount] = useState<number | null>(null);
-    const [countLoading, setCountLoading] = useState(false);
+    const [matchCount, setMatchCount] = useState<number | null>(null);
 
     // Step 4
     const [scheduleType, setScheduleType] = useState<'now' | 'later'>('now');
@@ -52,26 +49,7 @@ export default function NewCampaignPage() {
             // Meta only sends approved templates
             .then((d) => setTemplates((d.templates ?? []).filter((t: MessageTemplate) => t.status === 'APPROVED')))
             .finally(() => setLoadingTemplates(false));
-
-        fetch('/api/funnel-stages')
-            .then((r) => r.json())
-            .then((d) => setFunnelStages(Array.isArray(d) ? d : (d.stages ?? [])))
-            .catch(() => {/* funnel stages optional */});
     }, []);
-
-    // Fetch preview count whenever segment filters change (step 3)
-    useEffect(() => {
-        if (step !== 3) return;
-        const params = new URLSearchParams();
-        if (segmentFilters.funnel_stage_id) params.set('funnel_stage_id', segmentFilters.funnel_stage_id);
-        if (segmentFilters.source) params.set('source', segmentFilters.source);
-        setCountLoading(true);
-        fetch(`/api/contacts/count?${params.toString()}`)
-            .then((r) => r.json())
-            .then((d) => setPreviewCount(d.count ?? 0))
-            .catch(() => setPreviewCount(null))
-            .finally(() => setCountLoading(false));
-    }, [step, segmentFilters]);
 
     // Extract body text from components JSONB
     const templateBody = selectedTemplate
@@ -86,6 +64,7 @@ export default function NewCampaignPage() {
         if (step === 2) {
             return templateVariables.every((v) => (variableValues[v] ?? '').trim() !== '');
         }
+        if (step === 3) return (previewCount ?? 0) > 0;
         if (step === 4) return scheduleType === 'now' || !!scheduledAt;
         return true;
     }
@@ -108,10 +87,7 @@ export default function NewCampaignPage() {
                 template_id: selectedTemplate?.id,
                 template_variables: variableValues,
                 scheduled_at: scheduleType === 'later' ? new Date(scheduledAt).toISOString() : undefined,
-                segment_filters: {
-                    funnel_stage_id: segmentFilters.funnel_stage_id || undefined,
-                    source: segmentFilters.source || undefined,
-                },
+                filter: cleanFilter(filter),
             };
             const res = await fetch('/api/campaigns', {
                 method: 'POST',
@@ -173,7 +149,7 @@ export default function NewCampaignPage() {
                 ))}
             </div>
 
-            <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm p-8 max-w-2xl">
+            <div className={`bg-white rounded-2xl border border-[#E8E8EC] shadow-sm p-8 ${step === 3 ? 'max-w-5xl' : 'max-w-2xl'}`}>
                 {/* STEP 1 */}
                 {step === 1 && (
                     <div className="space-y-5">
@@ -277,58 +253,21 @@ export default function NewCampaignPage() {
 
                 {/* STEP 3 */}
                 {step === 3 && (
-                    <div className="space-y-5">
-                        <h2 className="text-[16px] font-semibold text-[#1A1A2E]">Seleccionar segmento</h2>
-                        <p className="text-[13px] text-[#6B7280]">Filtra los contactos que recibirán esta campaña.</p>
-
+                    <div className="space-y-4">
                         <div>
-                            <label className="block text-[13px] font-medium text-[#6B7280] mb-1.5">
-                                Etapa del funnel (opcional)
-                            </label>
-                            <select
-                                value={segmentFilters.funnel_stage_id}
-                                onChange={(e) => setSegmentFilters((p) => ({ ...p, funnel_stage_id: e.target.value }))}
-                                className="w-full px-3 py-2.5 text-[14px] bg-white border border-[#E8E8EC] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20 focus:border-[#818CF8]"
-                            >
-                                <option value="">Todas las etapas</option>
-                                {funnelStages.map((s) => (
-                                    <option key={s.id} value={s.id}>{s.name}</option>
-                                ))}
-                            </select>
+                            <h2 className="text-[16px] font-semibold text-[#1A1A2E]">Seleccionar contactos</h2>
+                            <p className="text-[13px] text-[#6B7280] mt-0.5">
+                                Combina las condiciones que quieras: etiquetas, etapa, campos personalizados, actividad, fechas, campañas anteriores…
+                            </p>
                         </div>
-
-                        <div>
-                            <label className="block text-[13px] font-medium text-[#6B7280] mb-1.5">
-                                Fuente del contacto (opcional)
-                            </label>
-                            <select
-                                value={segmentFilters.source}
-                                onChange={(e) => setSegmentFilters((p) => ({ ...p, source: e.target.value }))}
-                                className="w-full px-3 py-2.5 text-[14px] bg-white border border-[#E8E8EC] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20 focus:border-[#818CF8]"
-                            >
-                                <option value="">Todas las fuentes</option>
-                                <option value="whatsapp">WhatsApp</option>
-                                <option value="web">Web</option>
-                                <option value="manual">Manual</option>
-                                <option value="csv">CSV</option>
-                                <option value="api">API</option>
-                                <option value="referral">Referido</option>
-                            </select>
-                        </div>
-
-                        <div className="bg-[#F3F4FF] border border-[#818CF8]/20 rounded-xl p-4 flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-[#818CF8] flex items-center justify-center flex-shrink-0">
-                                <span className="text-white font-bold text-[14px]">
-                                    {countLoading ? '…' : (previewCount ?? '?')}
-                                </span>
-                            </div>
-                            <div>
-                                <p className="text-[14px] font-semibold text-[#1A1A2E]">
-                                    {countLoading ? 'Calculando…' : `${previewCount ?? 0} contactos`}
-                                </p>
-                                <p className="text-[12px] text-[#6B7280]">recibirán esta campaña</p>
-                            </div>
-                        </div>
+                        <ContactFilterBuilder
+                            value={filter}
+                            onChange={setFilter}
+                            onPreview={(p) => { setPreviewCount(p?.with_phone ?? null); setMatchCount(p?.count ?? null); }}
+                        />
+                        {previewCount === 0 && (
+                            <p className="text-[12px] text-[#D97706]">Ningún contacto con WhatsApp cumple el filtro. Ajusta las condiciones para continuar.</p>
+                        )}
                     </div>
                 )}
 
@@ -375,7 +314,8 @@ export default function NewCampaignPage() {
                                 { label: 'Nombre', value: name },
                                 { label: 'Descripción', value: description || '—' },
                                 { label: 'Plantilla', value: selectedTemplate?.name ?? '—' },
-                                { label: 'Contactos estimados', value: `${previewCount ?? 0}` },
+                                { label: 'Destinatarios', value: `${previewCount ?? 0} con WhatsApp${matchCount !== null && matchCount !== previewCount ? ` (de ${matchCount} que cumplen el filtro)` : ''}` },
+                                { label: 'Filtro', value: cleanFilter(filter).conditions.length === 0 ? 'Todos los contactos' : `${cleanFilter(filter).conditions.length} condición(es) · ${filter.match === 'all' ? 'todas' : 'alguna'}` },
                                 { label: 'Envío', value: scheduleType === 'now' ? 'Inmediato' : scheduledAt ? new Date(scheduledAt).toLocaleString('es-CO') : '—' },
                             ].map(({ label, value }) => (
                                 <div key={label} className="flex items-start gap-4 py-3 border-b border-[#F3F4F6] last:border-0">
