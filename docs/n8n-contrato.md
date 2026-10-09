@@ -68,7 +68,7 @@ Header `x-webhook-secret`. Si el tenant tiene secreto configurado, una llamada s
 
 | `action` | Uso | Campos |
 |---|---|---|
-| `inbound_message` | Mensaje del cliente | `wa_id, contact_name, wa_message_id, content, content_type, media_url?, media_mime_type?, media_filename?` → responde `{ contact_id, conversation_id, ai_enabled, duplicate }` |
+| `inbound_message` | Mensaje del cliente | `wa_id, contact_name, wa_message_id, content, content_type, media_url?, media_mime_type?, media_filename?, button_text?, button_payload?` → responde `{ contact_id, conversation_id, ai_enabled, button_handled, duplicate }`. Si el cliente pulsó un botón de respuesta rápida, envía `button_text` (y `button_payload` si viene): el CRM ejecuta las acciones configuradas en la plantilla (respuesta automática, etiquetas, etapa, IA, asignación). Si ya respondió, `ai_enabled` llega en `false` para que el bot no conteste también. |
 | `message_sent` | Resultado de un envío manual o de reserva | `contact_id, conversation_id?, wa_message_id, content, content_type, sent_by_name, template_name?, status ('sent' \| 'failed'), error_code?, error_message?` (con `failed`, el chat muestra el error al agente) |
 | `ai_response` | Respuesta del bot | `contact_id, conversation_id, wa_message_id, content` |
 | `message_status` | Recibo del proveedor | `wa_message_id, status ('sent' \| 'delivered' \| 'read' \| 'failed'), error_code?, error_message?` (también actualiza campañas) |

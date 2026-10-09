@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireModule } from '@/lib/tenant-plan';
 import { TenantError } from '@/lib/tenant';
+import { cleanFilter, type ContactFilter } from '@/lib/contact-filter';
 import type { Campaign } from '@/lib/types/database';
 import { dispatchCampaign } from '@/lib/campaigns';
 
@@ -54,6 +55,7 @@ export async function POST(req: NextRequest) {
             template_variables,
             scheduled_at,
             segment_filters,
+            filter,
             send = true,
         } = body;
 
@@ -64,21 +66,41 @@ export async function POST(req: NextRequest) {
         const supabase = createAdminClient();
     const TENANT_ID = await requireModule('campaigns');
 
-        // Build contact query with optional segment filters
-        let query = supabase
-            .from('contacts')
-            .select('id')
-            .eq('tenant_id', TENANT_ID);
-
-        if (segment_filters?.funnel_stage_id) {
-            query = query.eq('funnel_stage_id', segment_filters.funnel_stage_id);
+        // Recipients: professional filter (filter_contacts) or the legacy simple filters
+        let contacts: { id: string }[] = [];
+        if (filter) {
+            const cleaned = cleanFilter(filter as ContactFilter);
+            const { data: ids, error: filterError } = await supabase.rpc('filter_contacts' as never, { p_tenant: TENANT_ID, p_filter: cleaned } as never);
+            if (filterError) {
+                console.error('[POST /api/campaigns] filter', filterError);
+                return NextResponse.json({ error: 'El filtro de contactos no es válido.' }, { status: 400 });
+            }
+            const allIds = (ids ?? []) as unknown as string[];
+            // Only contacts reachable on WhatsApp and not blocked
+            for (let i = 0; i < allIds.length; i += 500) {
+                const { data, error } = await supabase
+                    .from('contacts')
+                    .select('id')
+                    .in('id', allIds.slice(i, i + 500))
+                    .not('wa_id', 'is', null)
+                    .eq('is_blocked', false);
+                if (error) throw error;
+                contacts.push(...(data ?? []));
+            }
+        } else {
+            let query = supabase
+                .from('contacts')
+                .select('id')
+                .eq('tenant_id', TENANT_ID);
+            if (segment_filters?.funnel_stage_id) query = query.eq('funnel_stage_id', segment_filters.funnel_stage_id);
+            if (segment_filters?.source) query = query.eq('source', segment_filters.source);
+            const { data, error: contactError } = await query;
+            if (contactError) throw contactError;
+            contacts = data ?? [];
         }
-        if (segment_filters?.source) {
-            query = query.eq('source', segment_filters.source);
+        if (contacts.length === 0) {
+            return NextResponse.json({ error: 'Ningún contacto con WhatsApp cumple el filtro.' }, { status: 400 });
         }
-
-        const { data: contacts, error: contactError } = await query;
-        if (contactError) throw contactError;
 
         let templateName: string | null = null;
         if (template_id) {
@@ -105,7 +127,7 @@ export async function POST(req: NextRequest) {
                 template_id: template_id ?? null,
                 template_name: templateName,
                 template_variables: template_variables ?? {},
-                segment_filters: segment_filters ?? {},
+                segment_filters: filter ? cleanFilter(filter as ContactFilter) : (segment_filters ?? {}),
                 total_contacts: (contacts ?? []).length,
                 scheduled_at: scheduled_at ?? null,
                 sent_count: 0,
