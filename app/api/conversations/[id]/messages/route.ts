@@ -127,6 +127,7 @@ export async function POST(
         const isTemplate = body.content_type === 'template';
         let template: { id: string; name: string; language: string; components: unknown } | null = null;
         let renderedTemplate = '';
+        let templateHeader: { format: string; url: string | null } | null = null;
         const templateVariables: Record<string, string> = body.template_variables ?? {};
         if (isTemplate) {
             const { data } = await supabase
@@ -143,6 +144,12 @@ export async function POST(
             const bodyText = (data.components as Array<{ type: string; text?: string }> | null)
                 ?.find((c) => c.type === 'BODY')?.text ?? '';
             renderedTemplate = bodyText.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k) => templateVariables[k] ?? m);
+            // Media header (image / video / PDF): sent with the sample file uploaded when the template was created
+            const h = (data.components as Array<{ type: string; format?: string; example?: { header_url?: string[]; header_handle?: string[] } }> | null)
+                ?.find((c) => c.type === 'HEADER');
+            if (h && h.format && h.format !== 'TEXT') {
+                templateHeader = { format: h.format, url: h.example?.header_url?.[0] ?? h.example?.header_handle?.[0] ?? null };
+            }
         } else if (!content && !body.media_url) {
             return NextResponse.json({ error: 'El mensaje está vacío.' }, { status: 400 });
         }
@@ -185,11 +192,12 @@ export async function POST(
                     contact_name: contact.nombre ?? null,
                     message: isTemplate ? renderedTemplate : content,
                     content_type: isTemplate ? 'template' : (body.content_type ?? 'text'),
-                    media_url: body.media_url ?? null,
+                    media_url: isTemplate ? (templateHeader?.url ?? null) : (body.media_url ?? null),
                     media_filename: body.media_filename ?? null,
                     sent_by_name: senderName,
                     template: template ? { name: template.name, language: template.language, components: template.components } : null,
                     template_variables: isTemplate ? templateVariables : null,
+                    template_header: templateHeader,
                 }),
             });
         } catch {

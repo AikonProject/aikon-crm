@@ -70,6 +70,31 @@ export async function POST(req: NextRequest) {
         if (vars.length > 0 && (examples.length < vars.length || examples.slice(0, vars.length).some((e) => !e))) {
             return NextResponse.json({ error: 'Escribe un ejemplo para cada variable (Meta lo exige para aprobarla).' }, { status: 400 });
         }
+        if (content.length > 1024) {
+            return NextResponse.json({ error: 'El contenido no puede superar 1024 caracteres.' }, { status: 400 });
+        }
+
+        // Optional header: text, or image / video / PDF with a sample file (Meta needs it to review)
+        let header: Record<string, unknown> | null = null;
+        const headerFormat = String(body.header?.format ?? '').toUpperCase();
+        if (headerFormat === 'TEXT') {
+            const text = String(body.header?.text ?? '').trim();
+            if (!text) return NextResponse.json({ error: 'Escribe el texto del encabezado.' }, { status: 400 });
+            if (text.length > 60) return NextResponse.json({ error: 'El encabezado de texto admite máximo 60 caracteres.' }, { status: 400 });
+            if (/\{\{/.test(text)) return NextResponse.json({ error: 'El encabezado de texto no admite variables.' }, { status: 400 });
+            header = { type: 'HEADER', format: 'TEXT', text };
+        } else if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerFormat)) {
+            const url = String(body.header?.url ?? '');
+            if (!/^https:\/\//.test(url)) {
+                return NextResponse.json({ error: 'Sube el archivo de ejemplo del encabezado.' }, { status: 400 });
+            }
+            header = { type: 'HEADER', format: headerFormat, example: { header_url: [url] } };
+        } else if (headerFormat) {
+            return NextResponse.json({ error: 'Tipo de encabezado no válido.' }, { status: 400 });
+        }
+
+        const footer = String(body.footer ?? '').trim();
+        if (footer.length > 60) return NextResponse.json({ error: 'El pie de página admite máximo 60 caracteres.' }, { status: 400 });
 
         const supabase = createAdminClient();
         const TENANT_ID = await requireModule('chat');
@@ -98,7 +123,10 @@ export async function POST(req: NextRequest) {
 
         const bodyComponent: Record<string, unknown> = { type: 'BODY', text: content };
         if (vars.length > 0) bodyComponent.example = { body_text: [examples.slice(0, vars.length)] };
-        const components = [bodyComponent];
+        const components: Record<string, unknown>[] = [];
+        if (header) components.push(header);
+        components.push(bodyComponent);
+        if (footer) components.push({ type: 'FOOTER', text: footer });
 
         const { data: inserted, error } = await supabase
             .from('message_templates')
@@ -133,6 +161,9 @@ export async function POST(req: NextRequest) {
                     language,
                     category,
                     components,
+                    // Convenience for the gateway: the header sample file, if any
+                    header_format: header?.format ?? null,
+                    header_media_url: header && header.format !== 'TEXT' ? (header.example as { header_url: string[] }).header_url[0] : null,
                 }),
             });
         } catch {

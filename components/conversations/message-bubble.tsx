@@ -135,6 +135,28 @@ function MessageContent({ message }: { message: Message & { is_note?: boolean } 
             );
         }
 
+        case 'template': {
+            // Template with a media header: show the file above the text
+            const url = message.media_url;
+            const isVideo = !!url && /\.(mp4|3gp)(\?|$)/i.test(url);
+            const isPdf = !!url && /\.pdf(\?|$)/i.test(url);
+            return (
+                <div className="space-y-2">
+                    {url && (isVideo ? (
+                        <video src={url} controls className="max-w-full rounded-xl max-h-64" preload="metadata" />
+                    ) : isPdf ? (
+                        <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 underline underline-offset-2 opacity-90">
+                            <FileText size={16} className={iconColor} /><span className="text-sm">Documento</span>
+                        </a>
+                    ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={url} alt="Imagen" className="max-w-full rounded-xl max-h-72 object-cover" loading="lazy" />
+                    ))}
+                    <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+                </div>
+            );
+        }
+
         default:
             return <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>;
     }

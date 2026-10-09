@@ -945,6 +945,22 @@ export default function ConversationsClient({ initialConversations }: Conversati
                                             <X size={14} className="text-[#9CA3AF]" />
                                         </button>
                                     </div>
+                                    {(() => {
+                                        // Media header of the template (sent with the file uploaded when it was created)
+                                        const h = (selectedTemplate.components as Array<{ type: string; format?: string; example?: { header_url?: string[] } }> | null)
+                                            ?.find((c) => c.type === 'HEADER' && c.format && c.format !== 'TEXT');
+                                        const url = h?.example?.header_url?.[0];
+                                        if (!h) return null;
+                                        return (
+                                            <div className="mb-2 flex items-center gap-2 text-[11px] text-[#4F46E5]">
+                                                {url && h.format === 'IMAGE' ? (
+                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                    <img src={url} alt="" className="w-12 h-12 rounded-lg object-cover border border-[#E8E8EC]" />
+                                                ) : null}
+                                                <span>Incluye {h.format === 'IMAGE' ? 'imagen' : h.format === 'VIDEO' ? 'video' : 'documento PDF'} en el encabezado</span>
+                                            </div>
+                                        );
+                                    })()}
                                     <p className="text-[12px] text-[#374151] whitespace-pre-wrap mb-2">
                                         {selectedTemplateInfo.text.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k) => templateVars[k] || m)}
                                     </p>

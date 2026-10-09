@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Plus, RefreshCw, X, Loader2, FileText } from 'lucide-react';
+import { Plus, RefreshCw, X, Loader2, FileText, Upload, Image as ImageIcon, Video } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
@@ -30,6 +30,47 @@ function getTemplateVariables(template: MessageTemplate): string[] {
     );
 }
 
+type HeaderInfo = { format: string; text?: string; url?: string } | null;
+
+function getTemplateHeader(template: MessageTemplate): HeaderInfo {
+    const components = template.components as Array<{ type: string; format?: string; text?: string; example?: { header_url?: string[]; header_handle?: string[] } }> | null;
+    const h = components?.find((c) => c.type === 'HEADER');
+    if (!h) return null;
+    return { format: h.format ?? 'TEXT', text: h.text, url: h.example?.header_url?.[0] ?? h.example?.header_handle?.[0] };
+}
+
+function getTemplateFooter(template: MessageTemplate): string | null {
+    const components = template.components as Array<{ type: string; text?: string }> | null;
+    return components?.find((c) => c.type === 'FOOTER')?.text ?? null;
+}
+
+const HEADER_OPTIONS = [
+    { value: '', label: 'Ninguno' },
+    { value: 'TEXT', label: 'Texto' },
+    { value: 'IMAGE', label: 'Imagen' },
+    { value: 'VIDEO', label: 'Video' },
+    { value: 'DOCUMENT', label: 'Documento PDF' },
+];
+const HEADER_ACCEPT: Record<string, string> = { IMAGE: 'image/jpeg,image/png', VIDEO: 'video/mp4,video/3gpp', DOCUMENT: 'application/pdf' };
+const HEADER_HINT: Record<string, string> = { IMAGE: 'JPG o PNG, máx. 5 MB', VIDEO: 'MP4, máx. 16 MB', DOCUMENT: 'PDF, máx. 16 MB' };
+
+/** Header preview (image / video / PDF / text) used in the dialog and the detail panel. */
+function HeaderPreview({ header }: { header: HeaderInfo }) {
+    if (!header) return null;
+    if (header.format === 'TEXT') return <p className="text-[13px] font-semibold text-[#1A1A2E] mb-1">{header.text}</p>;
+    if (!header.url) return <div className="text-[12px] text-[#9CA3AF] italic mb-2">[{header.format}]</div>;
+    if (header.format === 'IMAGE') {
+        // eslint-disable-next-line @next/next/no-img-element
+        return <img src={header.url} alt="Encabezado" className="w-full max-h-48 object-cover rounded-lg mb-2" />;
+    }
+    if (header.format === 'VIDEO') return <video src={header.url} controls className="w-full max-h-48 rounded-lg mb-2" preload="metadata" />;
+    return (
+        <a href={header.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 mb-2 rounded-lg bg-white border border-[#E8E8EC] text-[12px] text-[#4F46E5] hover:underline">
+            <FileText size={14} /> Documento PDF
+        </a>
+    );
+}
+
 function getTemplateContent(template: MessageTemplate): string {
     const components = template.components as Array<{ type: string; text?: string }> | null;
     return components?.find((c) => c.type === 'BODY')?.text ?? '';
@@ -51,6 +92,38 @@ function NewTemplateDialog({
     const [examples, setExamples] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [headerFormat, setHeaderFormat] = useState('');
+    const [headerText, setHeaderText] = useState('');
+    const [headerUrl, setHeaderUrl] = useState('');
+    const [uploading, setUploading] = useState(false);
+    const [footer, setFooter] = useState('');
+    const supabase = useSupabaseClient();
+
+    async function uploadHeader(file: File) {
+        setUploading(true);
+        setError(null);
+        try {
+            // 1) The CRM validates and signs, 2) the browser uploads straight to storage
+            const res = await fetch('/api/templates/media', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ format: headerFormat, filename: file.name, type: file.type, size: file.size }),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(d.error || 'No se pudo subir el archivo');
+            const { error: upErr } = await supabase.storage.from('chat-media')
+                .uploadToSignedUrl(d.path, d.token, file, { contentType: file.type });
+            if (upErr) throw new Error('No se pudo subir el archivo');
+            setHeaderUrl(d.url);
+            toast.success('Archivo subido');
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'No se pudo subir el archivo';
+            setError(msg);
+            toast.error(msg);
+        } finally {
+            setUploading(false);
+        }
+    }
 
     // Extract variables from {{N}} patterns
     const variables = Array.from(new Set(content.match(/\{\{(\d+)\}\}/g)?.map((v) => v.replace(/\{\{|\}\}/g, '')) ?? []))
@@ -67,7 +140,12 @@ function NewTemplateDialog({
             const res = await fetch('/api/templates', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, content, category, language, examples: variables.map((v) => examples[v] ?? '') }),
+                body: JSON.stringify({
+                    name, content, category, language,
+                    examples: variables.map((v) => examples[v] ?? ''),
+                    header: headerFormat ? { format: headerFormat, text: headerText, url: headerUrl } : null,
+                    footer,
+                }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
@@ -79,6 +157,7 @@ function NewTemplateDialog({
             if (data.template) {
                 onCreated(data.template);
                 setName(''); setContent(''); setCategory('MARKETING'); setLanguage('es'); setExamples({});
+                setHeaderFormat(''); setHeaderText(''); setHeaderUrl(''); setFooter('');
                 toast.success('Plantilla enviada a Meta para aprobación. El estado se actualizará solo.');
             }
         } catch {
@@ -93,14 +172,14 @@ function NewTemplateDialog({
 
     return (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg border border-[#E8E8EC]">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg border border-[#E8E8EC] max-h-[92vh] flex flex-col">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-[#E8E8EC]">
                     <h2 className="text-[16px] font-semibold text-[#1A1A2E]">Nueva Plantilla</h2>
                     <button onClick={onClose} className="p-2 rounded-lg hover:bg-[#F3F4F6] text-[#9CA3AF] transition-colors">
                         <X size={18} />
                     </button>
                 </div>
-                <div className="p-6 space-y-4">
+                <div className="p-6 space-y-4 overflow-y-auto">
                     <div>
                         <label className="block text-[13px] font-medium text-[#6B7280] mb-1.5">
                             Nombre <span className="text-red-500">*</span>
@@ -143,6 +222,55 @@ function NewTemplateDialog({
                         </div>
                     </div>
                     <div>
+                        <label className="block text-[13px] font-medium text-[#6B7280] mb-1.5">Encabezado</label>
+                        <div className="flex flex-wrap gap-1.5">
+                            {HEADER_OPTIONS.map((o) => (
+                                <button
+                                    key={o.value}
+                                    type="button"
+                                    onClick={() => { setHeaderFormat(o.value); setHeaderUrl(''); }}
+                                    className={`px-3 py-1.5 rounded-lg border text-[12px] font-medium transition-colors ${headerFormat === o.value ? 'bg-[#EEF0FF] border-[#818CF8] text-[#4F46E5]' : 'border-[#E8E8EC] text-[#6B7280] hover:bg-[#F9FAFB]'}`}
+                                >
+                                    {o.label}
+                                </button>
+                            ))}
+                        </div>
+                        {headerFormat === 'TEXT' && (
+                            <input
+                                value={headerText}
+                                onChange={(e) => setHeaderText(e.target.value)}
+                                maxLength={60}
+                                placeholder="Título corto (máx. 60 caracteres, sin variables)"
+                                className="mt-2 w-full px-3 py-2 text-[13px] bg-white border border-[#E8E8EC] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20 focus:border-[#818CF8]"
+                            />
+                        )}
+                        {['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerFormat) && (
+                            <div className="mt-2">
+                                {headerUrl ? (
+                                    <div className="relative bg-[#FAFAFE] border border-[#E8E8EC] rounded-xl p-2">
+                                        <HeaderPreview header={{ format: headerFormat, url: headerUrl }} />
+                                        <button type="button" onClick={() => setHeaderUrl('')} className="text-[12px] text-[#DC2626] hover:underline">
+                                            Quitar y elegir otro archivo
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <label className={`flex flex-col items-center justify-center gap-1 px-4 py-5 rounded-xl border-2 border-dashed cursor-pointer transition-colors ${uploading ? 'border-[#818CF8] bg-[#F5F5FF]' : 'border-[#E8E8EC] hover:border-[#818CF8] hover:bg-[#FAFAFE]'}`}>
+                                        {uploading ? <Loader2 size={18} className="animate-spin text-[#818CF8]" /> : <Upload size={18} className="text-[#9CA3AF]" />}
+                                        <span className="text-[12px] font-medium text-[#6B7280]">{uploading ? 'Subiendo…' : 'Haz clic para subir el archivo de ejemplo'}</span>
+                                        <span className="text-[11px] text-[#9CA3AF]">{HEADER_HINT[headerFormat]} · Meta lo usa para revisar la plantilla</span>
+                                        <input
+                                            type="file"
+                                            accept={HEADER_ACCEPT[headerFormat]}
+                                            className="hidden"
+                                            disabled={uploading}
+                                            onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadHeader(f); e.target.value = ''; }}
+                                        />
+                                    </label>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    <div>
                         <label className="block text-[13px] font-medium text-[#6B7280] mb-1.5">
                             Contenido <span className="text-red-500">*</span>
                             <span className="ml-2 text-[11px] text-[#9CA3AF] font-normal">Usa {'{{1}}'} {'{{2}}'} para variables</span>
@@ -174,6 +302,16 @@ function NewTemplateDialog({
                             </div>
                         )}
                     </div>
+                    <div>
+                        <label className="block text-[13px] font-medium text-[#6B7280] mb-1.5">Pie de página <span className="text-[11px] text-[#9CA3AF] font-normal">(opcional, máx. 60)</span></label>
+                        <input
+                            value={footer}
+                            onChange={(e) => setFooter(e.target.value)}
+                            maxLength={60}
+                            placeholder="Ej: Responde STOP para no recibir más mensajes"
+                            className="w-full px-3 py-2 text-[13px] bg-white border border-[#E8E8EC] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20 focus:border-[#818CF8]"
+                        />
+                    </div>
                     {error && (
                         <div role="alert" className="px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-[12px] text-red-700">{error}</div>
                     )}
@@ -182,7 +320,7 @@ function NewTemplateDialog({
                     <Button variant="outline" onClick={onClose} className="rounded-xl border-[#E8E8EC]">Cancelar</Button>
                     <Button
                         onClick={handleCreate}
-                        disabled={loading || !name.trim() || !content.trim()}
+                        disabled={loading || uploading || !name.trim() || !content.trim() || (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerFormat) && !headerUrl)}
                         className="gap-2 rounded-xl bg-[#818CF8] hover:bg-[#6366F1] text-white"
                     >
                         {loading ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
@@ -333,7 +471,14 @@ export default function TemplatesPage() {
                                                 onClick={() => setSelected(t)}
                                                 className={`border-b border-[#F3F4F6] last:border-0 hover:bg-[#FAFAFE] transition-colors cursor-pointer ${selected?.id === t.id ? 'bg-[#F3F4FF]' : ''}`}
                                             >
-                                                <td className="px-5 py-3.5 text-[14px] font-medium text-[#1A1A2E]">{t.name}</td>
+                                                <td className="px-5 py-3.5 text-[14px] font-medium text-[#1A1A2E]">
+                                                    <span className="flex items-center gap-1.5">
+                                                        {getTemplateHeader(t)?.format === 'IMAGE' && <ImageIcon size={13} className="text-[#818CF8]" />}
+                                                        {getTemplateHeader(t)?.format === 'VIDEO' && <Video size={13} className="text-[#818CF8]" />}
+                                                        {getTemplateHeader(t)?.format === 'DOCUMENT' && <FileText size={13} className="text-[#818CF8]" />}
+                                                        {t.name}
+                                                    </span>
+                                                </td>
                                                 <td className="px-5 py-3.5 text-[13px] text-[#6B7280] uppercase">{t.language}</td>
                                                 <td className="px-5 py-3.5 text-[13px] text-[#6B7280]">{t.category ?? '—'}</td>
                                                 <td className="px-5 py-3.5">
@@ -403,7 +548,11 @@ export default function TemplatesPage() {
                                 <div>
                                     <p className="text-[11px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-2">Contenido</p>
                                     <div className="bg-[#FAFAFE] border border-[#E8E8EC] rounded-xl p-3">
+                                        <HeaderPreview header={getTemplateHeader(selected)} />
                                         <p className="text-[13px] text-[#1A1A2E] whitespace-pre-wrap leading-relaxed">{getTemplateContent(selected)}</p>
+                                        {getTemplateFooter(selected) && (
+                                            <p className="text-[11px] text-[#9CA3AF] mt-2">{getTemplateFooter(selected)}</p>
+                                        )}
                                     </div>
                                 </div>
                             </div>

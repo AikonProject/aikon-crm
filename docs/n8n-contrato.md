@@ -33,11 +33,11 @@ Todas las llamadas llevan el header `x-webhook-secret`.
 
 | `action` | Cuándo | Campos |
 |---|---|---|
-| `send_message` | Un agente escribe en Conversaciones | `tenant_id, conversation_id, contact_id, wa_id, contact_name, message, content_type, media_url, media_filename, sent_by_name, template, template_variables` |
+| `send_message` | Un agente escribe en Conversaciones | `tenant_id, conversation_id, contact_id, wa_id, contact_name, message, content_type, media_url, media_filename, sent_by_name, template, template_variables, template_header ({ format, url } si la plantilla tiene imagen/video/PDF)` |
 | `reservation_confirmation` | Confirmar una reserva | `tenant_id, reservation_id, contact_id, guest_name, guest_phone, wa_id, reservation_date, reservation_time, party_size` |
 | `send_campaign` | Crear o enviar una campaña | `tenant_id, campaign_id, campaign_name, scheduled_at, template{name, language, components}, template_variables, recipients[{campaign_message_id, contact_id, name, wa_id}]` |
 | `sync_templates` | Botón "Sincronizar" en Plantillas | `tenant_id` |
-| `create_template` | "Nueva plantilla" en Plantillas | `tenant_id, template_id, name, language, category, components[{ type: 'BODY', text, example? }]` → n8n la crea en el proveedor y responde con `template_created` |
+| `create_template` | "Nueva plantilla" en Plantillas | `tenant_id, template_id, name, language, category, components` (HEADER opcional: TEXT, o IMAGE/VIDEO/DOCUMENT con `example.header_url`; BODY con `example.body_text`; FOOTER opcional), `header_format`, `header_media_url` → n8n la crea en el proveedor y responde con `template_created` |
 
 **Plantillas desde el chat:** cuando `content_type = 'template'`, `template = { name, language, components }` y
 `template_variables = { "1": "Ana", ... }`. `message` trae el texto ya renderizado (para guardarlo en el chat).
