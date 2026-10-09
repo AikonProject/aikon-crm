@@ -556,6 +556,27 @@ async function handleTemplatesSync(
             updated_at: new Date().toISOString(),
         }));
 
+    // Keep the header file uploaded in the CRM: the provider returns an internal
+    // Meta handle instead, which can't be used to send the template
+    type Comp = { type?: string; format?: string; example?: { header_url?: string[] } & Record<string, unknown> };
+    const { data: existing } = await supabase
+        .from('message_templates')
+        .select('name, language, components')
+        .eq('tenant_id', body.tenant_id);
+    const ownHeaderUrl = new Map<string, string>();
+    for (const e of existing ?? []) {
+        const url = (e.components as Comp[] | null)?.find((c) => c.type === 'HEADER')?.example?.header_url?.[0];
+        if (url) ownHeaderUrl.set(`${e.name}|${e.language}`, url);
+    }
+    for (const r of rows) {
+        const url = ownHeaderUrl.get(`${r.name}|${r.language}`);
+        const comps = Array.isArray(r.components) ? (r.components as Comp[]) : [];
+        const header = comps.find((c) => String(c.type).toUpperCase() === 'HEADER');
+        if (url && header && header.format && header.format !== 'TEXT') {
+            header.example = { ...(header.example ?? {}), header_url: [url] };
+        }
+    }
+
     if (rows.length > 0) {
         const { error } = await supabase
             .from('message_templates')
