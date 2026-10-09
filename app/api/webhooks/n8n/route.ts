@@ -3,6 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import type { MessageType } from '@/lib/types/database';
 import { refreshCampaignCounts } from '@/lib/campaigns';
 import { logActivity } from '@/lib/activity';
+import { sendTextViaGateway } from '@/lib/gateway-send';
+import type { ButtonAction } from '@/lib/types/database';
 import { getTenantConfig, hasModule } from '@/lib/tenant-plan';
 import { APPOINTMENT_SELECT } from '@/lib/appointments';
 import { buildAppointmentFields, formatWhen, ValidationError } from '@/app/api/appointments/shared';
@@ -429,7 +431,10 @@ async function handleInboundMessage(
     if (!wa_id) return NextResponse.json({ error: 'Missing wa_id' }, { status: 400 });
 
     const phone = String(wa_id).replace(/\D/g, '');
-    const contentType = (body.content_type ?? 'text') as MessageType;
+    // Button replies are stored as text (the button's label)
+    const isButton = !!body.button_text || body.content_type === 'button' || body.content_type === 'interactive';
+    const buttonText = (body.button_text ?? (isButton ? body.content : null) ?? '').trim() || null;
+    const contentType = (isButton ? 'text' : (body.content_type ?? 'text')) as MessageType;
 
     // 1. Contact (a trigger creates its conversation)
     let { data: contact } = await supabase
@@ -481,7 +486,7 @@ async function handleInboundMessage(
                 contact_id: contact.id,
                 direction: 'inbound' as const,
                 content_type: contentType,
-                content: body.content ?? null,
+                content: isButton ? (buttonText ?? body.content ?? null) : (body.content ?? null),
                 media_url: body.media_url ?? null,
                 media_mime_type: body.media_mime_type ?? null,
                 media_filename: body.media_filename ?? null,
@@ -517,14 +522,133 @@ async function handleInboundMessage(
         await Promise.all(campaignIds.map((id) => refreshCampaignCounts(supabase, tenant_id, id)));
     }
 
+    // Quick-reply button: run the actions configured on the template
+    let buttonHandled = false;
+    let aiOverride: boolean | null = null;
+    if (!duplicate && buttonText) {
+        const result = await runButtonActions(supabase, tenant_id, {
+            contactId: contact.id,
+            conversationId: conversation.id,
+            waId: phone,
+            contactName: body.contact_name ?? null,
+            buttonText,
+            buttonPayload: body.button_payload ?? null,
+        });
+        buttonHandled = result.handled;
+        aiOverride = result.ai;
+    }
+
+    const aiOn = aiOverride ?? ((conversation.ai_enabled ?? true) && (contact.ai_active ?? true));
     return NextResponse.json({
         message_id: messageId,
         duplicate,
         contact_id: contact.id,
         conversation_id: conversation.id,
-        // n8n only forwards to the bot when this is true
-        ai_enabled: !duplicate && (conversation.ai_enabled ?? true) && (contact.ai_active ?? true),
+        button_handled: buttonHandled,
+        // n8n only forwards to the bot when this is true (not when a button already answered)
+        ai_enabled: !duplicate && !buttonHandled && aiOn,
     }, { status: duplicate ? 200 : 201 });
+}
+
+/**
+ * Finds the template the button belongs to (the latest template sent in the
+ * conversation first, then any template with that button) and applies its
+ * configured actions: auto-reply, tags, stage, AI on/off, assignment.
+ */
+async function runButtonActions(
+    supabase: ReturnType<typeof createAdminClient>,
+    tenantId: string,
+    ctx: { contactId: string; conversationId: string; waId: string; contactName: string | null; buttonText: string; buttonPayload: string | null }
+): Promise<{ handled: boolean; ai: boolean | null }> {
+    const norm = (t: string) => t.trim().toLowerCase();
+    const wanted = [ctx.buttonPayload, ctx.buttonText].filter(Boolean).map((t) => norm(String(t)));
+
+    const { data: templates } = await supabase
+        .from('message_templates')
+        .select('id, name, button_actions')
+        .eq('tenant_id', tenantId);
+    type T = { id: string; name: string; button_actions: Record<string, ButtonAction> | null };
+    const candidates = ((templates ?? []) as T[]).filter((t) => t.button_actions && Object.keys(t.button_actions).length);
+    if (candidates.length === 0) return { handled: false, ai: null };
+
+    const { data: lastTemplates } = await supabase
+        .from('messages')
+        .select('template_name')
+        .eq('conversation_id', ctx.conversationId)
+        .not('template_name', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(5);
+    const recent = (lastTemplates ?? []).map((m) => m.template_name as string);
+    candidates.sort((a, b) => {
+        const ia = recent.indexOf(a.name); const ib = recent.indexOf(b.name);
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+
+    let action: ButtonAction | null = null;
+    let label = ctx.buttonText;
+    for (const t of candidates) {
+        const key = Object.keys(t.button_actions!).find((k) => wanted.includes(norm(k)));
+        if (key) { action = t.button_actions![key]; label = key; break; }
+    }
+    if (!action) return { handled: false, ai: null };
+
+    const done: string[] = [];
+    if (action.tag_ids?.length) {
+        const { data: valid } = await supabase.from('tags').select('id, name').eq('tenant_id', tenantId).in('id', action.tag_ids);
+        if (valid?.length) {
+            await supabase.from('contact_tags').upsert(
+                valid.map((t) => ({ contact_id: ctx.contactId, tag_id: t.id })),
+                { onConflict: 'contact_id,tag_id', ignoreDuplicates: true }
+            );
+            done.push(`etiqueta ${valid.map((t) => t.name).join(', ')}`);
+        }
+    }
+    if (action.stage_id) {
+        const { data: stage } = await supabase.from('funnel_stages').select('id, name').eq('id', action.stage_id).eq('tenant_id', tenantId).maybeSingle();
+        if (stage) {
+            await supabase.from('contacts').update({ funnel_stage_id: stage.id }).eq('id', ctx.contactId);
+            done.push(`etapa ${stage.name}`);
+        }
+    }
+    let ai: boolean | null = null;
+    if (action.ai === 'on' || action.ai === 'off') {
+        ai = action.ai === 'on';
+        await supabase.from('conversations').update({ ai_enabled: ai } as Record<string, unknown>).eq('id', ctx.conversationId);
+        done.push(ai ? 'IA activada' : 'IA desactivada');
+    }
+    if (action.assign_to) {
+        const { data: user } = await supabase.from('users').select('id, full_name').eq('id', action.assign_to).eq('tenant_id', tenantId).maybeSingle();
+        if (user) {
+            await supabase.from('conversations').update({ assigned_to: user.id }).eq('id', ctx.conversationId);
+            done.push(`asignada a ${user.full_name}`);
+        }
+    }
+    let replied = false;
+    if (action.reply?.trim()) {
+        const sent = await sendTextViaGateway(supabase, tenantId, {
+            conversationId: ctx.conversationId,
+            contactId: ctx.contactId,
+            waId: ctx.waId,
+            contactName: ctx.contactName,
+            text: action.reply.trim(),
+            sentByName: 'Respuesta automática',
+        });
+        replied = sent.ok;
+        if (sent.ok) done.push('respuesta automática enviada');
+        else done.push(`respuesta automática falló: ${sent.error}`);
+    }
+
+    await logActivity(supabase, {
+        tenantId,
+        contactId: ctx.contactId,
+        type: 'button_clicked',
+        description: `Pulsó el botón «${label}»${done.length ? ` → ${done.join(' · ')}` : ''}`,
+        performedByName: 'Automatización',
+        channel: 'n8n',
+    });
+
+    // Handled = the CRM already answered, so the AI bot should not answer too
+    return { handled: replied, ai };
 }
 
 /** The provider's full template list (from n8n's sync workflow). */
@@ -891,6 +1015,8 @@ type N8NPayload = {
     campaign_message_id?: string;
     // inbound_message
     wa_id?: string;
+    button_text?: string;     // the contact tapped a quick-reply button
+    button_payload?: string;
     contact_name?: string;
     media_mime_type?: string;
     media_filename?: string;

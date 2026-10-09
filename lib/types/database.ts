@@ -209,6 +209,15 @@ export type ContactNote = {
 // Messaging types
 // ============================================================
 
+/** What happens when a contact taps a quick-reply button of a template. */
+export type ButtonAction = {
+    reply?: string | null;      // message sent back automatically
+    tag_ids?: string[];         // tags added to the contact
+    stage_id?: string | null;   // funnel stage to move to
+    ai?: 'on' | 'off' | null;   // turn the AI bot on/off for the conversation
+    assign_to?: string | null;  // assign the conversation to a team member
+};
+
 export type MessageTemplate = {
     id: string;
     tenant_id: string;
@@ -219,6 +228,7 @@ export type MessageTemplate = {
     components: unknown | null; // jsonb
     meta_id: string | null;
     rejection_reason?: string | null;
+    button_actions?: Record<string, ButtonAction> | null;
     created_at: string;
     updated_at: string;
 };

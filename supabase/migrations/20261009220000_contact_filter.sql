@@ -132,3 +132,6 @@ $$;
 
 REVOKE ALL ON FUNCTION public.filter_contacts(uuid, jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.filter_contacts(uuid, jsonb) TO service_role;
+
+-- Respuestas automáticas por botón de plantilla: { "<texto del botón>": { reply, tag_ids, stage_id, ai, assign_to } }
+ALTER TABLE public.message_templates ADD COLUMN IF NOT EXISTS button_actions jsonb NOT NULL DEFAULT '{}'::jsonb;

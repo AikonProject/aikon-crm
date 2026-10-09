@@ -93,6 +93,47 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Tipo de encabezado no válido.' }, { status: 400 });
         }
 
+        // Buttons: quick replies (answers configured later per button), link or call
+        type Btn = { type: string; text?: string; url?: string; phone_number?: string; example?: string };
+        const rawButtons: Btn[] = Array.isArray(body.buttons) ? body.buttons : [];
+        const buttons: Record<string, unknown>[] = [];
+        const quick: Record<string, unknown>[] = [];
+        let urls = 0; let phones = 0;
+        for (const b of rawButtons) {
+            const text = String(b.text ?? '').trim();
+            if (!text) return NextResponse.json({ error: 'Cada botón necesita un texto.' }, { status: 400 });
+            if (text.length > 25) return NextResponse.json({ error: `El texto del botón "${text}" supera 25 caracteres.` }, { status: 400 });
+            const type = String(b.type).toUpperCase();
+            if (type === 'QUICK_REPLY') {
+                quick.push({ type: 'QUICK_REPLY', text });
+            } else if (type === 'URL') {
+                const url = String(b.url ?? '').trim();
+                if (!/^https?:\/\//.test(url)) return NextResponse.json({ error: `El botón "${text}" necesita un enlace que empiece por https://` }, { status: 400 });
+                const btn: Record<string, unknown> = { type: 'URL', text, url };
+                // Dynamic link: https://site.com/pedido/{{1}} needs an example
+                if (/\{\{1\}\}$/.test(url)) {
+                    const ex = String(b.example ?? '').trim();
+                    if (!ex) return NextResponse.json({ error: `Escribe un ejemplo para el enlace dinámico del botón "${text}".` }, { status: 400 });
+                    btn.example = [url.replace('{{1}}', ex)];
+                }
+                buttons.push(btn); urls++;
+            } else if (type === 'PHONE_NUMBER') {
+                const phone = String(b.phone_number ?? '').replace(/[^\d+]/g, '');
+                if (!/^\+\d{8,15}$/.test(phone)) return NextResponse.json({ error: `El botón "${text}" necesita un teléfono con indicativo, ej. +573001234567` }, { status: 400 });
+                buttons.push({ type: 'PHONE_NUMBER', text, phone_number: phone }); phones++;
+            } else {
+                return NextResponse.json({ error: 'Tipo de botón no válido.' }, { status: 400 });
+            }
+        }
+        if (quick.length + buttons.length > 10) return NextResponse.json({ error: 'Máximo 10 botones por plantilla.' }, { status: 400 });
+        if (urls > 2) return NextResponse.json({ error: 'Máximo 2 botones de enlace.' }, { status: 400 });
+        if (phones > 1) return NextResponse.json({ error: 'Máximo 1 botón de llamada.' }, { status: 400 });
+        if (category === 'AUTHENTICATION' && (quick.length || buttons.length)) {
+            return NextResponse.json({ error: 'Las plantillas de autenticación no admiten estos botones.' }, { status: 400 });
+        }
+        // Meta requires quick replies grouped together
+        const allButtons = [...quick, ...buttons];
+
         const footer = String(body.footer ?? '').trim();
         if (footer.length > 60) return NextResponse.json({ error: 'El pie de página admite máximo 60 caracteres.' }, { status: 400 });
 
@@ -127,6 +168,7 @@ export async function POST(req: NextRequest) {
         if (header) components.push(header);
         components.push(bodyComponent);
         if (footer) components.push({ type: 'FOOTER', text: footer });
+        if (allButtons.length) components.push({ type: 'BUTTONS', buttons: allButtons });
 
         const { data: inserted, error } = await supabase
             .from('message_templates')
