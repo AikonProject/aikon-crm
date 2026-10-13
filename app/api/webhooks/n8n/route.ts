@@ -7,6 +7,7 @@ import { sendTextViaGateway } from '@/lib/gateway-send';
 import type { ButtonAction } from '@/lib/types/database';
 import { getTenantConfig, hasModule } from '@/lib/tenant-plan';
 import { APPOINTMENT_SELECT } from '@/lib/appointments';
+import { staticVariables, type VariableMap } from '@/lib/template-variables';
 import { buildAppointmentFields, formatWhen, ValidationError } from '@/app/api/appointments/shared';
 
 // ============================================================
@@ -1075,7 +1076,7 @@ async function insertCampaignChatMessage(
 
     const { data: cm } = await supabase
         .from('campaign_messages')
-        .select('contact_id, campaign:campaigns ( template_name, template_variables, template:message_templates ( components ) )')
+        .select('contact_id, variables, campaign:campaigns ( template_name, template_variables, template:message_templates ( components ) )')
         .eq('id', campaignMessageId)
         .eq('tenant_id', tenantId)
         .maybeSingle();
@@ -1083,6 +1084,7 @@ async function insertCampaignChatMessage(
 
     type Joined = {
         contact_id: string;
+        variables: Record<string, string> | null;
         campaign: {
             template_name: string | null;
             template_variables: Record<string, string> | null;
@@ -1092,9 +1094,10 @@ async function insertCampaignChatMessage(
     const row = cm as unknown as Joined;
     const conversation = await getOrCreateConversation(supabase, tenantId, row.contact_id);
     if (!conversation) return;
-    const variables = row.campaign?.template_variables ?? {};
+    // Per-recipient values (nombre, teléfono…) win over the campaign-wide ones
+    const variables = row.variables ?? staticVariables((row.campaign?.template_variables ?? {}) as VariableMap);
     const bodyText = row.campaign?.template?.components?.find((c) => c.type === 'BODY')?.text ?? '';
-    const rendered = bodyText.replace(/\{\{(\w+)\}\}/g, (match, key) => variables[key] ?? match);
+    const rendered = bodyText.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key) => variables[key] ?? match);
 
     const { error } = await supabase.from('messages').insert({
         tenant_id: tenantId,

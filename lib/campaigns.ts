@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin';
+import { staticVariables, type VariableMap } from '@/lib/template-variables';
 
 type Supabase = ReturnType<typeof createAdminClient>;
 
@@ -54,14 +55,14 @@ export async function dispatchCampaign(
             : Promise.resolve({ data: null }),
         supabase
             .from('campaign_messages')
-            .select('id, contact:contacts ( id, nombre, wa_id )')
+            .select('id, variables, contact:contacts ( id, nombre, wa_id )')
             .eq('campaign_id', campaignId)
             .eq('tenant_id', tenantId)
             .eq('status', 'pending'),
     ]);
     if (!template) return { ok: false, status: 422, error: 'La campaña no tiene una plantilla válida.' };
 
-    type Recipient = { id: string; contact: { id: string; nombre: string; wa_id: string | null } | null };
+    type Recipient = { id: string; variables: Record<string, string> | null; contact: { id: string; nombre: string; wa_id: string | null } | null };
     const withPhone = ((recipients ?? []) as unknown as Recipient[]).filter((r) => r.contact?.wa_id);
     if (withPhone.length === 0) {
         return { ok: false, status: 422, error: 'Ningún contacto del segmento tiene número de WhatsApp.' };
@@ -82,13 +83,15 @@ export async function dispatchCampaign(
             category: template.category,
             components: template.components,
         },
-        // { "1": "valor", "2": "valor" } → {{1}}, {{2}} of the template body
-        template_variables: campaign.template_variables ?? {},
+        // Same value for everybody (legacy flows). Prefer each recipient's `variables`.
+        template_variables: staticVariables((campaign.template_variables ?? {}) as VariableMap),
         recipients: withPhone.map((r) => ({
             campaign_message_id: r.id,
             contact_id: r.contact!.id,
             name: r.contact!.nombre,
             wa_id: r.contact!.wa_id,
+            // { "1": "Ana", "nombre": "Ana" } → final text of each {{variable}} for THIS contact
+            variables: r.variables ?? staticVariables((campaign.template_variables ?? {}) as VariableMap),
         })),
     };
 
