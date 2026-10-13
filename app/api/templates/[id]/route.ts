@@ -4,12 +4,17 @@ import { requireModule } from '@/lib/tenant-plan';
 import { TenantError } from '@/lib/tenant';
 import type { ButtonAction } from '@/lib/types/database';
 
-/** PATCH /api/templates/[id]  { button_actions } — what each quick-reply button does. */
+/**
+ * PATCH /api/templates/[id]
+ *   { button_actions } — what each quick-reply button does
+ *   { header_url }     — file sent as the media header (uploaded via /api/templates/media)
+ */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params;
         const TENANT_ID = await requireModule('chat');
         const body = await req.json().catch(() => null);
+        if (typeof body?.header_url === 'string') return setHeaderFile(id, TENANT_ID, body.header_url);
         const raw = body?.button_actions;
         if (!raw || typeof raw !== 'object') return NextResponse.json({ error: 'Datos inválidos.' }, { status: 400 });
 
@@ -45,4 +50,33 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         console.error('[PATCH /api/templates/[id]] unexpected', err);
         return NextResponse.json({ error: 'Error interno' }, { status: 500 });
     }
+}
+
+/** Stores the CRM file as the header used to send the template (kept on every sync). */
+async function setHeaderFile(id: string, tenantId: string, url: string) {
+    // Only files uploaded to this tenant's folder in chat-media
+    if (!url.includes(`/object/public/chat-media/${tenantId}/`)) {
+        return NextResponse.json({ error: 'Archivo no válido.' }, { status: 400 });
+    }
+    const supabase = createAdminClient();
+    const { data: tpl } = await supabase.from('message_templates').select('components')
+        .eq('id', id).eq('tenant_id', tenantId).maybeSingle();
+    if (!tpl) return NextResponse.json({ error: 'Plantilla no encontrada.' }, { status: 404 });
+
+    type Comp = { type?: string; format?: string; example?: Record<string, unknown> };
+    const comps = (Array.isArray(tpl.components) ? tpl.components : []) as Comp[];
+    const header = comps.find((c) => String(c.type).toUpperCase() === 'HEADER');
+    if (!header || !['IMAGE', 'VIDEO', 'DOCUMENT'].includes(String(header.format).toUpperCase())) {
+        return NextResponse.json({ error: 'Esta plantilla no tiene encabezado con archivo.' }, { status: 400 });
+    }
+    header.example = { ...(header.example ?? {}), header_url: [url] };
+
+    const { data, error } = await supabase.from('message_templates')
+        .update({ components: comps, updated_at: new Date().toISOString() } as Record<string, unknown>)
+        .eq('id', id).eq('tenant_id', tenantId).select().maybeSingle();
+    if (error || !data) {
+        console.error('[PATCH /api/templates/[id]] header', error);
+        return NextResponse.json({ error: 'No se pudo guardar el archivo.' }, { status: 500 });
+    }
+    return NextResponse.json({ template: data });
 }

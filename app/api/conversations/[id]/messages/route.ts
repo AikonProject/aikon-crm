@@ -1,3 +1,4 @@
+import { templateMediaHeader, MISSING_HEADER_FILE } from '@/lib/template-header';
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireModule } from '@/lib/tenant-plan';
@@ -144,11 +145,11 @@ export async function POST(
             const bodyText = (data.components as Array<{ type: string; text?: string }> | null)
                 ?.find((c) => c.type === 'BODY')?.text ?? '';
             renderedTemplate = bodyText.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k) => templateVariables[k] ?? m);
-            // Media header (image / video / PDF): sent with the sample file uploaded when the template was created
-            const h = (data.components as Array<{ type: string; format?: string; example?: { header_url?: string[]; header_handle?: string[] } }> | null)
-                ?.find((c) => c.type === 'HEADER');
-            if (h && h.format && h.format !== 'TEXT') {
-                templateHeader = { format: h.format, url: h.example?.header_url?.[0] ?? h.example?.header_handle?.[0] ?? null };
+            // Media header (image / video / PDF): needs a file uploaded in the CRM (Meta's own link expires)
+            const media = templateMediaHeader(data.components);
+            if (media) {
+                if (!media.sendUrl) return NextResponse.json({ error: MISSING_HEADER_FILE(data.name) }, { status: 422 });
+                templateHeader = { format: media.format, url: media.sendUrl };
             }
         } else if (!content && !body.media_url) {
             return NextResponse.json({ error: 'El mensaje está vacío.' }, { status: 400 });
