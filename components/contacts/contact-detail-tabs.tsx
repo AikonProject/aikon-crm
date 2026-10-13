@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { FunnelStageBadge } from '@/components/contacts/funnel-stage-badge';
 import { formatSmartDate, formatDate } from '@/lib/utils/format';
 import { useSupabaseClient } from '@/lib/supabase/client';
+import { subscribeResilient } from '@/lib/supabase/realtime';
 import { useHasModule, useTenantId } from '@/components/providers/tenant-provider';
 import { MessageBubble } from '@/components/conversations/message-bubble';
 import { ContactAppointments } from '@/components/appointments/contact-appointments';
@@ -647,7 +648,6 @@ function ConversationsTab({ conversations }: { conversations: ConversationRow[] 
     );
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const msgSubRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
     const selectedConv = conversations.find((c) => c.id === selectedId) ?? conversations[0];
 
@@ -672,19 +672,14 @@ function ConversationsTab({ conversations }: { conversations: ConversationRow[] 
 
     useEffect(() => {
         if (!selectedId) return;
-        if (msgSubRef.current) supabase.removeChannel(msgSubRef.current);
-        const ch = supabase
-            .channel(`contact-chat:${selectedId}`)
+        return subscribeResilient(supabase, `contact-chat:${selectedId}`, (ch) => ch
             .on('postgres_changes', {
                 event: 'INSERT', schema: 'public', table: 'messages',
                 filter: `conversation_id=eq.${selectedId}`,
             }, (payload) => {
                 const newMsg = payload.new as Message;
                 setMessages((prev) => prev.some((m) => m.id === newMsg.id) ? prev : [...prev, newMsg]);
-            })
-            .subscribe();
-        msgSubRef.current = ch;
-        return () => { supabase.removeChannel(ch); };
+            }));
     }, [selectedId, supabase]);
 
     useEffect(() => {

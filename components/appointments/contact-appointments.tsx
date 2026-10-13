@@ -7,6 +7,7 @@ import { es } from 'date-fns/locale';
 import { CalendarClock, Plus, Video, MapPin, Phone, Loader2, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSupabaseClient } from '@/lib/supabase/client';
+import { subscribeResilient } from '@/lib/supabase/realtime';
 import {
     APPOINTMENT_STATUS_LABELS, APPOINTMENT_STATUS_STYLES, appointmentColor, type AppointmentRow,
 } from '@/lib/appointments';
@@ -50,13 +51,10 @@ export function ContactAppointments({
 
     // Realtime: changes from the calendar, other agents or the bot
     useEffect(() => {
-        const channel = supabase
-            .channel(`appointments:contact:${contact.id}`)
+        return subscribeResilient(supabase, `appointments:contact:${contact.id}`, (ch) => ch
             .on('postgres_changes', {
                 event: '*', schema: 'public', table: 'appointments', filter: `contact_id=eq.${contact.id}`,
-            }, () => load(true))
-            .subscribe();
-        return () => { supabase.removeChannel(channel); };
+            }, () => load(true)));
     }, [supabase, contact.id, load]);
 
     const { upcoming, past } = useMemo(() => {
