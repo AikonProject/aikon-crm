@@ -175,7 +175,11 @@ function MessageContent({ message }: { message: Message & { is_note?: boolean } 
     const isOutbound = message.direction === 'outbound';
     return (
         <div className="space-y-1.5">
-            <MediaOrText message={message} />
+            {message.media_expired_at ? (
+                <p className={`text-[12px] italic ${isOutbound ? 'text-white/70' : 'text-[#9CA3AF]'}`}>Archivo eliminado por antigüedad</p>
+            ) : (
+                <MediaOrText message={message} />
+            )}
             {(label || body) && (
                 <div>
                     {label && (

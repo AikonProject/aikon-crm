@@ -18,6 +18,8 @@ import { buildAppointmentFields, formatWhen, ValidationError } from '@/app/api/a
 //   4. Reporting campaign progress (campaign_message_status / campaign_status)
 //   5. Receiving inbound messages from any WhatsApp provider (inbound_message)
 //   6. Pushing the provider's template list (templates_sync)
+//   7. Buffering several customer messages into one AI turn (claim_pending)
+//   8. Uploading inbound media to Storage through a signed URL (media_upload_url)
 //
 // The CRM is the only writer to Supabase: n8n never needs database keys.
 // Contract: docs/n8n-contrato.md
@@ -66,8 +68,10 @@ export async function POST(request: NextRequest) {
                 return await handleMessageStatus(supabase, body);
             case 'ai_response':
                 return await handleAiResponse(supabase, body);
-            case 'buffer_processed':
-                return await handleBufferProcessed(supabase, body);
+            case 'claim_pending':
+                return await handleClaimPending(supabase, body);
+            case 'media_upload_url':
+                return await handleMediaUploadUrl(supabase, body);
             case 'campaign_message_status':
                 return await handleCampaignMessageStatus(supabase, body);
             case 'campaign_status':
@@ -303,40 +307,6 @@ async function handleAiResponse(
 }
 
 /**
- * Mark a message_buffer entry as processed (or failed).
- */
-async function handleBufferProcessed(
-    supabase: ReturnType<typeof createAdminClient>,
-    body: N8NPayload
-) {
-    const { buffer_id, status } = body;
-
-    if (!buffer_id) {
-        return NextResponse.json(
-            { error: 'Missing buffer_id' },
-            { status: 400 }
-        );
-    }
-
-    const finalStatus = status === 'failed' ? 'failed' : 'processed';
-
-    const { error } = await supabase
-        .from('message_buffer')
-        .update({
-            status: finalStatus,
-            processed_at: new Date().toISOString(),
-        })
-        .eq('id', buffer_id);
-
-    if (error) {
-        console.error('[n8n webhook] buffer_processed update error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ updated: true });
-}
-
-/**
  * Progress of one campaign recipient: sent / delivered / read / replied / failed.
  * Identified by campaign_message_id (preferred) or by wa_message_id once known.
  */
@@ -555,6 +525,157 @@ async function handleInboundMessage(
         // n8n only forwards to the bot when this is true (not when a button already answered)
         ai_enabled: !duplicate && !buttonHandled && aiOn,
     }, { status: duplicate ? 200 : 201 });
+}
+
+// ============================================================
+// Message buffer: the bot waits a few seconds, then claims every inbound
+// message it hasn't answered yet and replies to all of them at once.
+// ============================================================
+
+const CLAIM_WINDOW_MINUTES = 30;
+
+/**
+ * The bot calls this after its Wait node with the message that woke it up.
+ * - Not the latest inbound message → `is_latest: false`: a newer message
+ *   started its own run, which will answer everything. This run stops.
+ * - AI off for the chat → `ai_enabled: false`.
+ * - Otherwise atomically marks the unanswered inbound messages (received
+ *   after the last reply, within the last 30 min) as handled and returns them
+ *   in order plus `text`, the combined content for the agent. Two concurrent
+ *   runs can't claim the same message (single UPDATE … WHERE ai_handled_at IS NULL).
+ */
+async function handleClaimPending(
+    supabase: ReturnType<typeof createAdminClient>,
+    body: N8NPayload
+) {
+    const { tenant_id } = body;
+    let conversationId = body.conversation_id ?? null;
+    if (!conversationId && body.contact_id) {
+        const { data } = await supabase.from('conversations').select('id')
+            .eq('tenant_id', tenant_id).eq('contact_id', body.contact_id).maybeSingle();
+        conversationId = data?.id ?? null;
+    }
+    if (!conversationId) return NextResponse.json({ error: 'Missing conversation_id' }, { status: 400 });
+
+    const { data: conversation } = await supabase
+        .from('conversations')
+        .select('id, contact_id, ai_enabled')
+        .eq('tenant_id', tenant_id)
+        .eq('id', conversationId)
+        .maybeSingle();
+    if (!conversation) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
+
+    const empty = { conversation_id: conversation.id, contact_id: conversation.contact_id, count: 0, messages: [], text: '' };
+
+    // Latest customer message: only the run it started answers
+    const { data: latest } = await supabase
+        .from('messages')
+        .select('id, wa_message_id')
+        .eq('conversation_id', conversation.id)
+        .eq('direction', 'inbound')
+        .eq('is_note', false)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    const ref = body.message_id ?? null;
+    const refWa = body.wa_message_id ?? null;
+    if (latest && (ref || refWa) && latest.id !== ref && latest.wa_message_id !== refWa) {
+        return NextResponse.json({ ...empty, is_latest: false, ai_enabled: true });
+    }
+
+    const { data: contact } = await supabase.from('contacts').select('ai_active')
+        .eq('id', conversation.contact_id).maybeSingle();
+    const aiOn = (conversation.ai_enabled ?? true) && (contact?.ai_active ?? true);
+    if (!aiOn) return NextResponse.json({ ...empty, is_latest: true, ai_enabled: false });
+
+    // Messages already answered (by the bot or an agent) are not claimed again
+    const windowMin = Math.min(Math.max(Number(body.window_minutes) || CLAIM_WINDOW_MINUTES, 1), 24 * 60);
+    let since = new Date(Date.now() - windowMin * 60_000).toISOString();
+    const { data: lastReply } = await supabase
+        .from('messages')
+        .select('created_at')
+        .eq('conversation_id', conversation.id)
+        .eq('direction', 'outbound')
+        .eq('is_note', false)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    if (lastReply?.created_at && lastReply.created_at > since) since = lastReply.created_at;
+
+    const { data: claimed, error } = await supabase
+        .from('messages')
+        .update({ ai_handled_at: new Date().toISOString() } as never)
+        .eq('conversation_id', conversation.id)
+        .eq('direction', 'inbound')
+        .eq('is_note', false)
+        .is('ai_handled_at', null)
+        .gt('created_at', since)
+        .select('id, content_type, content, media_url, media_mime_type, media_filename, created_at');
+    if (error) {
+        console.error('[n8n webhook] claim_pending error:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    const messages = (claimed ?? []).sort((a, b) => a.created_at.localeCompare(b.created_at));
+    const text = messages
+        .map((m) => (m.content ?? '').trim() || `[${m.content_type} sin texto]`)
+        .join('\n\n');
+    return NextResponse.json({
+        ...empty,
+        is_latest: true,
+        ai_enabled: true,
+        count: messages.length,
+        messages,
+        text,
+    });
+}
+
+// ============================================================
+// Inbound media: n8n downloads the file from the provider and uploads it
+// straight to Storage with a signed URL (no size limit from Vercel).
+// ============================================================
+
+const MEDIA_EXT: Record<string, string> = {
+    'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
+    'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/aac': 'aac', 'audio/amr': 'amr', 'audio/wav': 'wav',
+    'video/mp4': 'mp4', 'video/3gpp': '3gp', 'video/quicktime': 'mov',
+    'application/pdf': 'pdf',
+    'application/msword': 'doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+    'application/vnd.ms-excel': 'xls',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+    'text/plain': 'txt', 'text/csv': 'csv',
+};
+
+/**
+ * Returns a one-time upload URL under `<tenant>/inbound/<yyyy-mm>/…` and the
+ * public URL to store as `media_url` in inbound_message. n8n uploads with:
+ *   PUT upload_url   (body = the binary, header Content-Type = mime_type)
+ */
+async function handleMediaUploadUrl(
+    supabase: ReturnType<typeof createAdminClient>,
+    body: N8NPayload
+) {
+    const mime = String(body.mime_type ?? body.media_mime_type ?? 'application/octet-stream').split(';')[0].trim().toLowerCase();
+    const fromName = (body.filename ?? body.media_filename ?? '').match(/\.([a-z0-9]{1,5})$/i)?.[1]?.toLowerCase();
+    const ext = MEDIA_EXT[mime] ?? fromName ?? 'bin';
+    const month = new Date().toISOString().slice(0, 7);
+    const path = `${body.tenant_id}/inbound/${month}/${crypto.randomUUID()}.${ext}`;
+
+    const { data, error } = await supabase.storage.from('chat-media').createSignedUploadUrl(path);
+    if (error || !data) {
+        console.error('[n8n webhook] media_upload_url error:', error);
+        return NextResponse.json({ error: error?.message ?? 'Upload URL error' }, { status: 500 });
+    }
+    const { data: { publicUrl } } = supabase.storage.from('chat-media').getPublicUrl(path);
+    return NextResponse.json({
+        upload_url: data.signedUrl,
+        token: data.token,
+        path,
+        public_url: publicUrl,
+        content_type: mime,
+        max_bytes: 16 * 1024 * 1024,
+    }, { status: 201 });
 }
 
 /**
@@ -1015,8 +1136,12 @@ type N8NPayload = {
     status?: string;
     error_code?: string;
     error_message?: string;
-    // buffer_processed
-    buffer_id?: string;
+    // claim_pending
+    message_id?: string;
+    window_minutes?: number;
+    // media_upload_url
+    mime_type?: string;
+    filename?: string;
     // campaign_message_status / campaign_status
     campaign_id?: string;
     campaign_message_id?: string;

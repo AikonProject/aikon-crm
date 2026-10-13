@@ -68,7 +68,9 @@ Header `x-webhook-secret`. Si el tenant tiene secreto configurado, una llamada s
 
 | `action` | Uso | Campos |
 |---|---|---|
-| `inbound_message` | Mensaje del cliente | `wa_id, contact_name, wa_message_id, content, content_type, media_url?, media_mime_type?, media_filename?, button_text?, button_payload?` → responde `{ contact_id, conversation_id, ai_enabled, button_handled, duplicate }`. Si el cliente pulsó un botón de respuesta rápida, envía `button_text` (y `button_payload` si viene): el CRM ejecuta las acciones configuradas en la plantilla (respuesta automática, etiquetas, etapa, IA, asignación). Si ya respondió, `ai_enabled` llega en `false` para que el bot no conteste también. |
+| `inbound_message` | Mensaje del cliente | `wa_id, contact_name, wa_message_id, content, content_type, media_url?, media_mime_type?, media_filename?, button_text?, button_payload?` → responde `{ message_id, contact_id, conversation_id, ai_enabled, button_handled, duplicate }`. Para fotos, audios y documentos, `content` lleva una etiqueta en la primera línea y debajo la transcripción o descripción (ver [n8n-media-y-buffer.md](n8n-media-y-buffer.md)). Si el cliente pulsó un botón de respuesta rápida, envía `button_text` (y `button_payload` si viene): el CRM ejecuta las acciones configuradas en la plantilla (respuesta automática, etiquetas, etapa, IA, asignación). Si ya respondió, `ai_enabled` llega en `false` para que el bot no conteste también. |
+| `media_upload_url` | Antes de guardar un archivo del cliente | `mime_type, filename?` → responde `{ upload_url, public_url, path, max_bytes }`. n8n sube el archivo con `PUT upload_url` (cuerpo = binario, header `Content-Type`) y manda `public_url` como `media_url` en `inbound_message` |
+| `claim_pending` | Buffer: el bot, tras esperar unos segundos, reclama los mensajes sin responder | `conversation_id, message_id` → responde `{ is_latest, ai_enabled, count, messages[], text }`. Si `is_latest` es `false` llegó otro mensaje después y esa ejecución se detiene; si no, `text` trae todos los mensajes pendientes juntos |
 | `message_sent` | Resultado de un envío manual o de reserva | `contact_id, conversation_id?, wa_message_id, content, content_type, sent_by_name, template_name?, status ('sent' \| 'failed'), error_code?, error_message?` (con `failed`, el chat muestra el error al agente) |
 | `ai_response` | Respuesta del bot | `contact_id, conversation_id, wa_message_id, content` |
 | `message_status` | Recibo del proveedor | `wa_message_id, status ('sent' \| 'delivered' \| 'read' \| 'failed'), error_code?, error_message?` (también actualiza campañas) |
@@ -86,7 +88,8 @@ Qué garantiza el CRM:
 - **Respuestas a campañas:** si un contacto responde, su mensaje de campaña pasa a `replied`.
 - **Conversaciones al día:** el resumen y los no leídos los actualizan triggers de la base de datos.
 
-## Pendiente
-- **Media entrante** (fotos, audios, documentos): hoy se guarda el tipo y el pie de foto. El archivo lo puede
-  descargar el bot con `media_id`. Para verlo en el CRM hay que bajarlo de Meta y subirlo al bucket `chat-media`
-  (siguiente paso).
+## Archivos y buffer
+Guía paso a paso y nodos: [n8n-media-y-buffer.md](n8n-media-y-buffer.md).
+- Los archivos viven en el bucket `chat-media` bajo `<tenant>/inbound/<año-mes>/`. Cada noche se borran los que superan la
+  retención del tenant (Configuración → Archivos, 90 días por defecto). El mensaje queda con su transcripción.
+- Variable de entorno en Vercel: `CRON_SECRET` (cualquier texto largo) para la limpieza diaria.
