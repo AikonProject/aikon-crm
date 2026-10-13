@@ -443,6 +443,8 @@ async function handleInboundMessage(
         .eq('tenant_id', tenant_id)
         .eq('wa_id', phone)
         .maybeSingle();
+    // A brand-new contact always starts with the AI on, in every tenant
+    const isNewContact = !contact;
     if (!contact) {
         const { data: created, error } = await supabase
             .from('contacts')
@@ -451,6 +453,7 @@ async function handleInboundMessage(
                 nombre: body.contact_name?.trim() || phone,
                 wa_id: phone,
                 source: 'whatsapp' as const,
+                ai_active: true,
             })
             .select('id, ai_active')
             .single();
@@ -464,6 +467,10 @@ async function handleInboundMessage(
     const conversation = await getOrCreateConversation(supabase, tenant_id, contact.id);
     if (!conversation) {
         return NextResponse.json({ error: 'Conversation error' }, { status: 500 });
+    }
+    if (isNewContact && conversation.ai_enabled === false) {
+        await supabase.from('conversations').update({ ai_enabled: true } as Record<string, unknown>).eq('id', conversation.id);
+        conversation.ai_enabled = true;
     }
 
     // 2. Message (idempotent on the provider's message id)
@@ -914,7 +921,7 @@ async function getOrCreateConversation(
 
     const { error } = await supabase
         .from('conversations')
-        .insert({ tenant_id: tenantId, contact_id: contactId, channel: 'whatsapp' as const, status: 'open' as const });
+        .insert({ tenant_id: tenantId, contact_id: contactId, channel: 'whatsapp' as const, status: 'open' as const, ai_enabled: true } as never);
     // 23505: created concurrently (unique tenant_id + contact_id)
     if (error && error.code !== '23505') {
         console.error('[n8n webhook] conversation create error:', error);
