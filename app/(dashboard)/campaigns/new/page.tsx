@@ -7,8 +7,21 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import type { MessageTemplate } from '@/lib/types/database';
-import { ContactFilterBuilder } from '@/components/contacts/contact-filter-builder';
-import { EMPTY_FILTER, cleanFilter, type ContactFilter } from '@/lib/contact-filter';
+import { EMPTY_FILTER, cleanFilter } from '@/lib/contact-filter';
+import { RecipientPicker, estimateRecipients, type RecipientSelection } from '@/components/campaigns/recipient-picker';
+import { CONTACT_FIELD_OPTIONS, type VariableMapping } from '@/lib/template-variables';
+
+type Mapping = { type: 'text'; value: string } | { type: 'field'; field: string; fallback: string };
+
+/** First guess from the variable name: {{nombre}} → first name, {{telefono}} → phone… */
+function guessMapping(v: string): Mapping {
+    const k = v.toLowerCase();
+    if (/^(1|nombre|name|first_?name|primer_?nombre|cliente)$/.test(k)) return { type: 'field', field: 'first_name', fallback: 'cliente' };
+    if (/nombre_?completo|full_?name/.test(k)) return { type: 'field', field: 'nombre', fallback: 'cliente' };
+    if (/tel|phone|celular|whatsapp/.test(k)) return { type: 'field', field: 'wa_id', fallback: '' };
+    if (/mail|correo/.test(k)) return { type: 'field', field: 'email', fallback: '' };
+    return { type: 'text', value: '' };
+}
 
 const STEPS = [
     { id: 1, label: 'Información' },
@@ -31,13 +44,16 @@ export default function NewCampaignPage() {
     const [templates, setTemplates] = useState<MessageTemplate[]>([]);
     const [loadingTemplates, setLoadingTemplates] = useState(true);
 
-    // Step 2
-    const [variableValues, setVariableValues] = useState<Record<string, string>>({});
+    // Step 2: each {{variable}} → fixed text or a contact field (resolved per recipient)
+    const [mappings, setMappings] = useState<Record<string, Mapping>>({});
+    const [customFields, setCustomFields] = useState<{ field_key: string; label: string }[]>([]);
 
     // Step 3
-    const [filter, setFilter] = useState<ContactFilter>(EMPTY_FILTER);
-    const [previewCount, setPreviewCount] = useState<number | null>(null);
-    const [matchCount, setMatchCount] = useState<number | null>(null);
+    const [selection, setSelection] = useState<RecipientSelection>({
+        useFilter: true, filter: EMPTY_FILTER, include: new Map(), exclude: new Map(),
+    });
+    const [filterWithPhone, setFilterWithPhone] = useState<number | null>(null);
+    const recipientCount = estimateRecipients(selection, filterWithPhone);
 
     // Step 4
     const [scheduleType, setScheduleType] = useState<'now' | 'later'>('now');
@@ -49,6 +65,7 @@ export default function NewCampaignPage() {
             // Meta only sends approved templates
             .then((d) => setTemplates((d.templates ?? []).filter((t: MessageTemplate) => t.status === 'APPROVED')))
             .finally(() => setLoadingTemplates(false));
+        fetch('/api/settings/custom-fields').then((r) => r.json()).then((d) => setCustomFields(d.fields ?? [])).catch(() => {});
     }, []);
 
     // Extract body text from components JSONB
@@ -58,13 +75,33 @@ export default function NewCampaignPage() {
         : '';
     // Extract variables like {{1}}, {{2}} from body text
     const templateVariables = [...new Set(templateBody.match(/\{\{\s*\w+\s*\}\}/g)?.map((v) => v.replace(/[{}\s]/g, '')) ?? [])];
+    const templateVarsKey = templateVariables.join('|');
+
+    // New template → suggested mapping for its variables
+    useEffect(() => {
+        const vars = templateVarsKey ? templateVarsKey.split('|') : [];
+        setMappings((prev) => Object.fromEntries(vars.map((v) => [v, prev[v] ?? guessMapping(v)])));
+    }, [templateVarsKey]);
+
+    const fieldOptions = [
+        ...CONTACT_FIELD_OPTIONS.map((o) => ({ value: o.value as string, label: o.label })),
+        ...customFields.map((f) => ({ value: `custom:${f.field_key}`, label: f.label })),
+    ];
+    const fieldLabel = (field: string) => fieldOptions.find((o) => o.value === field)?.label ?? field;
+
+    function setMapping(v: string, m: Mapping) {
+        setMappings((prev) => ({ ...prev, [v]: m }));
+    }
 
     function canProceed(): boolean {
         if (step === 1) return !!name.trim() && !!selectedTemplate;
         if (step === 2) {
-            return templateVariables.every((v) => (variableValues[v] ?? '').trim() !== '');
+            return templateVariables.every((v) => {
+                const m = mappings[v];
+                return m && (m.type === 'field' ? !!m.field : m.value.trim() !== '');
+            });
         }
-        if (step === 3) return (previewCount ?? 0) > 0;
+        if (step === 3) return recipientCount > 0;
         if (step === 4) return scheduleType === 'now' || !!scheduledAt;
         return true;
     }
@@ -73,7 +110,9 @@ export default function NewCampaignPage() {
         if (!selectedTemplate) return '';
         let content = templateBody;
         templateVariables.forEach((v) => {
-            content = content.replace(new RegExp(`\\{\\{\\s*${v}\\s*\\}\\}`, 'g'), variableValues[v] ?? `{{${v}}}`);
+            const m = mappings[v];
+            const shown = !m ? `{{${v}}}` : m.type === 'text' ? (m.value || `{{${v}}}`) : `[${fieldLabel(m.field)}]`;
+            content = content.replace(new RegExp(`\\{\\{\\s*${v}\\s*\\}\\}`, 'g'), shown);
         });
         return content;
     }
@@ -85,9 +124,12 @@ export default function NewCampaignPage() {
                 name,
                 description: description || undefined,
                 template_id: selectedTemplate?.id,
-                template_variables: variableValues,
+                template_variables: Object.fromEntries(templateVariables.map((v) => [v, mappings[v] as VariableMapping])),
                 scheduled_at: scheduleType === 'later' ? new Date(scheduledAt).toISOString() : undefined,
-                filter: cleanFilter(filter),
+                filter: selection.useFilter ? cleanFilter(selection.filter) : null,
+                manual_only: !selection.useFilter,
+                include_ids: [...selection.include.keys()],
+                exclude_ids: selection.useFilter ? [...selection.exclude.keys()] : [],
             };
             const res = await fetch('/api/campaigns', {
                 method: 'POST',
@@ -232,20 +274,66 @@ export default function NewCampaignPage() {
                                     <p className="text-[12px] font-medium text-[#6B7280] mb-1">Vista previa:</p>
                                     <p className="text-[14px] text-[#1A1A2E] whitespace-pre-wrap">{renderPreview()}</p>
                                 </div>
-                                {templateVariables.map((v) => (
-                                    <div key={v}>
-                                        <label className="block text-[13px] font-medium text-[#6B7280] mb-1.5">
-                                            Variable {`{{${v}}}`} <span className="text-red-500">*</span>
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={variableValues[v] ?? ''}
-                                            onChange={(e) => setVariableValues((prev) => ({ ...prev, [v]: e.target.value }))}
-                                            placeholder={`Valor para {{${v}}}`}
-                                            className="w-full px-3 py-2.5 text-[14px] bg-white border border-[#E8E8EC] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20 focus:border-[#818CF8]"
-                                        />
-                                    </div>
-                                ))}
+                                <p className="text-[12px] text-[#6B7280]">
+                                    Elige de dónde sale cada variable. Con un campo del contacto, cada persona recibe su propio dato
+                                    (por ejemplo, su nombre). Si a alguien le falta ese dato, se usa el texto de respaldo.
+                                </p>
+                                {templateVariables.map((v) => {
+                                    const m = mappings[v] ?? guessMapping(v);
+                                    return (
+                                        <div key={v} className="rounded-xl border border-[#E8E8EC] p-3 space-y-2">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="text-[13px] font-semibold text-[#1A1A2E]">{`{{${v}}}`}</span>
+                                                <div className="flex rounded-lg bg-[#F3F4F6] p-0.5 text-[12px]">
+                                                    {[
+                                                        { t: 'field', label: 'Dato del contacto' },
+                                                        { t: 'text', label: 'Texto fijo' },
+                                                    ].map((o) => (
+                                                        <button
+                                                            key={o.t}
+                                                            type="button"
+                                                            onClick={() => setMapping(v, o.t === 'field' ? { type: 'field', field: 'first_name', fallback: '' } : { type: 'text', value: '' })}
+                                                            className={`px-2.5 py-1 rounded-md ${m.type === o.t ? 'bg-white shadow-sm text-[#1A1A2E] font-medium' : 'text-[#6B7280]'}`}
+                                                        >
+                                                            {o.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            {m.type === 'field' ? (
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                    <select
+                                                        value={m.field}
+                                                        onChange={(e) => setMapping(v, { ...m, field: e.target.value })}
+                                                        className="w-full px-3 py-2 text-[13px] bg-white border border-[#E8E8EC] rounded-lg"
+                                                    >
+                                                        <optgroup label="Contacto">
+                                                            {CONTACT_FIELD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                                        </optgroup>
+                                                        {customFields.length > 0 && (
+                                                            <optgroup label="Campos personalizados">
+                                                                {customFields.map((f) => <option key={f.field_key} value={`custom:${f.field_key}`}>{f.label}</option>)}
+                                                            </optgroup>
+                                                        )}
+                                                    </select>
+                                                    <input
+                                                        value={m.fallback}
+                                                        onChange={(e) => setMapping(v, { ...m, fallback: e.target.value })}
+                                                        placeholder="Respaldo si falta, ej. cliente"
+                                                        className="w-full px-3 py-2 text-[13px] bg-white border border-[#E8E8EC] rounded-lg"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <input
+                                                    value={m.value}
+                                                    onChange={(e) => setMapping(v, { type: 'text', value: e.target.value })}
+                                                    placeholder={`Mismo texto para todos en {{${v}}}`}
+                                                    className="w-full px-3 py-2 text-[13px] bg-white border border-[#E8E8EC] rounded-lg"
+                                                />
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </>
                         )}
                     </div>
@@ -257,17 +345,15 @@ export default function NewCampaignPage() {
                         <div>
                             <h2 className="text-[16px] font-semibold text-[#1A1A2E]">Seleccionar contactos</h2>
                             <p className="text-[13px] text-[#6B7280] mt-0.5">
-                                Combina las condiciones que quieras: etiquetas, etapa, campos personalizados, actividad, fechas, campañas anteriores…
+                                Usa un filtro (etiquetas, etapa, campos personalizados, actividad…) y ajusta a mano, o marca los contactos uno por uno.
                             </p>
                         </div>
-                        <ContactFilterBuilder
-                            value={filter}
-                            onChange={setFilter}
-                            onPreview={(p) => { setPreviewCount(p?.with_phone ?? null); setMatchCount(p?.count ?? null); }}
-                        />
-                        {previewCount === 0 && (
-                            <p className="text-[12px] text-[#D97706]">Ningún contacto con WhatsApp cumple el filtro. Ajusta las condiciones para continuar.</p>
-                        )}
+                        <RecipientPicker value={selection} onChange={setSelection} onFilterPreview={setFilterWithPhone} />
+                        <p className={`text-[13px] font-medium ${recipientCount > 0 ? 'text-[#059669]' : 'text-[#D97706]'}`}>
+                            {recipientCount > 0
+                                ? `≈ ${recipientCount} destinatario${recipientCount === 1 ? '' : 's'} con WhatsApp`
+                                : 'Aún no hay destinatarios con WhatsApp. Ajusta el filtro o marca contactos.'}
+                        </p>
                     </div>
                 )}
 
@@ -314,8 +400,24 @@ export default function NewCampaignPage() {
                                 { label: 'Nombre', value: name },
                                 { label: 'Descripción', value: description || '—' },
                                 { label: 'Plantilla', value: selectedTemplate?.name ?? '—' },
-                                { label: 'Destinatarios', value: `${previewCount ?? 0} con WhatsApp${matchCount !== null && matchCount !== previewCount ? ` (de ${matchCount} que cumplen el filtro)` : ''}` },
-                                { label: 'Filtro', value: cleanFilter(filter).conditions.length === 0 ? 'Todos los contactos' : `${cleanFilter(filter).conditions.length} condición(es) · ${filter.match === 'all' ? 'todas' : 'alguna'}` },
+                                { label: 'Destinatarios', value: `≈ ${recipientCount} con WhatsApp` },
+                                {
+                                    label: 'Selección',
+                                    value: [
+                                        selection.useFilter
+                                            ? (cleanFilter(selection.filter).conditions.length === 0 ? 'Todos los contactos' : `Filtro: ${cleanFilter(selection.filter).conditions.length} condición(es)`)
+                                            : 'Elegidos a mano',
+                                        selection.include.size ? `+${selection.include.size} a mano` : '',
+                                        selection.useFilter && selection.exclude.size ? `−${selection.exclude.size} quitados` : '',
+                                    ].filter(Boolean).join(' · '),
+                                },
+                                {
+                                    label: 'Variables',
+                                    value: templateVariables.length === 0 ? '—' : templateVariables.map((v) => {
+                                        const m = mappings[v];
+                                        return `{{${v}}} = ${!m ? '—' : m.type === 'text' ? `"${m.value}"` : fieldLabel(m.field)}`;
+                                    }).join(' · '),
+                                },
                                 { label: 'Envío', value: scheduleType === 'now' ? 'Inmediato' : scheduledAt ? new Date(scheduledAt).toLocaleString('es-CO') : '—' },
                             ].map(({ label, value }) => (
                                 <div key={label} className="flex items-start gap-4 py-3 border-b border-[#F3F4F6] last:border-0">

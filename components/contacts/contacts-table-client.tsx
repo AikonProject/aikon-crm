@@ -1,8 +1,15 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
-import { Search, ChevronLeft, ChevronRight, Users, Filter, X, UserCheck } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Search, ChevronLeft, ChevronRight, Users, Filter, X, UserCheck, Pencil, Trash2, Tag as Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { EditContactDialog } from '@/components/contacts/edit-contact-dialog';
+import {
+    Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { FunnelStageBadge } from '@/components/contacts/funnel-stage-badge';
 import { getInitials, formatSmartDate } from '@/lib/utils/format';
 import type { ContactWithRelations } from '@/app/(dashboard)/contacts/page';
@@ -48,6 +55,52 @@ export function ContactsTableClient({ contacts, stages, initialStageId = null }:
     const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set());
     const [minScore, setMinScore] = useState<string>('');
     const [sortBy, setSortBy] = useState<SortOption>('created_desc');
+
+    // Selection and actions
+    const router = useRouter();
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [editing, setEditing] = useState<ContactWithRelations | null>(null);
+    const [confirmDelete, setConfirmDelete] = useState<string[] | null>(null);
+    const [busy, setBusy] = useState(false);
+    const [allTags, setAllTags] = useState<{ id: string; name: string; color: string | null }[]>([]);
+    useEffect(() => {
+        fetch('/api/settings/tags').then((r) => r.json()).then((d) => setAllTags(d.tags ?? [])).catch(() => {});
+    }, []);
+    // Drop selected ids that no longer exist (after deleting or refreshing)
+    useEffect(() => {
+        setSelected((prev) => {
+            const ids = new Set(contacts.map((c) => c.id));
+            const next = new Set([...prev].filter((id) => ids.has(id)));
+            return next.size === prev.size ? prev : next;
+        });
+    }, [contacts]);
+
+    function toggleSelected(id: string) {
+        setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+    }
+
+    async function bulk(action: 'delete' | 'add_tag' | 'remove_tag', ids: string[], tagId?: string) {
+        setBusy(true);
+        try {
+            const res = await fetch('/api/contacts/bulk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action, ids, tag_id: tagId }),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) { toast.error(d.error || 'No se pudo completar la operación'); return false; }
+            if (action === 'delete') toast.success(`${d.deleted} contacto${d.deleted === 1 ? '' : 's'} eliminado${d.deleted === 1 ? '' : 's'}`);
+            else toast.success(action === 'add_tag' ? `Etiqueta agregada a ${d.updated}` : `Etiqueta quitada de ${d.updated}`);
+            setSelected(new Set());
+            router.refresh();
+            return true;
+        } catch {
+            toast.error('Error de conexión');
+            return false;
+        } finally {
+            setBusy(false);
+        }
+    }
 
     // Derive unique tags from all contacts
     const availableTags = useMemo(() => {
@@ -140,6 +193,16 @@ export function ContactsTableClient({ contacts, stages, initialStageId = null }:
         (safeCurrentPage - 1) * ITEMS_PER_PAGE,
         safeCurrentPage * ITEMS_PER_PAGE
     );
+
+    const pageAllSelected = paginated.length > 0 && paginated.every((c) => selected.has(c.id));
+    function togglePage() {
+        setSelected((prev) => {
+            const n = new Set(prev);
+            if (pageAllSelected) paginated.forEach((c) => n.delete(c.id));
+            else paginated.forEach((c) => n.add(c.id));
+            return n;
+        });
+    }
 
     function setPageSafe(p: number) {
         setPage(Math.max(1, Math.min(p, totalPages)));
@@ -371,6 +434,50 @@ export function ContactsTableClient({ contacts, stages, initialStageId = null }:
                 </div>
             </div>
 
+            {/* Bulk actions */}
+            {selected.size > 0 && (
+                <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-[#C7D2FE] bg-[#EEF0FF] px-4 py-2.5">
+                    <span className="text-[13px] font-medium text-[#4F46E5]">
+                        {selected.size} seleccionado{selected.size === 1 ? '' : 's'}
+                    </span>
+                    {selected.size < filtered.length && (
+                        <button onClick={() => setSelected(new Set(filtered.map((c) => c.id)))} className="text-[12px] text-[#4F46E5] underline">
+                            Seleccionar los {filtered.length} de la lista
+                        </button>
+                    )}
+                    <div className="ml-auto flex flex-wrap items-center gap-2">
+                        <select
+                            value=""
+                            disabled={busy || allTags.length === 0}
+                            onChange={(e) => { if (e.target.value) bulk('add_tag', [...selected], e.target.value); }}
+                            className="text-[12px] px-2 py-1.5 rounded-lg border border-[#E8E8EC] bg-white text-[#374151]"
+                        >
+                            <option value="">+ Agregar etiqueta…</option>
+                            {allTags.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                        <select
+                            value=""
+                            disabled={busy || allTags.length === 0}
+                            onChange={(e) => { if (e.target.value) bulk('remove_tag', [...selected], e.target.value); }}
+                            className="text-[12px] px-2 py-1.5 rounded-lg border border-[#E8E8EC] bg-white text-[#374151]"
+                        >
+                            <option value="">− Quitar etiqueta…</option>
+                            {allTags.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                        <button
+                            onClick={() => setConfirmDelete([...selected])}
+                            disabled={busy}
+                            className="flex items-center gap-1 text-[12px] font-medium px-3 py-1.5 rounded-lg bg-white border border-red-200 text-red-600 hover:bg-red-50"
+                        >
+                            <Trash2 size={13} /> Eliminar
+                        </button>
+                        <button onClick={() => setSelected(new Set())} className="text-[12px] text-[#6B7280] hover:text-[#1A1A2E] px-2">
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Table Card */}
             <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm overflow-hidden">
                 {paginated.length === 0 ? (
@@ -380,6 +487,9 @@ export function ContactsTableClient({ contacts, stages, initialStageId = null }:
                         <table className="w-full">
                             <thead>
                                 <tr className="border-b border-[#E8E8EC]">
+                                    <th className="pl-5 pr-1 py-3 w-8">
+                                        <input type="checkbox" checked={pageAllSelected} onChange={togglePage} aria-label="Seleccionar página" className="accent-[#818CF8]" />
+                                    </th>
                                     <th className="text-left px-5 py-3 text-[12px] font-semibold text-[#9CA3AF] uppercase tracking-wider">
                                         Nombre
                                     </th>
@@ -401,11 +511,19 @@ export function ContactsTableClient({ contacts, stages, initialStageId = null }:
                                     <th className="text-left px-5 py-3 text-[12px] font-semibold text-[#9CA3AF] uppercase tracking-wider hidden xl:table-cell">
                                         Asignado
                                     </th>
+                                    <th className="px-3 py-3 w-20" />
                                 </tr>
                             </thead>
                             <tbody>
                                 {paginated.map((contact) => (
-                                    <ContactRow key={contact.id} contact={contact} />
+                                    <ContactRow
+                                        key={contact.id}
+                                        contact={contact}
+                                        selected={selected.has(contact.id)}
+                                        onToggle={() => toggleSelected(contact.id)}
+                                        onEdit={() => setEditing(contact)}
+                                        onDelete={() => setConfirmDelete([contact.id])}
+                                    />
                                 ))}
                             </tbody>
                         </table>
@@ -458,6 +576,43 @@ export function ContactsTableClient({ contacts, stages, initialStageId = null }:
                     </div>
                 )}
             </div>
+
+            {editing && (
+                <EditContactDialog
+                    key={editing.id}
+                    open={!!editing}
+                    onOpenChange={(o) => { if (!o) setEditing(null); }}
+                    contact={editing}
+                    stages={stages}
+                    onSuccess={() => { setEditing(null); router.refresh(); }}
+                />
+            )}
+
+            <Dialog open={!!confirmDelete} onOpenChange={(o) => { if (!o && !busy) setConfirmDelete(null); }}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>
+                            {confirmDelete?.length === 1
+                                ? `¿Eliminar a ${contacts.find((c) => c.id === confirmDelete[0])?.nombre ?? 'este contacto'}?`
+                                : `¿Eliminar ${confirmDelete?.length ?? 0} contactos?`}
+                        </DialogTitle>
+                    </DialogHeader>
+                    <p className="text-[13px] text-[#6B7280]">
+                        Se borran también sus conversaciones, mensajes, notas y etiquetas. Las citas, reservas y ventas se conservan sin contacto.
+                        <span className="font-medium text-[#1A1A2E]"> No se puede deshacer.</span>
+                    </p>
+                    <DialogFooter>
+                        <Button variant="outline" disabled={busy} onClick={() => setConfirmDelete(null)} className="rounded-xl">Cancelar</Button>
+                        <Button
+                            disabled={busy}
+                            onClick={async () => { if (confirmDelete && await bulk('delete', confirmDelete)) setConfirmDelete(null); }}
+                            className="rounded-xl bg-red-600 hover:bg-red-700 text-white gap-2"
+                        >
+                            {busy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Eliminar
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </>
     );
 }
@@ -465,7 +620,15 @@ export function ContactsTableClient({ contacts, stages, initialStageId = null }:
 // ---------------------------------------------------------------------------
 // Contact row
 // ---------------------------------------------------------------------------
-function ContactRow({ contact }: { contact: ContactWithRelations }) {
+function ContactRow({
+    contact, selected, onToggle, onEdit, onDelete,
+}: {
+    contact: ContactWithRelations;
+    selected: boolean;
+    onToggle: () => void;
+    onEdit: () => void;
+    onDelete: () => void;
+}) {
     const fullName = contact.nombre;
     const initials = getInitials(fullName);
     const tags = contact.contact_tags
@@ -473,7 +636,10 @@ function ContactRow({ contact }: { contact: ContactWithRelations }) {
         .filter(Boolean) as { id: string; name: string; color: string | null }[];
 
     return (
-        <tr className="border-b border-[#F3F4F6] last:border-0 hover:bg-[#FAFAFE] transition-colors cursor-pointer">
+        <tr className={`group border-b border-[#F3F4F6] last:border-0 hover:bg-[#FAFAFE] transition-colors cursor-pointer ${selected ? 'bg-[#F5F6FF]' : ''}`}>
+            <td className="pl-5 pr-1 py-3.5 w-8">
+                <input type="checkbox" checked={selected} onChange={onToggle} aria-label={`Seleccionar ${contact.nombre}`} className="accent-[#818CF8]" />
+            </td>
             {/* Name + Avatar */}
             <td className="px-5 py-3.5">
                 <Link href={`/contacts/${contact.id}`} className="flex items-center gap-3">
@@ -545,6 +711,16 @@ function ContactRow({ contact }: { contact: ContactWithRelations }) {
             {/* Assigned */}
             <td className="px-5 py-3.5 hidden xl:table-cell">
                 <span className="text-[12px] text-[#D1D5DB]">—</span>
+            </td>
+
+            {/* Actions */}
+            <td className="px-3 py-3.5 text-right whitespace-nowrap">
+                <button onClick={onEdit} title="Editar" className="p-1.5 rounded-lg text-[#9CA3AF] hover:text-[#4F46E5] hover:bg-[#EEF0FF]">
+                    <Pencil size={14} />
+                </button>
+                <button onClick={onDelete} title="Eliminar" className="p-1.5 rounded-lg text-[#9CA3AF] hover:text-red-600 hover:bg-red-50">
+                    <Trash2 size={14} />
+                </button>
             </td>
         </tr>
     );

@@ -24,7 +24,7 @@ async function getPageData() {
             .from('contacts')
             .select(
                 `
-        id, nombre, email, wa_id, source, lead_score, ai_active,
+        id, nombre, email, wa_id, job_title, source, lead_score, ai_active,
         last_contacted_at, created_at, funnel_stage_id, assigned_to,
         funnel_stage:funnel_stages ( id, name, color, position ),
         contact_tags ( tag:tags ( id, name, color ) )
@@ -33,7 +33,7 @@ async function getPageData() {
             )
             .eq('tenant_id', TENANT_ID)
             .order('created_at', { ascending: false })
-            .limit(200),
+            .limit(1000),
     ]);
 
     return {
@@ -49,6 +49,7 @@ export type ContactWithRelations = {
     nombre: string;
     email: string | null;
     wa_id: string | null;
+    job_title: string | null;
     source: string;
     lead_score: number;
     ai_active: boolean;
