@@ -50,7 +50,11 @@ export async function POST(req: NextRequest) {
         const content = String(body.content ?? '').trim();
         const language = String(body.language ?? 'es');
         const category = String(body.category ?? '').toUpperCase();
-        const examples: string[] = Array.isArray(body.examples) ? body.examples.map((e: unknown) => String(e ?? '').trim()) : [];
+        // examples: { "1": "Ana" } / { "nombre": "Ana" }, or (older clients) an array in {{1}}, {{2}} order
+        const exampleOf = (key: string, index: number): string => {
+            if (Array.isArray(body.examples)) return String(body.examples[index] ?? '').trim();
+            return String((body.examples ?? {})[key] ?? '').trim();
+        };
 
         if (!name) return NextResponse.json({ error: 'El nombre es obligatorio (minúsculas, números y _).' }, { status: 400 });
         if (!content) return NextResponse.json({ error: 'El contenido es obligatorio.' }, { status: 400 });
@@ -58,17 +62,29 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Elige una categoría: Marketing, Utilidad o Autenticación.' }, { status: 400 });
         }
 
-        // Meta rules for variables: {{1}}, {{2}}… in order, not at the start or end, with an example each
-        const vars = Array.from(new Set((content.match(/\{\{(\d+)\}\}/g) ?? []).map((v) => Number(v.replace(/\D/g, '')))))
-            .sort((a, b) => a - b);
-        if (vars.some((v, i) => v !== i + 1)) {
+        // Variables: numbered {{1}} {{2}} (in order) or named {{nombre}} — not both. Each needs an example.
+        const placeholders = Array.from(new Set((content.match(/\{\{\s*([^{}]+?)\s*\}\}/g) ?? []).map((v) => v.replace(/[{}\s]/g, ''))));
+        const numbered = placeholders.filter((p) => /^\d+$/.test(p));
+        const named = placeholders.filter((p) => !/^\d+$/.test(p));
+        if (numbered.length && named.length) {
+            return NextResponse.json({ error: 'No mezcles variables numeradas ({{1}}) con variables con nombre ({{nombre}}).' }, { status: 400 });
+        }
+        const bad = named.find((p) => !/^[a-z][a-z0-9_]*$/.test(p));
+        if (bad) {
+            return NextResponse.json({ error: `La variable {{${bad}}} no es válida: usa solo minúsculas, números y _ (sin tildes ni espacios), ej. {{nombre}}.` }, { status: 400 });
+        }
+        const isNamed = named.length > 0;
+        const vars = isNamed ? named : numbered.map(Number).sort((a, b) => a - b).map(String);
+        if (!isNamed && vars.some((v, i) => Number(v) !== i + 1)) {
             return NextResponse.json({ error: 'Las variables deben ser consecutivas: {{1}}, {{2}}, {{3}}…' }, { status: 400 });
         }
-        if (/^\s*\{\{\d+\}\}/.test(content) || /\{\{\d+\}\}[\s.!?]*$/.test(content)) {
+        if (/^\s*\{\{[^{}]+\}\}/.test(content) || /\{\{[^{}]+\}\}[\s.!?]*$/.test(content)) {
             return NextResponse.json({ error: 'Meta no permite que el mensaje empiece o termine con una variable.' }, { status: 400 });
         }
-        if (vars.length > 0 && (examples.length < vars.length || examples.slice(0, vars.length).some((e) => !e))) {
-            return NextResponse.json({ error: 'Escribe un ejemplo para cada variable (Meta lo exige para aprobarla).' }, { status: 400 });
+        const examples = vars.map((v, i) => exampleOf(v, i));
+        const missing = vars.find((v, i) => !examples[i]);
+        if (missing) {
+            return NextResponse.json({ error: `Escribe un ejemplo para la variable {{${missing}}} (Meta lo exige para aprobarla).` }, { status: 400 });
         }
         if (content.length > 1024) {
             return NextResponse.json({ error: 'El contenido no puede superar 1024 caracteres.' }, { status: 400 });
@@ -155,15 +171,24 @@ export async function POST(req: NextRequest) {
 
         const { data: existing } = await supabase
             .from('message_templates')
-            .select('id')
+            .select('id, status')
             .eq('tenant_id', TENANT_ID).eq('name', name).eq('language', language)
             .maybeSingle();
         if (existing) {
-            return NextResponse.json({ error: `Ya existe una plantilla "${name}" en ese idioma.` }, { status: 409 });
+            // A rejected attempt can be fixed and sent again with the same name
+            if ((existing as { status?: string }).status === 'REJECTED') {
+                await supabase.from('message_templates').delete().eq('id', existing.id);
+            } else {
+                return NextResponse.json({ error: `Ya existe una plantilla "${name}" en ese idioma.` }, { status: 409 });
+            }
         }
 
         const bodyComponent: Record<string, unknown> = { type: 'BODY', text: content };
-        if (vars.length > 0) bodyComponent.example = { body_text: [examples.slice(0, vars.length)] };
+        if (vars.length > 0) {
+            bodyComponent.example = isNamed
+                ? { body_text_named_params: vars.map((v, i) => ({ param_name: v, example: examples[i] })) }
+                : { body_text: [examples] };
+        }
         const components: Record<string, unknown>[] = [];
         if (header) components.push(header);
         components.push(bodyComponent);
@@ -203,6 +228,8 @@ export async function POST(req: NextRequest) {
                     language,
                     category,
                     components,
+                    // Named variables ({{nombre}}) must be declared to Meta as NAMED
+                    parameter_format: isNamed ? 'NAMED' : 'POSITIONAL',
                     // Convenience for the gateway: the header sample file, if any
                     header_format: header?.format ?? null,
                     header_media_url: header && header.format !== 'TEXT' ? (header.example as { header_url: string[] }).header_url[0] : null,

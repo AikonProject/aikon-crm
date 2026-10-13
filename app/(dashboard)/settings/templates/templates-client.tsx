@@ -25,8 +25,8 @@ function getTemplateVariables(template: MessageTemplate): string[] {
     return (
         components
             ?.find((c) => c.type === 'BODY')
-            ?.text?.match(/\{\{(\d+)\}\}/g)
-            ?.map((v) => v.replace(/\{\{|\}\}/g, '')) ?? []
+            ?.text?.match(/\{\{\s*[^{}]+?\s*\}\}/g)
+            ?.map((v) => v.replace(/[{}\s]/g, '')) ?? []
     );
 }
 
@@ -160,8 +160,10 @@ function NewTemplateDialog({
     }
 
     // Extract variables from {{N}} patterns
-    const variables = Array.from(new Set(content.match(/\{\{(\d+)\}\}/g)?.map((v) => v.replace(/\{\{|\}\}/g, '')) ?? []))
-        .sort((a, b) => Number(a) - Number(b));
+    // {{1}} {{2}} (numbered) or {{nombre}} (named) — named ones must be lowercase/underscores for Meta
+    const variables = Array.from(new Set(content.match(/\{\{\s*[^{}]+?\s*\}\}/g)?.map((v) => v.replace(/[{}\s]/g, '')) ?? []))
+        .sort((a, b) => (/^\d+$/.test(a) && /^\d+$/.test(b) ? Number(a) - Number(b) : 0));
+    const invalidVar = variables.find((v) => !/^\d+$/.test(v) && !/^[a-z][a-z0-9_]*$/.test(v));
     // Same rule the server applies: what Meta will receive as the name
     const metaName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
         .replace(/[\s-]+/g, '_').replace(/[^a-z0-9_]/g, '').replace(/_+/g, '_');
@@ -176,7 +178,7 @@ function NewTemplateDialog({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name, content, category, language,
-                    examples: variables.map((v) => examples[v] ?? ''),
+                    examples: Object.fromEntries(variables.map((v) => [v, examples[v] ?? ''])),
                     header: headerFormat ? { format: headerFormat, text: headerText, url: headerUrl } : null,
                     footer,
                     buttons,
@@ -308,7 +310,7 @@ function NewTemplateDialog({
                     <div>
                         <label className="block text-[13px] font-medium text-[#6B7280] mb-1.5">
                             Contenido <span className="text-red-500">*</span>
-                            <span className="ml-2 text-[11px] text-[#9CA3AF] font-normal">Usa {'{{1}}'} {'{{2}}'} para variables</span>
+                            <span className="ml-2 text-[11px] text-[#9CA3AF] font-normal">Variables: {'{{1}}'} {'{{2}}'} o con nombre, ej. {'{{nombre}}'}</span>
                         </label>
                         <textarea
                             value={content}
@@ -317,6 +319,11 @@ function NewTemplateDialog({
                             placeholder={`Hola {{1}}, te invitamos a nuestra promoción especial…`}
                             className="w-full px-3 py-2.5 text-[14px] bg-white border border-[#E8E8EC] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20 focus:border-[#818CF8] resize-none"
                         />
+                        {invalidVar && (
+                            <p className="text-[11px] text-[#DC2626] mt-1">
+                                La variable {`{{${invalidVar}}}`} no es válida para Meta: usa minúsculas, números y _ (sin tildes ni espacios), ej. {'{{nombre}}'}.
+                            </p>
+                        )}
                         {variables.length > 0 && (
                             <div className="mt-3 space-y-2">
                                 <p className="text-[12px] font-medium text-[#6B7280]">
@@ -329,7 +336,7 @@ function NewTemplateDialog({
                                         <input
                                             value={examples[v] ?? ''}
                                             onChange={(e) => setExamples((p) => ({ ...p, [v]: e.target.value }))}
-                                            placeholder={v === '1' ? 'Ej: María' : 'Ej: valor de muestra'}
+                                            placeholder={v === '1' || v === 'nombre' ? 'Ej: María' : 'Ej: valor de muestra'}
                                             className="flex-1 px-3 py-1.5 text-[13px] bg-white border border-[#E8E8EC] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20 focus:border-[#818CF8]"
                                         />
                                     </div>
