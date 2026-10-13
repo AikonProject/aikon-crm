@@ -10,6 +10,8 @@ import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { ContactFilterBuilder } from '@/components/contacts/contact-filter-builder';
+import { EMPTY_FILTER, cleanFilter, type ContactFilter } from '@/lib/contact-filter';
 import { FunnelStageBadge } from '@/components/contacts/funnel-stage-badge';
 import { getInitials, formatSmartDate } from '@/lib/utils/format';
 import type { ContactWithRelations } from '@/app/(dashboard)/contacts/page';
@@ -18,15 +20,7 @@ import type { FunnelStage } from '@/lib/types/database';
 const ITEMS_PER_PAGE = 12;
 
 type SortOption = 'created_desc' | 'last_contacted_desc' | 'score_desc' | 'nombre_asc';
-type SourceOption = 'all' | 'whatsapp' | 'web' | 'manual' | 'csv' | 'n8n';
 
-const SOURCE_LABELS: Record<string, string> = {
-    whatsapp: 'WhatsApp',
-    web: 'Web',
-    manual: 'Manual',
-    csv: 'CSV',
-    n8n: 'n8n',
-};
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
     { value: 'created_desc', label: 'Más reciente' },
@@ -49,50 +43,81 @@ export function ContactsTableClient({ contacts, stages, initialStageId = null }:
     );
     const [page, setPage] = useState(1);
 
-    // Advanced filter state
+    // Advanced filter (evaluated on the server, same builder as campaigns)
     const [showFilters, setShowFilters] = useState(false);
-    const [selectedSources, setSelectedSources] = useState<Set<string>>(new Set());
-    const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set());
-    const [minScore, setMinScore] = useState<string>('');
+    const [advFilter, setAdvFilter] = useState<ContactFilter>(EMPTY_FILTER);
     const [sortBy, setSortBy] = useState<SortOption>('created_desc');
+    const cleanedKey = useMemo(() => JSON.stringify(cleanFilter(advFilter)), [advFilter]);
+    const filterActive = cleanFilter(advFilter).conditions.length > 0;
+    const [filterResult, setFilterResult] = useState<{ key: string; ids: Set<string>; count: number } | null>(null);
+    const [filterTick, setFilterTick] = useState(0); // re-run the filter after a bulk action
+    useEffect(() => {
+        if (!filterActive) return;
+        let cancelled = false;
+        const t = setTimeout(() => {
+            fetch('/api/contacts/filter', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filter: JSON.parse(cleanedKey), ids_only: true }),
+            })
+                .then((r) => r.json())
+                .then((d) => {
+                    if (!cancelled && Array.isArray(d.ids)) setFilterResult({ key: cleanedKey, ids: new Set(d.ids), count: d.count ?? d.ids.length });
+                })
+                .catch(() => {});
+        }, 350);
+        return () => { cancelled = true; clearTimeout(t); };
+    }, [cleanedKey, filterActive, filterTick]);
+    const filterIds = filterActive && filterResult?.key === cleanedKey ? filterResult.ids : null;
+    const filterLoading = filterActive && filterResult?.key !== cleanedKey;
 
     // Selection and actions
     const router = useRouter();
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [editing, setEditing] = useState<ContactWithRelations | null>(null);
     const [confirmDelete, setConfirmDelete] = useState<string[] | null>(null);
+    const [fieldDialog, setFieldDialog] = useState(false);
     const [busy, setBusy] = useState(false);
     const [allTags, setAllTags] = useState<{ id: string; name: string; color: string | null }[]>([]);
+    const [team, setTeam] = useState<{ id: string; full_name: string | null; email: string | null }[]>([]);
+    const [fields, setFields] = useState<{ field_key: string; label: string; field_type: string; options: unknown }[]>([]);
     useEffect(() => {
         fetch('/api/settings/tags').then((r) => r.json()).then((d) => setAllTags(d.tags ?? [])).catch(() => {});
+        fetch('/api/settings/team').then((r) => r.json()).then((d) => setTeam(d.users ?? [])).catch(() => {});
+        fetch('/api/settings/custom-fields').then((r) => r.json()).then((d) => setFields(d.fields ?? [])).catch(() => {});
     }, []);
-    // Drop selected ids that no longer exist (after deleting or refreshing)
-    useEffect(() => {
-        setSelected((prev) => {
-            const ids = new Set(contacts.map((c) => c.id));
-            const next = new Set([...prev].filter((id) => ids.has(id)));
-            return next.size === prev.size ? prev : next;
-        });
-    }, [contacts]);
 
     function toggleSelected(id: string) {
         setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
     }
 
-    async function bulk(action: 'delete' | 'add_tag' | 'remove_tag', ids: string[], tagId?: string) {
+    type BulkAction = 'delete' | 'add_tag' | 'remove_tag' | 'set_stage' | 'assign' | 'set_ai' | 'set_field';
+    async function bulk(action: BulkAction, ids: string[], extra: Record<string, unknown> = {}) {
         setBusy(true);
         try {
             const res = await fetch('/api/contacts/bulk', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action, ids, tag_id: tagId }),
+                body: JSON.stringify({ action, ids, ...extra }),
             });
             const d = await res.json().catch(() => ({}));
             if (!res.ok) { toast.error(d.error || 'No se pudo completar la operación'); return false; }
-            if (action === 'delete') toast.success(`${d.deleted} contacto${d.deleted === 1 ? '' : 's'} eliminado${d.deleted === 1 ? '' : 's'}`);
-            else toast.success(action === 'add_tag' ? `Etiqueta agregada a ${d.updated}` : `Etiqueta quitada de ${d.updated}`);
+            const n = d.deleted ?? d.updated ?? 0;
+            const s = n === 1 ? '' : 's';
+            const msg: Record<BulkAction, string> = {
+                delete: `${n} contacto${s} eliminado${s}`,
+                add_tag: `Etiqueta agregada a ${n} contacto${s}`,
+                remove_tag: `Etiqueta quitada de ${n} contacto${s}`,
+                set_stage: `${n} contacto${s} movido${s} de etapa`,
+                assign: `${n} contacto${s} asignado${s}`,
+                set_ai: `IA ${extra.ai_active ? 'activada' : 'desactivada'} en ${n} contacto${s}`,
+                set_field: `Campo actualizado en ${n} contacto${s}`,
+            };
+            toast.success(msg[action]);
             setSelected(new Set());
             router.refresh();
+            // The filter may match different contacts now (keeps showing the old result until it arrives)
+            setFilterTick((t) => t + 1);
             return true;
         } catch {
             toast.error('Error de conexión');
@@ -102,31 +127,11 @@ export function ContactsTableClient({ contacts, stages, initialStageId = null }:
         }
     }
 
-    // Derive unique tags from all contacts
-    const availableTags = useMemo(() => {
-        const tagMap = new Map<string, { id: string; name: string; color: string | null }>();
-        for (const contact of contacts) {
-            for (const ct of contact.contact_tags) {
-                if (ct.tag) {
-                    tagMap.set(ct.tag.id, ct.tag);
-                }
-            }
-        }
-        return Array.from(tagMap.values()).sort((a, b) => a.name.localeCompare(b.name));
-    }, [contacts]);
-
-    // Count active advanced filters
-    const activeFilterCount = useMemo(() => {
-        let count = 0;
-        if (selectedSources.size > 0) count++;
-        if (selectedTagIds.size > 0) count++;
-        if (minScore !== '') count++;
-        if (sortBy !== 'created_desc') count++;
-        return count;
-    }, [selectedSources, selectedTagIds, minScore, sortBy]);
-
     const filtered = useMemo(() => {
         let result = contacts;
+
+        if (filterIds) result = result.filter((c) => filterIds.has(c.id));
+        else if (filterActive) result = [];
 
         if (selectedStageId !== 'all') {
             result = result.filter((c) => c.funnel_stage_id === selectedStageId);
@@ -142,31 +147,6 @@ export function ContactsTableClient({ contacts, stages, initialStageId = null }:
             );
         }
 
-        // Source filter
-        if (selectedSources.size > 0) {
-            result = result.filter((c) => selectedSources.has(c.source));
-        }
-
-        // Tag filter (contact must have ALL selected tags)
-        if (selectedTagIds.size > 0) {
-            result = result.filter((c) => {
-                const contactTagIds = new Set(
-                    c.contact_tags.map((ct) => ct.tag?.id).filter(Boolean)
-                );
-                for (const tagId of selectedTagIds) {
-                    if (!contactTagIds.has(tagId)) return false;
-                }
-                return true;
-            });
-        }
-
-        // Min score filter
-        const minScoreNum = minScore !== '' ? parseInt(minScore, 10) : null;
-        if (minScoreNum !== null && !isNaN(minScoreNum)) {
-            result = result.filter((c) => c.lead_score >= minScoreNum);
-        }
-
-        // Sort
         result = [...result].sort((a, b) => {
             switch (sortBy) {
                 case 'last_contacted_desc': {
@@ -185,7 +165,14 @@ export function ContactsTableClient({ contacts, stages, initialStageId = null }:
         });
 
         return result;
-    }, [contacts, search, selectedStageId, selectedSources, selectedTagIds, minScore, sortBy]);
+    }, [contacts, search, selectedStageId, sortBy, filterIds, filterActive]);
+
+    // Everybody the current view refers to: all filter matches (even beyond the loaded 1000) or the visible list
+    const allMatchingIds = useMemo(() => {
+        if (filterIds && selectedStageId === 'all' && !search.trim()) return [...filterIds];
+        return filtered.map((c) => c.id);
+    }, [filterIds, filtered, selectedStageId, search]);
+    const activeFilterCount = cleanFilter(advFilter).conditions.length;
 
     const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
     const safeCurrentPage = Math.min(page, totalPages);
@@ -208,35 +195,7 @@ export function ContactsTableClient({ contacts, stages, initialStageId = null }:
         setPage(Math.max(1, Math.min(p, totalPages)));
     }
 
-    function toggleSource(source: string) {
-        setSelectedSources((prev) => {
-            const next = new Set(prev);
-            if (next.has(source)) next.delete(source);
-            else next.add(source);
-            return next;
-        });
-        setPage(1);
-    }
 
-    function toggleTag(tagId: string) {
-        setSelectedTagIds((prev) => {
-            const next = new Set(prev);
-            if (next.has(tagId)) next.delete(tagId);
-            else next.add(tagId);
-            return next;
-        });
-        setPage(1);
-    }
-
-    function clearAllAdvancedFilters() {
-        setSelectedSources(new Set());
-        setSelectedTagIds(new Set());
-        setMinScore('');
-        setSortBy('created_desc');
-        setPage(1);
-    }
-
-    const allSources: SourceOption[] = ['whatsapp', 'web', 'manual', 'csv', 'n8n'];
 
     return (
         <>
@@ -276,120 +235,36 @@ export function ContactsTableClient({ contacts, stages, initialStageId = null }:
 
                 {/* Advanced filter panel */}
                 {showFilters && (
-                    <div className="bg-white rounded-xl border border-[#E8E8EC] p-4 mb-4 space-y-4">
-                        <div className="flex items-center justify-between">
+                    <div className="bg-white rounded-xl border border-[#E8E8EC] p-4 mb-4 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                             <span className="text-[13px] font-semibold text-[#1A1A2E]">Filtros avanzados</span>
-                            {activeFilterCount > 0 && (
-                                <button
-                                    onClick={clearAllAdvancedFilters}
-                                    className="flex items-center gap-1 text-[12px] text-[#818CF8] hover:text-[#6366F1] transition-colors"
-                                >
-                                    <X size={12} /> Limpiar filtros
-                                </button>
-                            )}
-                        </div>
-
-                        {/* Row 1: Fuente + Score mínimo + Ordenar por */}
-                        <div className="flex flex-wrap gap-6">
-                            {/* Fuente */}
-                            <div className="min-w-0">
-                                <p className="text-[12px] font-medium text-[#6B7280] mb-2">Fuente</p>
-                                <div className="flex flex-wrap gap-1.5">
-                                    {allSources.map((source) => (
-                                        <button
-                                            key={source}
-                                            onClick={() => toggleSource(source)}
-                                            className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-medium border transition-all ${
-                                                selectedSources.has(source)
-                                                    ? 'bg-[#818CF8] text-white border-[#818CF8]'
-                                                    : 'bg-white border-[#E8E8EC] text-[#6B7280] hover:bg-[#F9FAFB]'
-                                            }`}
-                                        >
-                                            {SOURCE_LABELS[source]}
-                                            {selectedSources.has(source) && (
-                                                <X size={10} className="ml-0.5" />
-                                            )}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Score mínimo */}
-                            <div className="w-36">
-                                <p className="text-[12px] font-medium text-[#6B7280] mb-2">Score mínimo</p>
-                                <div className="relative">
-                                    <input
-                                        type="number"
-                                        min={0}
-                                        max={100}
-                                        placeholder="0"
-                                        value={minScore}
-                                        onChange={(e) => {
-                                            setMinScore(e.target.value);
-                                            setPage(1);
-                                        }}
-                                        className="w-full px-3 py-1.5 text-[13px] bg-white border border-[#E8E8EC] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20 focus:border-[#818CF8] transition-all"
-                                    />
-                                    {minScore !== '' && (
-                                        <button
-                                            onClick={() => { setMinScore(''); setPage(1); }}
-                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#6B7280]"
-                                        >
-                                            <X size={12} />
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Ordenar por */}
-                            <div className="min-w-[160px]">
-                                <p className="text-[12px] font-medium text-[#6B7280] mb-2">Ordenar por</p>
-                                <select
-                                    value={sortBy}
-                                    onChange={(e) => { setSortBy(e.target.value as SortOption); setPage(1); }}
-                                    className="w-full px-3 py-1.5 text-[13px] bg-white border border-[#E8E8EC] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#818CF8]/20 focus:border-[#818CF8] transition-all appearance-none cursor-pointer"
-                                >
-                                    {SORT_OPTIONS.map((opt) => (
-                                        <option key={opt.value} value={opt.value}>
-                                            {opt.label}
-                                        </option>
-                                    ))}
-                                </select>
+                            <div className="flex items-center gap-3">
+                                <label className="text-[12px] text-[#6B7280] flex items-center gap-1.5">
+                                    Ordenar por
+                                    <select
+                                        value={sortBy}
+                                        onChange={(e) => { setSortBy(e.target.value as SortOption); setPage(1); }}
+                                        className="px-2 py-1 text-[12px] bg-white border border-[#E8E8EC] rounded-lg"
+                                    >
+                                        {SORT_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                    </select>
+                                </label>
+                                {activeFilterCount > 0 && (
+                                    <button
+                                        onClick={() => { setAdvFilter(EMPTY_FILTER); setPage(1); }}
+                                        className="flex items-center gap-1 text-[12px] text-[#818CF8] hover:text-[#6366F1]"
+                                    >
+                                        <X size={12} /> Limpiar filtros
+                                    </button>
+                                )}
                             </div>
                         </div>
-
-                        {/* Tags */}
-                        {availableTags.length > 0 && (
-                            <div>
-                                <p className="text-[12px] font-medium text-[#6B7280] mb-2">Tags</p>
-                                <div className="flex flex-wrap gap-1.5">
-                                    {availableTags.map((tag) => {
-                                        const hex = tag.color ?? '#9CA3AF';
-                                        const isSelected = selectedTagIds.has(tag.id);
-                                        return (
-                                            <button
-                                                key={tag.id}
-                                                onClick={() => toggleTag(tag.id)}
-                                                className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-medium border transition-all ${
-                                                    isSelected
-                                                        ? 'text-white border-transparent'
-                                                        : 'bg-white border-[#E8E8EC] text-[#6B7280] hover:bg-[#F9FAFB]'
-                                                }`}
-                                                style={isSelected ? { backgroundColor: hex, borderColor: hex } : undefined}
-                                            >
-                                                {!isSelected && (
-                                                    <span
-                                                        className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-                                                        style={{ backgroundColor: hex }}
-                                                    />
-                                                )}
-                                                {tag.name}
-                                                {isSelected && <X size={10} className="ml-0.5" />}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
+                        <ContactFilterBuilder value={advFilter} onChange={(f) => { setAdvFilter(f); setPage(1); setSelected(new Set()); }} phoneLabel="con WhatsApp" />
+                        {filterActive && filterIds && filterIds.size > filtered.length && selectedStageId === 'all' && !search.trim() && (
+                            <p className="text-[12px] text-[#6B7280]">
+                                {filterIds.size} contactos cumplen el filtro; la tabla muestra los {filtered.length} más recientes.
+                                Las acciones en lote con &quot;Seleccionar los {filterIds.size}&quot; se aplican a todos.
+                            </p>
                         )}
                     </div>
                 )}
@@ -440,30 +315,33 @@ export function ContactsTableClient({ contacts, stages, initialStageId = null }:
                     <span className="text-[13px] font-medium text-[#4F46E5]">
                         {selected.size} seleccionado{selected.size === 1 ? '' : 's'}
                     </span>
-                    {selected.size < filtered.length && (
-                        <button onClick={() => setSelected(new Set(filtered.map((c) => c.id)))} className="text-[12px] text-[#4F46E5] underline">
-                            Seleccionar los {filtered.length} de la lista
+                    {selected.size < allMatchingIds.length && (
+                        <button onClick={() => setSelected(new Set(allMatchingIds))} className="text-[12px] text-[#4F46E5] underline">
+                            Seleccionar los {allMatchingIds.length}{filterActive ? ' que cumplen el filtro' : ' de la lista'}
                         </button>
                     )}
                     <div className="ml-auto flex flex-wrap items-center gap-2">
-                        <select
-                            value=""
-                            disabled={busy || allTags.length === 0}
-                            onChange={(e) => { if (e.target.value) bulk('add_tag', [...selected], e.target.value); }}
-                            className="text-[12px] px-2 py-1.5 rounded-lg border border-[#E8E8EC] bg-white text-[#374151]"
+                        <BulkSelect label="+ Etiqueta" disabled={busy} options={allTags.map((t) => ({ value: t.id, label: t.name }))}
+                            onPick={(v) => bulk('add_tag', [...selected], { tag_id: v })} />
+                        <BulkSelect label="− Etiqueta" disabled={busy} options={allTags.map((t) => ({ value: t.id, label: t.name }))}
+                            onPick={(v) => bulk('remove_tag', [...selected], { tag_id: v })} />
+                        <BulkSelect label="Etapa" disabled={busy}
+                            options={[...stages.map((st) => ({ value: st.id, label: st.name })), { value: '__none', label: 'Sin etapa' }]}
+                            onPick={(v) => bulk('set_stage', [...selected], { stage_id: v === '__none' ? null : v })} />
+                        <BulkSelect label="Asignar" disabled={busy}
+                            options={[...team.map((u) => ({ value: u.id, label: u.full_name || u.email || 'Usuario' })), { value: '__none', label: 'Sin asignar' }]}
+                            onPick={(v) => bulk('assign', [...selected], { user_id: v === '__none' ? null : v })} />
+                        <BulkSelect label="IA" disabled={busy}
+                            options={[{ value: 'on', label: 'Activar IA' }, { value: 'off', label: 'Desactivar IA' }]}
+                            onPick={(v) => bulk('set_ai', [...selected], { ai_active: v === 'on' })} />
+                        <button
+                            onClick={() => setFieldDialog(true)}
+                            disabled={busy || fields.length === 0}
+                            title={fields.length === 0 ? 'Crea campos personalizados en Configuración' : undefined}
+                            className="text-[12px] px-2.5 py-1.5 rounded-lg border border-[#E8E8EC] bg-white text-[#374151] hover:bg-[#F9FAFB] disabled:opacity-50"
                         >
-                            <option value="">+ Agregar etiqueta…</option>
-                            {allTags.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                        </select>
-                        <select
-                            value=""
-                            disabled={busy || allTags.length === 0}
-                            onChange={(e) => { if (e.target.value) bulk('remove_tag', [...selected], e.target.value); }}
-                            className="text-[12px] px-2 py-1.5 rounded-lg border border-[#E8E8EC] bg-white text-[#374151]"
-                        >
-                            <option value="">− Quitar etiqueta…</option>
-                            {allTags.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                        </select>
+                            Campo personalizado
+                        </button>
                         <button
                             onClick={() => setConfirmDelete([...selected])}
                             disabled={busy}
@@ -474,6 +352,7 @@ export function ContactsTableClient({ contacts, stages, initialStageId = null }:
                         <button onClick={() => setSelected(new Set())} className="text-[12px] text-[#6B7280] hover:text-[#1A1A2E] px-2">
                             Cancelar
                         </button>
+                        {busy && <Loader2 size={14} className="animate-spin text-[#4F46E5]" />}
                     </div>
                 </div>
             )}
@@ -481,7 +360,13 @@ export function ContactsTableClient({ contacts, stages, initialStageId = null }:
             {/* Table Card */}
             <div className="bg-white rounded-2xl border border-[#E8E8EC] shadow-sm overflow-hidden">
                 {paginated.length === 0 ? (
-                    <EmptyState hasSearch={!!search || activeFilterCount > 0} />
+                    filterLoading ? (
+                        <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-[#9CA3AF]">
+                            <Loader2 size={15} className="animate-spin" /> Filtrando contactos…
+                        </div>
+                    ) : (
+                        <EmptyState hasSearch={!!search || activeFilterCount > 0} />
+                    )
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="w-full">
@@ -613,7 +498,89 @@ export function ContactsTableClient({ contacts, stages, initialStageId = null }:
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            <BulkFieldDialog
+                open={fieldDialog}
+                fields={fields}
+                count={selected.size}
+                busy={busy}
+                onClose={() => setFieldDialog(false)}
+                onApply={async (field_key, value) => {
+                    if (await bulk('set_field', [...selected], { field_key, value })) setFieldDialog(false);
+                }}
+            />
         </>
+    );
+}
+
+/** Compact select that runs an action when an option is picked. */
+function BulkSelect({ label, options, onPick, disabled }: {
+    label: string;
+    options: { value: string; label: string }[];
+    onPick: (value: string) => void;
+    disabled?: boolean;
+}) {
+    return (
+        <select
+            value=""
+            disabled={disabled || options.length === 0}
+            onChange={(e) => { if (e.target.value) onPick(e.target.value); }}
+            className="text-[12px] px-2 py-1.5 rounded-lg border border-[#E8E8EC] bg-white text-[#374151] max-w-[150px] disabled:opacity-50"
+        >
+            <option value="">{label}…</option>
+            {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+    );
+}
+
+/** Sets (or clears) one custom field on every selected contact. */
+function BulkFieldDialog({ open, fields, count, busy, onClose, onApply }: {
+    open: boolean;
+    fields: { field_key: string; label: string; field_type: string; options: unknown }[];
+    count: number;
+    busy: boolean;
+    onClose: () => void;
+    onApply: (fieldKey: string, value: string) => void;
+}) {
+    const [key, setKey] = useState('');
+    const [value, setValue] = useState('');
+    const fieldKey = key || fields[0]?.field_key || '';
+    const def = fields.find((f) => f.field_key === fieldKey);
+    const opts = Array.isArray(def?.options) ? (def!.options as string[]) : [];
+    return (
+        <Dialog open={open} onOpenChange={(o) => { if (!o && !busy) onClose(); }}>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>Campo personalizado · {count} contacto{count === 1 ? '' : 's'}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3">
+                    <select value={fieldKey} onChange={(e) => { setKey(e.target.value); setValue(''); }} className="w-full px-3 py-2 text-[13px] bg-white border border-[#E8E8EC] rounded-lg">
+                        {fields.map((f) => <option key={f.field_key} value={f.field_key}>{f.label}</option>)}
+                    </select>
+                    {opts.length > 0 ? (
+                        <select value={value} onChange={(e) => setValue(e.target.value)} className="w-full px-3 py-2 text-[13px] bg-white border border-[#E8E8EC] rounded-lg">
+                            <option value="">(vaciar el campo)</option>
+                            {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                    ) : (
+                        <input
+                            type={def?.field_type === 'date' ? 'date' : def?.field_type === 'number' ? 'number' : 'text'}
+                            value={value}
+                            onChange={(e) => setValue(e.target.value)}
+                            placeholder="Nuevo valor (vacío = borrar el valor)"
+                            className="w-full px-3 py-2 text-[13px] bg-white border border-[#E8E8EC] rounded-lg"
+                        />
+                    )}
+                    <p className="text-[11px] text-[#9CA3AF]">Reemplaza el valor actual de cada contacto seleccionado.</p>
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" disabled={busy} onClick={onClose} className="rounded-xl">Cancelar</Button>
+                    <Button disabled={busy || !fieldKey} onClick={() => onApply(fieldKey, value)} className="rounded-xl bg-[#818CF8] hover:bg-[#6366F1] text-white gap-2">
+                        {busy && <Loader2 size={14} className="animate-spin" />} {value.trim() ? 'Guardar valor' : 'Vaciar campo'}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 }
 
