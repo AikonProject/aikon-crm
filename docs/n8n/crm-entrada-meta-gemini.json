@@ -8,7 +8,7 @@
         ],
         "options": {}
       },
-      "id": "0a399742-8f96-465e-8af0-861d44291845",
+      "id": "55673123-d0f9-43ff-bf0a-1809aeb44749",
       "name": "WhatsApp (Meta)",
       "type": "n8n-nodes-base.whatsAppTrigger",
       "typeVersion": 1,
@@ -16,7 +16,7 @@
         0,
         304
       ],
-      "webhookId": "fdacc319-63db-4b55-8c20-547cf476fe4a",
+      "webhookId": "00d0818d-d051-490f-99cd-caa0b4c2fb45",
       "credentials": {
         "whatsAppTriggerApi": {
           "id": "PEGAR_ID",
@@ -28,7 +28,7 @@
       "parameters": {
         "jsCode": "// ================== CONFIGURACIÓN DEL CLIENTE ==================\nconst CONFIG = {\n  crm_url: 'https://crm.aikonintelligence.com',\n  tenant_id: 'PEGAR_TENANT_ID_DEL_CLIENTE',\n  webhook_secret: 'PEGAR_SECRETO_COMPARTIDO',\n  // Webhook del bot de ESTE cliente (puede estar en otro n8n)\n  bot_webhook_url: 'PEGAR_URL_DEL_WEBHOOK_DEL_BOT',\n};\n// ===============================================================\n\n// Convierte el formato de Meta al formato estándar del CRM.\nconst out = [];\nfor (const item of $input.all()) {\n  const v = item.json;\n  for (const s of v.statuses ?? []) {\n    out.push({ json: { kind: 'status', config: CONFIG, crm: {\n      action: 'message_status',\n      tenant_id: CONFIG.tenant_id,\n      wa_message_id: s.id,\n      status: s.status,\n      error_code: s.errors?.[0]?.code ? String(s.errors[0].code) : null,\n      error_message: s.errors?.[0]?.title ?? s.errors?.[0]?.message ?? null,\n    } } });\n  }\n  for (const m of v.messages ?? []) {\n    const profile = (v.contacts ?? []).find((c) => c.wa_id === m.from);\n    let content = null;\n    let contentType = m.type;\n    let buttonText = null;\n    let buttonPayload = null;\n    switch (m.type) {\n      case 'text': content = m.text?.body ?? null; break;\n      case 'image': case 'video': case 'document': case 'audio': case 'sticker':\n        content = m[m.type]?.caption ?? null;\n        break;\n      case 'location': content = m.location ? m.location.latitude + ',' + m.location.longitude : null; break;\n      case 'reaction': content = m.reaction?.emoji ?? null; break;\n      case 'button':\n        buttonText = m.button?.text ?? null; buttonPayload = m.button?.payload ?? null;\n        content = buttonText; contentType = 'text';\n        break;\n      case 'interactive':\n        buttonText = m.interactive?.button_reply?.title ?? m.interactive?.list_reply?.title ?? null;\n        buttonPayload = m.interactive?.button_reply?.id ?? m.interactive?.list_reply?.id ?? null;\n        content = buttonText; contentType = 'text';\n        break;\n      default: contentType = 'text'; content = '[' + m.type + ']';\n    }\n    const media = ['image', 'video', 'document', 'audio', 'sticker'].includes(m.type) ? m[m.type] ?? {} : {};\n    out.push({ json: { kind: 'message', config: CONFIG, media_id: media.id ?? null, crm: {\n      action: 'inbound_message',\n      tenant_id: CONFIG.tenant_id,\n      wa_id: m.from,\n      contact_name: profile?.profile?.name ?? null,\n      wa_message_id: m.id,\n      content,\n      content_type: contentType,\n      button_text: buttonText,\n      button_payload: buttonPayload,\n      media_mime_type: media.mime_type ?? null,\n      media_filename: m.document?.filename ?? null,\n    } } });\n  }\n}\nreturn out;"
       },
-      "id": "ee38af4b-fa9b-4fdf-a7e1-a71e81c6e612",
+      "id": "41eb6314-3b08-43ba-bf5e-8abb0b12fbe3",
       "name": "Configuración y normalizar",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -43,7 +43,7 @@
         "numberOutputs": 2,
         "output": "={{ $json.kind === 'status' ? 0 : 1 }}"
       },
-      "id": "d476fa78-418c-4a80-a2a0-06725bb7fdc8",
+      "id": "38a915a1-47a5-46d4-a305-66c8f9c016d0",
       "name": "¿Estado o mensaje?",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
@@ -72,7 +72,7 @@
           "timeout": 15000
         }
       },
-      "id": "91d01cef-5584-4424-8cb6-ae6acee59435",
+      "id": "48a3b6b1-462b-482e-8fa6-8189284fdb05",
       "name": "Actualizar estado en el CRM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
@@ -93,7 +93,7 @@
           },
           "conditions": [
             {
-              "id": "3f405448-d0a3-4882-bf61-2f7d3c7636c1",
+              "id": "85f33e7a-a61b-4df3-81c5-7f0ee2db17bc",
               "leftValue": "={{ ['image','audio','video','document','sticker'].includes($json.crm.content_type) && !!($json.media_id || $json.media_link) }}",
               "rightValue": true,
               "operator": {
@@ -107,7 +107,7 @@
         },
         "options": {}
       },
-      "id": "9c0218b1-75a0-4e7a-8f11-aa9e6c83292a",
+      "id": "eb2b9461-a54d-4591-852f-574b5a06d212",
       "name": "¿Tiene archivo?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -136,7 +136,7 @@
           "timeout": 15000
         }
       },
-      "id": "1ad44a40-b96c-4153-bcde-0d0d8e7976e5",
+      "id": "666600f9-2ace-4a3c-8850-25a7db460b8b",
       "name": "Pedir URL de subida",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
@@ -152,7 +152,7 @@
         "operation": "mediaUrlGet",
         "mediaGetId": "={{ $('¿Tiene archivo?').item.json.media_id }}"
       },
-      "id": "b7aa31f2-02e5-4a90-a074-f84e9d0184c9",
+      "id": "fdf3e738-388a-46cc-b5d6-a934f7bd0df4",
       "name": "Obtener URL del archivo",
       "type": "n8n-nodes-base.whatsApp",
       "typeVersion": 1.1,
@@ -183,7 +183,7 @@
           "timeout": 60000
         }
       },
-      "id": "0935db94-1363-4075-8301-c8938f1b39a1",
+      "id": "02d84705-d158-4eee-9cbb-4850adf335de",
       "name": "Descargar archivo",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
@@ -219,22 +219,22 @@
           "timeout": 60000
         }
       },
-      "id": "78907305-6af7-43ba-8d1a-c94efe58ef71",
+      "id": "ccb930f4-7710-4457-a93c-3309527a0f21",
       "name": "Subir archivo al CRM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1440,
-        640
+        1680,
+        400
       ],
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Junta el mensaje, la URL pública del archivo y el binario descargado (para Gemini).\nconst base = $('¿Tiene archivo?').item.json;\nlet up = {};\ntry { up = $('Pedir URL de subida').item.json || {}; } catch (e) {}\nlet bin = null;\ntry { bin = $('Descargar archivo').item.binary?.data ?? null; } catch (e) {}\n\nconst crm = { ...base.crm };\nconst uploaded = !!bin && !$json.error && !!up.public_url;\ncrm.media_url = uploaded ? up.public_url : null;\nif (bin) {\n  const mime = String(bin.mimeType || crm.media_mime_type || 'application/octet-stream').split(';')[0].trim();\n  bin = { ...bin, mimeType: mime };\n  crm.media_mime_type = mime;\n}\nconst out = { json: { ...base, crm, download_failed: !bin } };\nif (bin) out.binary = { data: bin };\nreturn out;"
+        "jsCode": "// Junta el mensaje con el archivo descargado (que llega por la entrada de este nodo).\nconst base = $('¿Tiene archivo?').item.json;\nlet up = {};\ntry { up = $('Pedir URL de subida').item.json || {}; } catch (e) {}\nlet bin = $input.item.binary?.data ?? null;\n\nconst crm = { ...base.crm };\ncrm.media_url = bin && up.public_url ? up.public_url : null;\nconst out = { json: { ...base, crm, download_failed: !bin } };\nif (bin) {\n  const mime = String(bin.mimeType || crm.media_mime_type || 'application/octet-stream').split(';')[0].trim();\n  crm.media_mime_type = mime;\n  out.binary = { ...$input.item.binary, data: { ...bin, mimeType: mime } };\n}\nreturn out;"
       },
-      "id": "0b607dec-ca0f-4cd0-8a95-3197f784e7cb",
+      "id": "692d69e9-656f-481e-a676-04b6495ee777",
       "name": "Preparar análisis",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -249,7 +249,7 @@
         "numberOutputs": 5,
         "output": "={{ $json.download_failed ? 4 : ({ audio: 0, image: 1, sticker: 1, document: 2, video: 3 })[$json.crm.content_type] ?? 4 }}"
       },
-      "id": "f5a37ee7-241b-48fb-b682-f734862f03a6",
+      "id": "0c4a3817-92c4-4a27-a880-bd78703f07a0",
       "name": "Tipo de archivo",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
@@ -274,7 +274,7 @@
           "maxOutputTokens": 2048
         }
       },
-      "id": "0b222c96-5ede-4c5b-81e1-978e4138802f",
+      "id": "dd5f52e6-4a68-46fd-8842-1970a61a2472",
       "name": "Transcribir audio",
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1.1,
@@ -306,7 +306,7 @@
           "maxOutputTokens": 1024
         }
       },
-      "id": "e773465e-4648-4aa0-bd46-7f49c664ebd1",
+      "id": "fc0e9c60-a710-4017-83a6-386685d14f77",
       "name": "Describir imagen",
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1.1,
@@ -338,7 +338,7 @@
           "maxOutputTokens": 4096
         }
       },
-      "id": "603894db-aac0-45a9-93d1-79d5211a285a",
+      "id": "de152b76-9c85-4b44-94b3-803ffd00e684",
       "name": "Leer documento",
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1.1,
@@ -370,7 +370,7 @@
           "maxOutputTokens": 1024
         }
       },
-      "id": "5c37c94c-851e-417d-87db-ab49d7352911",
+      "id": "e910f78d-b397-4163-ae4c-9114a06b18d2",
       "name": "Describir video",
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1.1,
@@ -391,7 +391,7 @@
         "mode": "runOnceForEachItem",
         "jsCode": "// Une el resultado de Gemini con el mensaje: primera línea = etiqueta, debajo la transcripción o descripción.\nlet base;\ntry { base = $('Preparar análisis').item.json; } catch (e) { base = $('Preparar análisis').first().json; }\nconst r = $json ?? {};\n\n// El nodo de Gemini puede devolver el texto en distintos campos: se toma el primero que exista\nfunction geminiText(o) {\n  if (!o || typeof o !== 'object') return '';\n  if (typeof o.text === 'string') return o.text;\n  if (Array.isArray(o.content?.parts)) return o.content.parts.map((p) => p.text || '').join('');\n  if (Array.isArray(o.candidates)) return geminiText(o.candidates[0]);\n  if (typeof o.content === 'string') return o.content;\n  if (typeof o.output === 'string') return o.output;\n  return '';\n}\nconst result = (r.error ? '' : geminiText(r).trim()) || '(no se pudo leer el contenido)';\nconst crm = { ...base.crm };\nconst caption = String(crm.content || '').trim();\nconst withCaption = (t) => (caption ? 'Texto del cliente: ' + caption + (t ? '\\n' + t : '') : t);\n\nlet label = null;\nlet body = caption;\nswitch (crm.content_type) {\n  case 'audio':\n    label = 'Nota de voz del cliente (transcripción automática)';\n    body = result;\n    break;\n  case 'image':\n    label = 'Imagen enviada por el cliente (descripción automática)';\n    body = withCaption(result);\n    break;\n  case 'sticker':\n    label = 'Sticker enviado por el cliente';\n    body = result;\n    break;\n  case 'document':\n    label = 'Documento enviado por el cliente: ' + (crm.media_filename || 'archivo');\n    body = withCaption(result.slice(0, 4000));\n    break;\n  case 'video':\n    label = 'Video enviado por el cliente (descripción automática)';\n    body = withCaption(result);\n    break;\n}\nif (base.download_failed) body = withCaption('(no se pudo descargar el archivo)');\nif (label && !body) body = '(no se pudo leer el contenido)';\ncrm.content = label ? '[' + label + ']\\n' + body : body;\n\nconst { download_failed, ...rest } = base;\nreturn { json: { ...rest, crm } };"
       },
-      "id": "85a817a3-2535-4331-824f-54633b8ec876",
+      "id": "7aa80a89-220c-414a-907b-bd5a0b022dd9",
       "name": "Armar contenido",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -420,7 +420,7 @@
           "timeout": 15000
         }
       },
-      "id": "ae99ca1c-621b-41d3-bed1-39b06cd33687",
+      "id": "abb06e9f-6a8d-401a-9ea8-423feb2d1e29",
       "name": "Guardar mensaje en el CRM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
@@ -441,7 +441,7 @@
           },
           "conditions": [
             {
-              "id": "f239cfd9-921f-4ff0-85f3-0f1374ac5e1f",
+              "id": "e71e10aa-1247-49fe-b1fb-390314bf45a7",
               "leftValue": "={{ $json.ai_enabled }}",
               "rightValue": true,
               "operator": {
@@ -455,7 +455,7 @@
         },
         "options": {}
       },
-      "id": "cd19e36f-3180-46c8-a7e1-343fc8106ff3",
+      "id": "c151839a-777a-4802-a275-190dd2182bf6",
       "name": "¿IA activa?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
@@ -484,7 +484,7 @@
           "timeout": 10000
         }
       },
-      "id": "5367b19e-dea6-4fb8-bb77-db417c151116",
+      "id": "277861db-c4be-40ee-92ec-a8dda0e3154a",
       "name": "Enviar al bot del cliente",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
@@ -501,7 +501,7 @@
         "width": 620,
         "color": 4
       },
-      "id": "96c74422-15e4-4874-ab43-ef75425191ac",
+      "id": "45eaf56c-1a68-4fb6-ac8e-e893fb7c6851",
       "name": "Nota",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -588,13 +588,7 @@
             "node": "Subir archivo al CRM",
             "type": "main",
             "index": 0
-          }
-        ]
-      ]
-    },
-    "Subir archivo al CRM": {
-      "main": [
-        [
+          },
           {
             "node": "Preparar análisis",
             "type": "main",
