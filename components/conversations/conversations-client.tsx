@@ -369,6 +369,15 @@ export default function ConversationsClient({ initialConversations }: Conversati
                 }
                 return changed ? fresh : prev;
             });
+            // Pending bubbles whose confirmed copy is already on the server
+            setPending((prev) => {
+                const next = prev.filter((p) => !fresh.some((m) => (
+                    m.direction === 'outbound' && m.sender_type === 'human' && !m.is_note
+                    && (m.content ?? '').trim() === (p.content ?? '').trim()
+                    && new Date(m.created_at).getTime() >= new Date(p.created_at).getTime() - 60_000
+                )));
+                return next.length === prev.length ? prev : next;
+            });
         } catch { /* next poll */ }
     }, []);
 
@@ -540,7 +549,11 @@ export default function ConversationsClient({ initialConversations }: Conversati
             pending_state: 'sending',
         };
         setPending((prev) => [...prev, msg]);
-        // n8n confirms through realtime; if it doesn't, tell the agent
+        // n8n confirms through realtime; check the server too in case the event is missed
+        for (const ms of [4_000, 10_000, 20_000, 35_000]) {
+            setTimeout(() => { if (activeConvIdRef.current === conv.id) reloadMessages(conv.id); }, ms);
+        }
+        // If it never shows up, tell the agent
         setTimeout(() => {
             setPending((prev) => prev.map((p) => (p.id === msg.id && p.pending_state === 'sending'
                 ? { ...p, pending_state: 'unconfirmed' }
