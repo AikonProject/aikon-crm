@@ -7,6 +7,8 @@ import { cleanFilter, type ContactFilter } from '@/lib/contact-filter';
  * POST /api/contacts/filter  { filter, sample? }
  * → { count, with_phone, sample: [...] } — live preview for the filter builder.
  *
+ * POST /api/contacts/filter  { filter, ids_only: true } → { ids, count }
+ *
  * POST /api/contacts/filter  { filter?, list: { search?, page?, page_size? } }
  * → { rows: [{ id, nombre, wa_id, email, in_filter }], total } — contact list to pick recipients by hand.
  *   Without search it lists the contacts that match the filter (or all, with no filter);
@@ -28,6 +30,8 @@ export async function POST(req: NextRequest) {
         const count = allIds.length;
 
         if (body.list) return listContacts(supabase, TENANT_ID, body.filter ? allIds : null, body.list);
+        // Every matching id (contacts table: show and act on the filtered contacts)
+        if (body.ids_only) return NextResponse.json({ ids: allIds, count });
 
         // Count those reachable on WhatsApp and return a small sample to show
         let withPhone = 0;

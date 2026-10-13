@@ -12,6 +12,7 @@ import { useBusinessType } from '@/components/providers/tenant-provider';
 import { toast } from 'sonner';
 import type { Tenant, User, Tag, CustomField, CannedResponse } from '@/lib/types/database';
 import Link from 'next/link';
+import { DeleteStageDialog } from '@/components/funnel/delete-stage-dialog';
 import { HardDrive } from 'lucide-react';
 import { MediaStorageSettings } from '@/components/settings/media-storage-settings';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -725,10 +726,9 @@ function FunnelStagesTab() {
         setShowForm(false);
     }
 
-    async function handleDelete(id: string) {
-        if (!confirm('¿Eliminar esta etapa?')) return;
-        await fetch(`/api/funnel-stages/${id}`, { method: 'DELETE' });
-        setStages((prev) => prev.filter((s) => s.id !== id));
+    const [deleting, setDeleting] = useState<string | null>(null);
+    function handleDelete(id: string) {
+        setDeleting(id);
     }
 
     if (loading) return <div className="p-8 text-center text-[#9CA3AF] text-[14px]">Cargando etapas…</div>;
@@ -801,6 +801,12 @@ function FunnelStagesTab() {
                     </ul>
                 )}
             </div>
+            <DeleteStageDialog
+                stage={stages.find((x) => x.id === deleting) ?? null}
+                stages={stages}
+                onClose={() => setDeleting(null)}
+                onDeleted={(id) => { setDeleting(null); setStages((prev) => prev.filter((x) => x.id !== id)); }}
+            />
         </div>
     );
 }

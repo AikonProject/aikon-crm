@@ -125,10 +125,13 @@ export function ContactFilterBuilder({
     value,
     onChange,
     onPreview,
+    phoneLabel = 'con WhatsApp (recibirán el mensaje)',
 }: {
     value: ContactFilter;
     onChange: (f: ContactFilter) => void;
     onPreview?: (p: Preview | null) => void;
+    /** Text next to the WhatsApp count (campaigns vs. contacts list). */
+    phoneLabel?: string;
 }) {
     const [tags, setTags] = useState<Option[]>([]);
     const [stages, setStages] = useState<Option[]>([]);
@@ -316,7 +319,7 @@ export function ContactFilterBuilder({
                             <div className="flex items-center gap-2">
                                 <MessageCircle size={16} className="text-emerald-600" />
                                 <span className="text-[20px] font-bold text-[#1A1A2E]">{loading && !preview ? '…' : preview?.with_phone ?? 0}</span>
-                                <span className="text-[13px] text-[#6B7280]">con WhatsApp (recibirán el mensaje)</span>
+                                <span className="text-[13px] text-[#6B7280]">{phoneLabel}</span>
                             </div>
                             {loading && <Loader2 size={14} className="animate-spin text-[#818CF8]" />}
                         </div>

@@ -29,6 +29,7 @@ import { toast } from 'sonner';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import type { FunnelStage } from '@/lib/types/database';
+import { DeleteStageDialog } from '@/components/funnel/delete-stage-dialog';
 
 const PRESET_COLORS = [
     '#818CF8', '#6366F1', '#60A5FA', '#34D399', '#FBBF24',
@@ -262,18 +263,9 @@ export function FunnelSettingsClient({
         }
     }
 
-    async function handleDelete(id: string) {
-        if (!confirm('¿Eliminar esta etapa? Los contactos quedarán sin etapa asignada.')) return;
-        setStages((prev) => prev.filter((s) => s.id !== id));
-        try {
-            const res = await fetch(`/api/funnel-stages/${id}`, { method: 'DELETE' });
-            if (!res.ok) throw new Error();
-            toast.success('Etapa eliminada');
-            startTransition(() => { router.refresh(); });
-        } catch {
-            toast.error('Error al eliminar la etapa');
-            startTransition(() => { router.refresh(); });
-        }
+    const [deleting, setDeleting] = useState<string | null>(null);
+    function handleDelete(id: string) {
+        setDeleting(id);
     }
 
     async function handleAdd() {
@@ -405,6 +397,17 @@ export function FunnelSettingsClient({
                     </ul>
                 </div>
             </div>
+
+            <DeleteStageDialog
+                stage={stages.find((x) => x.id === deleting) ?? null}
+                stages={stages}
+                onClose={() => setDeleting(null)}
+                onDeleted={(id) => {
+                    setDeleting(null);
+                    setStages((prev) => prev.filter((x) => x.id !== id));
+                    startTransition(() => { router.refresh(); });
+                }}
+            />
         </>
     );
 }
