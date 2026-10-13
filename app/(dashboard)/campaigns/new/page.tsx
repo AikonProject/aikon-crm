@@ -57,7 +57,7 @@ export default function NewCampaignPage() {
             ?.find((c) => c.type === 'BODY')?.text ?? '')
         : '';
     // Extract variables like {{1}}, {{2}} from body text
-    const templateVariables = templateBody.match(/\{\{(\d+)\}\}/g)?.map((v) => v.replace(/\{\{|\}\}/g, '')) ?? [];
+    const templateVariables = [...new Set(templateBody.match(/\{\{\s*\w+\s*\}\}/g)?.map((v) => v.replace(/[{}\s]/g, '')) ?? [])];
 
     function canProceed(): boolean {
         if (step === 1) return !!name.trim() && !!selectedTemplate;
@@ -73,7 +73,7 @@ export default function NewCampaignPage() {
         if (!selectedTemplate) return '';
         let content = templateBody;
         templateVariables.forEach((v) => {
-            content = content.replace(new RegExp(`\\{\\{${v}\\}\\}`, 'g'), variableValues[v] ?? `{{${v}}}`);
+            content = content.replace(new RegExp(`\\{\\{\\s*${v}\\s*\\}\\}`, 'g'), variableValues[v] ?? `{{${v}}}`);
         });
         return content;
     }
