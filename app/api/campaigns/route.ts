@@ -5,6 +5,7 @@ import { TenantError } from '@/lib/tenant';
 import { cleanFilter, type ContactFilter } from '@/lib/contact-filter';
 import type { Campaign } from '@/lib/types/database';
 import { dispatchCampaign } from '@/lib/campaigns';
+import { templateMediaHeader, MISSING_HEADER_FILE } from '@/lib/template-header';
 import { customKeysOf, resolveVariables, type VariableMap } from '@/lib/template-variables';
 
 export async function GET() {
@@ -137,11 +138,13 @@ export async function POST(req: NextRequest) {
         if (template_id) {
             const { data: template } = await supabase
                 .from('message_templates')
-                .select('name')
+                .select('name, components')
                 .eq('id', template_id)
                 .eq('tenant_id', TENANT_ID)
                 .maybeSingle();
             if (!template) return NextResponse.json({ error: 'Plantilla no encontrada' }, { status: 400 });
+            const media = templateMediaHeader(template.components);
+            if (media && !media.sendUrl) return NextResponse.json({ error: MISSING_HEADER_FILE(template.name) }, { status: 422 });
             templateName = template.name;
         }
 

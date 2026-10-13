@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Plus, RefreshCw, X, Loader2, FileText, Upload, Image as ImageIcon, Video, ExternalLink, Phone, Reply, Trash2, Zap, Save } from 'lucide-react';
+import { Plus, RefreshCw, X, Loader2, FileText, Upload, Image as ImageIcon, Video, ExternalLink, Phone, Reply, Trash2, Zap, Save, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
@@ -10,6 +10,7 @@ import { useSupabaseClient } from '@/lib/supabase/client';
 import { subscribeResilient } from '@/lib/supabase/realtime';
 import { useTenantId } from '@/components/providers/tenant-provider';
 import type { MessageTemplate, ButtonAction } from '@/lib/types/database';
+import { templateMediaHeader } from '@/lib/template-header';
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
     APPROVED: { label: 'Aprobada', className: 'bg-[#ECFDF5] text-[#059669]' },
@@ -93,6 +94,80 @@ function HeaderPreview({ header }: { header: HeaderInfo }) {
         <a href={header.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 mb-2 rounded-lg bg-white border border-[#E8E8EC] text-[12px] text-[#4F46E5] hover:underline">
             <FileText size={14} /> Documento PDF
         </a>
+    );
+}
+
+const HEADER_FILE_RULES: Record<string, { accept: string; hint: string }> = {
+    IMAGE: { accept: 'image/jpeg,image/png', hint: 'JPG o PNG, máx. 5 MB' },
+    VIDEO: { accept: 'video/mp4,video/3gpp', hint: 'MP4, máx. 16 MB' },
+    DOCUMENT: { accept: 'application/pdf', hint: 'PDF, máx. 16 MB' },
+};
+
+/**
+ * File sent as the media header. Templates synced from Meta only carry Meta's
+ * internal link, which expires: they need a file uploaded here before sending.
+ */
+function HeaderFileEditor({ template, onSaved }: { template: MessageTemplate; onSaved: (t: MessageTemplate) => void }) {
+    const supabase = useSupabaseClient();
+    const [uploading, setUploading] = useState(false);
+    const media = templateMediaHeader(template.components);
+    if (!media) return null;
+    const rule = HEADER_FILE_RULES[media.format];
+    const kind = media.format === 'IMAGE' ? 'la imagen' : media.format === 'VIDEO' ? 'el video' : 'el PDF';
+
+    async function upload(file: File) {
+        setUploading(true);
+        try {
+            const res = await fetch('/api/templates/media', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ format: media!.format, filename: file.name, type: file.type, size: file.size }),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(d.error || 'No se pudo subir el archivo');
+            const { error: upErr } = await supabase.storage.from('chat-media')
+                .uploadToSignedUrl(d.path, d.token, file, { contentType: file.type });
+            if (upErr) throw new Error('No se pudo subir el archivo');
+            const save = await fetch(`/api/templates/${template.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ header_url: d.url }),
+            });
+            const saved = await save.json().catch(() => ({}));
+            if (!save.ok) throw new Error(saved.error || 'No se pudo guardar el archivo');
+            onSaved(saved.template);
+            toast.success('Archivo listo: la plantilla ya se puede enviar');
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'No se pudo subir el archivo');
+        } finally {
+            setUploading(false);
+        }
+    }
+
+    return (
+        <div className={`rounded-xl border p-3 ${media.sendUrl ? 'border-[#D1FAE5] bg-[#F0FDF4]' : 'border-[#FDE68A] bg-[#FFFBEB]'}`}>
+            <p className="text-[11px] font-semibold uppercase tracking-wider mb-1 flex items-center gap-1.5 text-[#6B7280]">
+                {media.sendUrl ? <CheckCircle2 size={12} className="text-[#059669]" /> : <AlertTriangle size={12} className="text-[#D97706]" />}
+                Archivo para enviar
+            </p>
+            <p className="text-[12px] text-[#374151] leading-snug">
+                {media.sendUrl
+                    ? `Cada envío lleva ${kind} que está arriba. Puedes cambiarlo cuando quieras; no hace falta volver a aprobar la plantilla.`
+                    : `Esta plantilla viene de Meta y solo trae su enlace interno, que vence: el envío falla. Sube ${kind} que quieres mandar.`}
+            </p>
+            <label className={`mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium cursor-pointer ${media.sendUrl ? 'bg-white border border-[#E8E8EC] text-[#374151] hover:bg-[#F9FAFB]' : 'bg-[#4F46E5] text-white hover:bg-[#4338CA]'}`}>
+                {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                {uploading ? 'Subiendo…' : media.sendUrl ? 'Cambiar archivo' : `Subir ${kind}`}
+                <input
+                    type="file"
+                    accept={rule.accept}
+                    className="hidden"
+                    disabled={uploading}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ''; }}
+                />
+            </label>
+            <span className="ml-2 text-[11px] text-[#9CA3AF]">{rule.hint}</span>
+        </div>
     );
 }
 
@@ -589,6 +664,11 @@ export default function TemplatesPage() {
                                                         {getTemplateHeader(t)?.format === 'VIDEO' && <Video size={13} className="text-[#818CF8]" />}
                                                         {getTemplateHeader(t)?.format === 'DOCUMENT' && <FileText size={13} className="text-[#818CF8]" />}
                                                         {t.name}
+                                                        {(() => { const m = templateMediaHeader(t.components); return m && !m.sendUrl; })() && (
+                                                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-[#FFFBEB] text-[#D97706] border border-[#FDE68A]" title="Sube el archivo para poder enviarla">
+                                                                Falta archivo
+                                                            </span>
+                                                        )}
                                                     </span>
                                                 </td>
                                                 <td className="px-5 py-3.5 text-[13px] text-[#6B7280] uppercase">{t.language}</td>
@@ -668,6 +748,14 @@ export default function TemplatesPage() {
                                         <ButtonsPreview buttons={getTemplateButtons(selected)} />
                                     </div>
                                 </div>
+                                <HeaderFileEditor
+                                    key={`hdr-${selected.id}`}
+                                    template={selected}
+                                    onSaved={(t) => {
+                                        setTemplates((prev) => prev.map((x) => (x.id === t.id ? t : x)));
+                                        setSelected(t);
+                                    }}
+                                />
                                 {getTemplateButtons(selected).some((b) => b.type === 'QUICK_REPLY') && (
                                     <ButtonActionsEditor
                                         key={selected.id}

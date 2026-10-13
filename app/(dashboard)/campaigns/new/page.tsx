@@ -10,6 +10,7 @@ import type { MessageTemplate } from '@/lib/types/database';
 import { EMPTY_FILTER, cleanFilter } from '@/lib/contact-filter';
 import { RecipientPicker, estimateRecipients, type RecipientSelection } from '@/components/campaigns/recipient-picker';
 import { CONTACT_FIELD_OPTIONS, type VariableMapping } from '@/lib/template-variables';
+import { templateMediaHeader } from '@/lib/template-header';
 
 type Mapping = { type: 'text'; value: string } | { type: 'field'; field: string; fallback: string };
 
@@ -94,7 +95,7 @@ export default function NewCampaignPage() {
     }
 
     function canProceed(): boolean {
-        if (step === 1) return !!name.trim() && !!selectedTemplate;
+        if (step === 1) return !!name.trim() && !!selectedTemplate && !(templateMediaHeader(selectedTemplate.components) && !templateMediaHeader(selectedTemplate.components)?.sendUrl);
         if (step === 2) {
             return templateVariables.every((v) => {
                 const m = mappings[v];
@@ -242,6 +243,9 @@ export default function NewCampaignPage() {
                                             <div className="flex items-start justify-between gap-3">
                                                 <div>
                                                     <p className="text-[14px] font-medium text-[#1A1A2E]">{t.name}</p>
+                                                    {(() => { const m = templateMediaHeader(t.components); return m && !m.sendUrl; })() && (
+                                                        <p className="text-[11px] text-[#D97706] mt-0.5">Falta el archivo del encabezado: súbelo en Plantillas antes de enviar.</p>
+                                                    )}
                                                     <p className="text-[12px] text-[#9CA3AF] mt-0.5 line-clamp-2">
                                                         {(t.components as Array<{ type: string; text?: string }> | null)?.find(c => c.type === 'BODY')?.text ?? ''}
                                                     </p>
