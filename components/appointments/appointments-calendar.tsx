@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSupabaseClient } from '@/lib/supabase/client';
+import { subscribeResilient } from '@/lib/supabase/realtime';
 import { useTenantId } from '@/components/providers/tenant-provider';
 import {
     APPOINTMENT_STATUSES, APPOINTMENT_STATUS_LABELS, APPOINTMENT_STATUS_STYLES, appointmentColor,
@@ -238,8 +239,7 @@ export function AppointmentsCalendar() {
 
     // Realtime: other agents (or the bot) create/move appointments
     useEffect(() => {
-        const channel = supabase
-            .channel('appointments-calendar')
+        return subscribeResilient(supabase, 'appointments-calendar', (ch) => ch
             .on('postgres_changes', {
                 event: '*', schema: 'public', table: 'appointments', filter: `tenant_id=eq.${tenantId}`,
             }, (payload) => {
@@ -249,9 +249,7 @@ export function AppointmentsCalendar() {
                 }
                 if (refreshTimer.current) clearTimeout(refreshTimer.current);
                 refreshTimer.current = setTimeout(() => load(true), 300);
-            })
-            .subscribe();
-        return () => { supabase.removeChannel(channel); };
+            }));
     }, [supabase, tenantId, load]);
 
     // Current-time line

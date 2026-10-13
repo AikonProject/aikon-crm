@@ -27,6 +27,9 @@ import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
 import { useSidebar } from './sidebar-provider';
 import { useSupabaseClient } from '@/lib/supabase/client';
+import { subscribeResilient, pollWhileVisible } from '@/lib/supabase/realtime';
+import { NEW_MESSAGE_EVENT } from '@/components/notifications/message-notifier';
+import { NotificationToggle } from '@/components/notifications/notification-toggle';
 import { useTenantId } from '@/components/providers/tenant-provider';
 import { moduleForPath } from '@/lib/plan-modules';
 import type { PlanModule } from '@/lib/types/database';
@@ -85,17 +88,18 @@ export function Sidebar({
         }
         fetchUnread();
 
-        const channel = supabase
-            .channel('sidebar-unread')
+        const stop = subscribeResilient(supabase, 'sidebar-unread', (ch) => ch
             .on('postgres_changes', {
                 event: '*',
                 schema: 'public',
                 table: 'conversations',
                 filter: `tenant_id=eq.${tenantId}`,
-            }, fetchUnread)
-            .subscribe();
-
-        return () => { supabase.removeChannel(channel); };
+            }, fetchUnread),
+        fetchUnread);
+        const stopPoll = pollWhileVisible(fetchUnread, 30_000);
+        // The notifier reports new inbound messages too (covers a dropped conversations event)
+        window.addEventListener(NEW_MESSAGE_EVENT, fetchUnread);
+        return () => { stop(); stopPoll(); window.removeEventListener(NEW_MESSAGE_EVENT, fetchUnread); };
     }, [supabase, tenantId]);
 
     const isActive = (href: string) => {
@@ -167,6 +171,11 @@ export function Sidebar({
                         );
                     })}
                 </nav>
+            </div>
+
+            {/* New-message alerts */}
+            <div className="px-3 pb-2">
+                <NotificationToggle collapsed={collapsed} />
             </div>
 
             {/* Plan badge */}

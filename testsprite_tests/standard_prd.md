@@ -88,7 +88,7 @@ y `/settings/integrations` (credenciales de WhatsApp, Meta y webhooks de n8n).
 Solo super admin: lista de tenants, cambiar el plan, activar o desactivar tenants y gestionar usuarios.
 
 ## Integraciones (backend)
-- `POST /api/webhooks/whatsapp`: Meta envía los mensajes entrantes y los estados. `GET` hace la verificación `hub.challenge`.
-- `POST /api/webhooks/n8n`: n8n confirma con las acciones `message_sent`, `message_status`, `ai_response` y `buffer_processed`.
+- (Meta y YCloud hablan solo con n8n; el CRM no recibe webhooks del proveedor.)
+- `POST /api/webhooks/n8n`: n8n confirma con las acciones `message_sent`, `message_status`, `ai_response`, `inbound_message`, `claim_pending` y `media_upload_url`.
   Header `x-webhook-secret`.
 - `POST /api/webhooks/clerk`: sincroniza organizaciones y usuarios (firma svix).

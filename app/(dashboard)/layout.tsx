@@ -8,6 +8,7 @@ import { getTenantConfig, hasModule } from '@/lib/tenant-plan';
 import { ensureTenantMembership, getServerTenantId, isSuperAdmin } from '@/lib/tenant';
 import { moduleForPath } from '@/lib/plan-modules';
 import { ModuleGuard } from '@/components/layout/module-guard';
+import { MessageNotifier } from '@/components/notifications/message-notifier';
 
 export default async function DashboardLayout({
     children,
@@ -32,6 +33,7 @@ export default async function DashboardLayout({
     return (
         <div className="min-h-screen bg-[#F8F8FA]">
             <TenantProvider tenantId={tenantId} modules={config.modules} businessType={config.businessType}>
+                <MessageNotifier />
                 <SidebarProvider>
                     <Sidebar
                         planName={config.planName}

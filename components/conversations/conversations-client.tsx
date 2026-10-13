@@ -31,6 +31,10 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { getInitials } from '@/lib/utils/format';
 import { useSupabaseClient } from '@/lib/supabase/client';
+import { subscribeResilient, pollWhileVisible } from '@/lib/supabase/realtime';
+import {
+    setActiveConversation, isViewingConversation, OPEN_CONVERSATION_EVENT, type OpenConversationDetail,
+} from '@/lib/active-conversation';
 import { useSidebar } from '@/components/layout/sidebar-provider';
 import { useHasModule, useTenantId } from '@/components/providers/tenant-provider';
 import { ConversationListItem } from '@/components/conversations/conversation-list-item';
@@ -200,7 +204,11 @@ export default function ConversationsClient({ initialConversations }: Conversati
     const activeContact = activeConversation?.contact ?? null;
     const contactName = activeContact?.nombre ?? '';
 
-    useEffect(() => { activeConvIdRef.current = activeConvId; }, [activeConvId]);
+    useEffect(() => {
+        activeConvIdRef.current = activeConvId;
+        setActiveConversation(activeConvId);
+    }, [activeConvId]);
+    useEffect(() => () => setActiveConversation(null), []);
 
     // Deep link: /conversations?contact=<id> opens that contact's chat
     const deepLinkDone = useRef(false);
@@ -214,6 +222,26 @@ export default function ConversationsClient({ initialConversations }: Conversati
             setActiveConvId(conv.id);
         }
     }, [conversations]);
+
+    // "Ver" on a new-message notification while already on this page
+    const conversationsRef = useRef(conversations);
+    useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
+    useEffect(() => {
+        function onOpen(e: Event) {
+            const { conversationId, contactId } = (e as CustomEvent<OpenConversationDetail>).detail ?? {};
+            const conv = conversationsRef.current.find((c) => c.id === conversationId || (contactId && c.contact_id === contactId));
+            if (conv) setActiveConvId(conv.id);
+            else if (conversationId) {
+                // Not in the current list (filtered out or brand new): reload, then open
+                statusFilterRef.current = 'all';
+                setStatusFilter('all');
+                setActiveConvId(conversationId);
+                fetchConversationsRef.current?.(true);
+            }
+        }
+        window.addEventListener(OPEN_CONVERSATION_EVENT, onOpen);
+        return () => window.removeEventListener(OPEN_CONVERSATION_EVENT, onOpen);
+    }, []);
 
     // Remembered per browser: show/hide notes and actions in the chat
     useEffect(() => {
@@ -230,6 +258,7 @@ export default function ConversationsClient({ initialConversations }: Conversati
 
     // ── Conversations ──────────────────────────────────────────────────────
     // silent: realtime refreshes keep the list on screen (no spinner, no flicker)
+    const fetchConversationsRef = useRef<((silent?: boolean) => Promise<void>) | null>(null);
     const fetchConversations = useCallback(async (silent = false) => {
         if (!silent) setLoadingConvs(true);
         try {
@@ -248,6 +277,8 @@ export default function ConversationsClient({ initialConversations }: Conversati
             if (!silent) setLoadingConvs(false);
         }
     }, []);
+
+    useEffect(() => { fetchConversationsRef.current = fetchConversations; }, [fetchConversations]);
 
     const scheduleRefresh = useCallback(() => {
         if (refreshTimer.current) clearTimeout(refreshTimer.current);
@@ -273,6 +304,8 @@ export default function ConversationsClient({ initialConversations }: Conversati
 
     // Mark the open chat as seen (debounced; used when new messages arrive while it's open)
     const markRead = useCallback((convId: string) => {
+        // A chat open in a background tab isn't "seen": keep it unread so the badge and notification show
+        if (document.visibilityState !== 'visible') return;
         if (readTimer.current) clearTimeout(readTimer.current);
         readTimer.current = setTimeout(() => {
             fetch(`/api/conversations/${convId}/read`, { method: 'POST' }).catch(() => { /* retried on next message */ });
@@ -319,11 +352,31 @@ export default function ConversationsClient({ initialConversations }: Conversati
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, pending, activity, showNotesAndActions]);
 
+    // Merge the server copy of the open chat's messages (after a reconnect or on the safety poll)
+    const reloadMessages = useCallback(async (convId: string) => {
+        // GET also marks the chat as read: only do it while the agent can see it
+        if (document.visibilityState !== 'visible') return;
+        try {
+            const res = await fetch(`/api/conversations/${convId}/messages`);
+            if (!res.ok || activeConvIdRef.current !== convId) return;
+            const fresh = asArray<Message>(await res.json());
+            setMessages((prev) => {
+                const byId = new Map(prev.map((m) => [m.id, m]));
+                let changed = fresh.length !== prev.length;
+                for (const m of fresh) {
+                    const old = byId.get(m.id);
+                    if (!old || old.status !== m.status || old.content !== m.content || old.media_url !== m.media_url) changed = true;
+                }
+                return changed ? fresh : prev;
+            });
+        } catch { /* next poll */ }
+    }, []);
+
     // ── Realtime: messages of the open conversation (new + status updates) ─
     useEffect(() => {
         if (!activeConvId) return;
-        const channel = supabase
-            .channel(`messages:${activeConvId}`)
+        let first = true;
+        const stop = subscribeResilient(supabase, `messages:${activeConvId}`, (ch) => ch
             .on('postgres_changes', {
                 event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${activeConvId}`,
             }, (payload) => {
@@ -348,53 +401,68 @@ export default function ConversationsClient({ initialConversations }: Conversati
             }, (payload) => {
                 const msg = payload.new as Message;
                 setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m)));
-            })
-            .subscribe();
-        return () => { supabase.removeChannel(channel); };
-    }, [activeConvId, supabase, markRead]);
+            }),
+        () => {
+            // The first SUBSCRIBED follows the initial load; later ones are reconnects
+            if (first) { first = false; return; }
+            reloadMessages(activeConvId);
+        });
+        const stopPoll = pollWhileVisible(() => reloadMessages(activeConvId), 30_000);
+        return () => { stop(); stopPoll(); };
+    }, [activeConvId, supabase, markRead, reloadMessages]);
+
+    // Coming back to the tab with the chat open marks it as seen
+    useEffect(() => {
+        function onVisible() {
+            const id = activeConvIdRef.current;
+            if (id && document.visibilityState === 'visible') markRead(id);
+        }
+        document.addEventListener('visibilitychange', onVisible);
+        return () => document.removeEventListener('visibilitychange', onVisible);
+    }, [markRead]);
 
     // ── Realtime: actions on the open conversation's contact ──────────────
     const activeContactId = activeConversation?.contact_id ?? null;
     useEffect(() => {
         if (!activeContactId) return;
-        const channel = supabase
-            .channel(`activity:${activeContactId}`)
+        return subscribeResilient(supabase, `activity:${activeContactId}`, (ch) => ch
             .on('postgres_changes', {
                 event: 'INSERT', schema: 'public', table: 'activity_log', filter: `contact_id=eq.${activeContactId}`,
             }, (payload) => {
                 const item = payload.new as ActivityItem;
                 setActivity((prev) => (prev.some((a) => a.id === item.id) ? prev : [...prev, item]));
-            })
-            .subscribe();
-        return () => { supabase.removeChannel(channel); };
+            }));
     }, [activeContactId, supabase]);
 
     // ── Realtime: conversation list (new chats, previews, unread) ──────────
     useEffect(() => {
-        const channel = supabase
-            .channel('conversations-list')
+        const stop = subscribeResilient(supabase, 'conversations-list', (ch) => ch
             .on('postgres_changes', {
                 event: '*', schema: 'public', table: 'conversations', filter: `tenant_id=eq.${tenantId}`,
             }, (payload) => {
                 const row = payload.new as Partial<Conversation> | undefined;
                 // Patch the row in place right away, then reconcile with the server
                 if (row?.id) {
+                    const viewing = isViewingConversation(row.id);
                     setConversations((prev) => prev.map((c) => (
                         c.id === row.id
                             ? {
                                 ...c,
                                 ...row,
                                 contact: c.contact,
-                                unread_count: row.id === activeConvIdRef.current ? 0 : (row.unread_count ?? c.unread_count),
+                                unread_count: viewing ? 0 : (row.unread_count ?? c.unread_count),
                             }
                             : c
                     )));
-                    if (row.id === activeConvIdRef.current && (row.unread_count ?? 0) > 0) markRead(row.id);
+                    if (viewing && (row.unread_count ?? 0) > 0) markRead(row.id);
                 }
                 scheduleRefresh();
-            })
-            .subscribe();
-        return () => { supabase.removeChannel(channel); };
+            }),
+        // (Re)connected: catch up on anything that happened while disconnected
+        scheduleRefresh);
+        // Safety net in case the socket silently stops delivering
+        const stopPoll = pollWhileVisible(scheduleRefresh, 30_000);
+        return () => { stop(); stopPoll(); };
     }, [supabase, tenantId, scheduleRefresh, markRead]);
 
     // ── Templates and quick replies ─────────────────────────────────────────

@@ -33,6 +33,7 @@ export type Tenant = {
     is_active: boolean;
     max_agents: number | null;
     max_contacts: number | null;
+    media_retention_days?: number;   // 0 = keep chat files forever
     created_at: string;
     updated_at: string;
 };
@@ -294,6 +295,8 @@ export type Message = {
     sent_by_name: string | null;
     error_code: string | null;
     error_message: string | null;
+    ai_handled_at?: string | null;     // claimed by the bot (message buffer)
+    media_expired_at?: string | null;  // file removed by the retention cleanup
     created_at: string;
 };
 
@@ -306,29 +309,6 @@ export type CannedResponse = {
     created_by: string | null; // User.id
     created_at: string;
     updated_at: string;
-};
-
-// ============================================================
-// Message buffer (incoming messages queued for AI processing)
-// ============================================================
-
-export type MessageBufferStatus = 'pending' | 'processing' | 'processed' | 'failed';
-
-export type MessageBuffer = {
-    id: string;
-    tenant_id: string;
-    conversation_id: string;
-    contact_id: string;
-    wa_message_id: string | null;
-    content: string | null;
-    content_type: string;
-    media_url: string | null;
-    media_mime_type: string | null;
-    media_filename: string | null;
-    raw_payload: Record<string, unknown> | null;
-    status: MessageBufferStatus;
-    processed_at: string | null;
-    created_at: string;
 };
 
 // ============================================================
@@ -775,12 +755,6 @@ export type Database = {
                 Row: Message;
                 Insert: Partial<WithoutJoins<Message>> & Pick<Message, 'tenant_id' | 'conversation_id' | 'contact_id' | 'direction' | 'content_type'>;
                 Update: Partial<WithoutJoins<Message>>;
-                Relationships: never[];
-            };
-            message_buffer: {
-                Row: MessageBuffer;
-                Insert: Partial<WithoutJoins<MessageBuffer>> & Pick<MessageBuffer, 'tenant_id' | 'conversation_id' | 'contact_id'>;
-                Update: Partial<WithoutJoins<MessageBuffer>>;
                 Relationships: never[];
             };
             canned_responses: {

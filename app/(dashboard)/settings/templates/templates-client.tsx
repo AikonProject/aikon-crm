@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { PageHeader } from '@/components/layout/page-header';
 import { useSupabaseClient } from '@/lib/supabase/client';
+import { subscribeResilient } from '@/lib/supabase/realtime';
 import { useTenantId } from '@/components/providers/tenant-provider';
 import type { MessageTemplate, ButtonAction } from '@/lib/types/database';
 
@@ -458,8 +459,7 @@ export default function TemplatesPage() {
     const supabase = useSupabaseClient();
     const tenantId = useTenantId();
     useEffect(() => {
-        const channel = supabase
-            .channel('message-templates')
+        return subscribeResilient(supabase, 'message-templates', (ch) => ch
             .on('postgres_changes', {
                 event: '*', schema: 'public', table: 'message_templates', filter: `tenant_id=eq.${tenantId}`,
             }, (payload) => {
@@ -478,9 +478,7 @@ export default function TemplatesPage() {
                     return before ? prev.map((t) => (t.id === row.id ? row : t)) : [row, ...prev];
                 });
                 setSelected((s) => (s?.id === row.id ? row : s));
-            })
-            .subscribe();
-        return () => { supabase.removeChannel(channel); };
+            }));
     }, [supabase, tenantId]);
 
     useEffect(() => {

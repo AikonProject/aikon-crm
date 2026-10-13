@@ -3,6 +3,7 @@
 import { APP_TIME_ZONE } from '@/lib/utils/format';
 import { FileText, Music, Video, Image as ImageIcon, Clock, Check, CheckCheck, X, Bot, User } from 'lucide-react';
 import type { Message, DeliveryStatus, SenderType } from '@/lib/types/database';
+import { splitLabeledContent } from '@/lib/message-content';
 
 interface MessageBubbleProps {
     message: Message & { is_note?: boolean };
@@ -52,7 +53,7 @@ function outboundBg(senderType: SenderType): string {
     return senderType === 'bot' ? 'bg-[#7C3AED]' : 'bg-[#4F46E5]';
 }
 
-function MessageContent({ message }: { message: Message & { is_note?: boolean } }) {
+function MediaOrText({ message }: { message: Message & { is_note?: boolean } }) {
     const isOutbound = message.direction === 'outbound';
     const iconColor = isOutbound ? 'text-white/80' : 'text-[#9CA3AF]';
 
@@ -160,6 +161,44 @@ function MessageContent({ message }: { message: Message & { is_note?: boolean } 
         default:
             return <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>;
     }
+}
+
+const MEDIA_TYPES = new Set(['image', 'video', 'audio', 'document']);
+
+/**
+ * Media + its text: the customer's caption, or the transcript / description n8n
+ * generated for the AI (first line "[label]", shown small).
+ */
+function MessageContent({ message }: { message: Message & { is_note?: boolean } }) {
+    if (!MEDIA_TYPES.has(message.content_type)) return <MediaOrText message={message} />;
+    const { label, body } = splitLabeledContent(message.content);
+    const isOutbound = message.direction === 'outbound';
+    return (
+        <div className="space-y-1.5">
+            {message.media_expired_at ? (
+                <p className={`text-[12px] italic ${isOutbound ? 'text-white/70' : 'text-[#9CA3AF]'}`}>Archivo eliminado por antigüedad</p>
+            ) : (
+                <MediaOrText message={message} />
+            )}
+            {(label || body) && (
+                <div>
+                    {label && (
+                        <p className={`text-[10px] uppercase tracking-wide font-medium ${isOutbound ? 'text-white/60' : 'text-[#9CA3AF]'}`}>
+                            {label}
+                        </p>
+                    )}
+                    {body && (message.content_type === 'document' && body.length > 280 ? (
+                        <details className="text-sm">
+                            <summary className="cursor-pointer opacity-80">{body.slice(0, 200)}… <span className="underline">ver todo</span></summary>
+                            <p className="whitespace-pre-wrap break-words italic opacity-90 mt-1">{body}</p>
+                        </details>
+                    ) : (
+                        <p className={`text-sm whitespace-pre-wrap break-words ${label ? 'italic opacity-90' : ''}`}>{body}</p>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
 }
 
 export function MessageBubble({ message }: MessageBubbleProps) {

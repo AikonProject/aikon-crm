@@ -12,6 +12,8 @@ import { useBusinessType } from '@/components/providers/tenant-provider';
 import { toast } from 'sonner';
 import type { Tenant, User, Tag, CustomField, CannedResponse } from '@/lib/types/database';
 import Link from 'next/link';
+import { HardDrive } from 'lucide-react';
+import { MediaStorageSettings } from '@/components/settings/media-storage-settings';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 // We call APIs directly (client-side fetch to our own API routes)
@@ -22,6 +24,7 @@ const tabs = [
     { id: 'custom_fields', label: 'Campos personalizados', icon: Sliders },
     { id: 'canned', label: 'Respuestas rápidas', icon: MessageSquare },
     { id: 'funnel', label: 'Etapas del Funnel', icon: Kanban },
+    { id: 'media', label: 'Archivos', icon: HardDrive },
 ];
 
 const ROLE_BADGE: Record<string, string> = {
@@ -848,6 +851,7 @@ export default function SettingsPage() {
             {activeTab === 'custom_fields' && <CustomFieldsTab />}
             {activeTab === 'canned' && <CannedResponsesTab />}
             {activeTab === 'funnel' && <FunnelStagesTab />}
+            {activeTab === 'media' && <MediaStorageSettings />}
         </>
     );
 }
