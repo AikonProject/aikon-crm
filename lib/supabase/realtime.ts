@@ -20,21 +20,28 @@ export function subscribeResilient(
     let retry: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
 
+    const scheduleRetry = () => {
+        if (stopped || retry) return;
+        attempt += 1;
+        retry = setTimeout(() => { retry = null; start(); }, Math.min(30000, 2000 * attempt));
+    };
+
     const start = () => {
         if (stopped) return;
         // Unique topic: two components may listen to the same table
-        channel = configure(supabase.channel(`${name}:${Math.random().toString(36).slice(2, 10)}`));
-        channel.subscribe((status) => {
-            if (stopped) return;
+        const ch = configure(supabase.channel(`${name}:${Math.random().toString(36).slice(2, 10)}`));
+        channel = ch;
+        ch.subscribe((status) => {
+            // Ignore events from channels we already replaced or removed (removeChannel emits CLOSED,
+            // which must not trigger yet another reconnection)
+            if (stopped || ch !== channel) return;
             if (status === 'SUBSCRIBED') {
                 attempt = 0;
                 onReady?.();
             } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-                const dead = channel;
                 channel = null;
-                if (dead) supabase.removeChannel(dead);
-                attempt += 1;
-                retry = setTimeout(start, Math.min(30000, 1500 * attempt));
+                supabase.removeChannel(ch);
+                scheduleRetry();
             }
         });
     };
@@ -44,6 +51,7 @@ export function subscribeResilient(
         stopped = true;
         if (retry) clearTimeout(retry);
         if (channel) supabase.removeChannel(channel);
+        channel = null;
     };
 }
 
