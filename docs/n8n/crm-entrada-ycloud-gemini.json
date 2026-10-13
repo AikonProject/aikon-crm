@@ -1,0 +1,628 @@
+{
+  "name": "CRM Entrada · YCloud (con archivos y Gemini)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crm-entrada-ycloud",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "9821d440-7dfa-4f13-b973-68551fb797d9",
+      "name": "Webhook YCloud",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        304
+      ],
+      "webhookId": "bdc919d6-70e6-4477-97cf-e6adb8978efa"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ================== CONFIGURACIÓN DEL CLIENTE ==================\nconst CONFIG = {\n  crm_url: 'https://crm.aikonintelligence.com',\n  tenant_id: 'PEGAR_TENANT_ID_DEL_CLIENTE',\n  webhook_secret: 'PEGAR_SECRETO_COMPARTIDO',\n  // Webhook del bot de ESTE cliente (puede estar en otro n8n)\n  bot_webhook_url: 'PEGAR_URL_DEL_WEBHOOK_DEL_BOT',\n};\n// ===============================================================\n\n// Convierte el webhook de YCloud al formato estándar del CRM.\nconst STATUS = { accepted: 'sent', sent: 'sent', delivered: 'delivered', read: 'read', failed: 'failed' };\nconst out = [];\nfor (const item of $input.all()) {\n  const e = item.json.body ?? item.json;\n\n  // Estado de un mensaje enviado\n  if (e.type === 'whatsapp.message.updated' && e.whatsappMessage) {\n    const s = e.whatsappMessage;\n    if (!STATUS[s.status]) continue;\n    out.push({ json: { kind: 'status', config: CONFIG, crm: {\n      action: 'message_status',\n      tenant_id: CONFIG.tenant_id,\n      wa_message_id: s.wamid ?? s.id,\n      status: STATUS[s.status],\n      error_code: s.errorCode ? String(s.errorCode) : null,\n      error_message: s.errorMessage ?? null,\n    } } });\n    continue;\n  }\n\n  // Mensaje del cliente\n  const m = e.whatsappInboundMessage;\n  if (e.type !== 'whatsapp.inbound_message.received' || !m) continue;\n    let content = null;\n    let contentType = m.type;\n    let buttonText = null;\n    let buttonPayload = null;\n    switch (m.type) {\n      case 'text': content = m.text?.body ?? null; break;\n      case 'image': case 'video': case 'document': case 'audio': case 'sticker':\n        content = m[m.type]?.caption ?? null;\n        break;\n      case 'location': content = m.location ? m.location.latitude + ',' + m.location.longitude : null; break;\n      case 'reaction': content = m.reaction?.emoji ?? null; break;\n      case 'button':\n        buttonText = m.button?.text ?? null; buttonPayload = m.button?.payload ?? null;\n        content = buttonText; contentType = 'text';\n        break;\n      case 'interactive':\n        buttonText = m.interactive?.button_reply?.title ?? m.interactive?.list_reply?.title ?? null;\n        buttonPayload = m.interactive?.button_reply?.id ?? m.interactive?.list_reply?.id ?? null;\n        content = buttonText; contentType = 'text';\n        break;\n      default: contentType = 'text'; content = '[' + m.type + ']';\n    }\n    const media = ['image', 'video', 'document', 'audio', 'sticker'].includes(m.type) ? m[m.type] ?? {} : {};\n  out.push({ json: { kind: 'message', config: CONFIG, media_id: media.id ?? null, media_link: media.link ?? null, crm: {\n    action: 'inbound_message',\n    tenant_id: CONFIG.tenant_id,\n    wa_id: String(m.from ?? '').replace(/\\D/g, ''),\n    contact_name: m.customerProfile?.name ?? null,\n    wa_message_id: m.wamid ?? m.id,\n    content,\n    content_type: contentType,\n    button_text: buttonText,\n    button_payload: buttonPayload,\n    media_mime_type: media.mime_type ?? null,\n    media_filename: m.document?.filename ?? null,\n  } } });\n}\nreturn out;"
+      },
+      "id": "fb17c7ce-aa25-4b7d-b710-5cfb859f5de2",
+      "name": "Configuración y normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.kind === 'status' ? 0 : 1 }}"
+      },
+      "id": "8f485fa2-a8ba-4b99-b3ed-8a0c1d971fcd",
+      "name": "¿Estado o mensaje?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        512,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.config.crm_url }}/api/webhooks/n8n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-webhook-secret",
+              "value": "={{ $json.config.webhook_secret }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.crm) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "ff73b2ee-146f-4d3c-ade4-1b5e3fd86fb7",
+      "name": "Actualizar estado en el CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        768,
+        112
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cf99721a-0128-41f9-ae3b-c861a22dba91",
+              "leftValue": "={{ ['image','audio','video','document','sticker'].includes($json.crm.content_type) && !!($json.media_id || $json.media_link) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "dda7707a-4d35-44bb-94ab-78caab9d96ab",
+      "name": "¿Tiene archivo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        768,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.media_link }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "e58b4179-0c7a-4e27-bf1b-3247a83038b0",
+      "name": "Descargar archivo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1200,
+        640
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "BuyCm953gyw2zSOy",
+          "name": "YCloud Agroapoya2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Sube el archivo descargado al CRM (bucket chat-media) y deja el binario para Gemini.\nconst out = [];\nconst items = $input.all();\nconst bases = $('¿Tiene archivo?').all(0);\nfor (let i = 0; i < items.length; i++) {\n  const base = bases[i]?.json ?? bases[0].json;\n  const cfg = base.config;\n  const bin = items[i].binary?.data;\n  const crm = { ...base.crm };\n  if (!bin) {\n    // No se pudo descargar: se guarda el mensaje sin archivo\n    out.push({ json: { ...base, crm, download_failed: true }, pairedItem: { item: i } });\n    continue;\n  }\n  const mime = String(bin.mimeType || crm.media_mime_type || 'application/octet-stream').split(';')[0].trim();\n  bin.mimeType = mime;\n  try {\n    const buffer = await this.helpers.getBinaryDataBuffer(i, 'data');\n    const up = await this.helpers.httpRequest({\n      method: 'POST',\n      url: cfg.crm_url + '/api/webhooks/n8n',\n      headers: { 'x-webhook-secret': cfg.webhook_secret },\n      body: { action: 'media_upload_url', tenant_id: cfg.tenant_id, mime_type: mime, filename: crm.media_filename || bin.fileName },\n      json: true,\n    });\n    if (buffer.length <= up.max_bytes) {\n      await this.helpers.httpRequest({ method: 'PUT', url: up.upload_url, body: buffer, headers: { 'Content-Type': mime } });\n      crm.media_url = up.public_url;\n    }\n  } catch (err) {\n    crm.media_url = null;\n  }\n  crm.media_mime_type = mime;\n  out.push({ json: { ...base, crm }, binary: { data: bin }, pairedItem: { item: i } });\n}\nreturn out;"
+      },
+      "id": "b4336078-d989-479c-9c52-bb7281b5405e",
+      "name": "Subir archivo al CRM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 5,
+        "output": "={{ $json.download_failed ? 4 : ({ audio: 0, image: 1, sticker: 1, document: 2, video: 3 })[$json.crm.content_type] ?? 4 }}"
+      },
+      "id": "3ced4beb-126f-4feb-aee9-793f79a09189",
+      "name": "Tipo de archivo",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1680,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "models/gemini-2.5-flash"
+        },
+        "inputType": "binary",
+        "binaryPropertyName": "data",
+        "options": {}
+      },
+      "id": "1795ff74-d6e8-4383-9166-bd2f3fa70577",
+      "name": "Transcribir audio",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1952,
+        400
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "PEGAR_ID_CREDENCIAL_GEMINI",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "models/gemini-2.5-flash"
+        },
+        "text": "Un cliente envió esta imagen por WhatsApp a un negocio. Descríbela en español en 2 a 4 frases. Si tiene texto (precios, referencias, comprobante de pago, dirección, números), transcríbelo exacto.",
+        "inputType": "binary",
+        "binaryPropertyName": "data",
+        "options": {
+          "maxOutputTokens": 400
+        }
+      },
+      "id": "7a2a8d72-be9c-4667-9d24-bd80d1f86345",
+      "name": "Describir imagen",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1952,
+        560
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "PEGAR_ID_CREDENCIAL_GEMINI",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "document",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "models/gemini-2.5-flash"
+        },
+        "text": "Un cliente envió este documento por WhatsApp a un negocio. Escribe en español el contenido relevante: de qué se trata y los datos importantes (nombres, cantidades, precios, fechas, referencias), sin inventar nada.",
+        "inputType": "binary",
+        "binaryPropertyName": "data",
+        "options": {
+          "maxOutputTokens": 1500
+        }
+      },
+      "id": "09f0cab2-7596-4e5a-a508-1d202173ade9",
+      "name": "Leer documento",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1952,
+        720
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "PEGAR_ID_CREDENCIAL_GEMINI",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "models/gemini-2.5-flash"
+        },
+        "text": "Un cliente envió este video por WhatsApp a un negocio. Describe en español, en 2 a 4 frases, lo que se ve y lo que se dice.",
+        "inputType": "binary",
+        "binaryPropertyName": "data",
+        "options": {
+          "maxOutputTokens": 400
+        }
+      },
+      "id": "c3adf78b-3ff2-4a32-87d2-41b36a4fdcfc",
+      "name": "Describir video",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1952,
+        880
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "PEGAR_ID_CREDENCIAL_GEMINI",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Une el resultado de Gemini con el mensaje: primera línea = etiqueta, debajo la transcripción o descripción.\nlet base;\ntry { base = $('Subir archivo al CRM').item.json; } catch (e) { base = $('Subir archivo al CRM').first().json; }\nconst r = $json ?? {};\n\n// El nodo de Gemini puede devolver el texto en distintos campos: se toma el primero que exista\nfunction geminiText(o) {\n  if (!o || typeof o !== 'object') return '';\n  if (typeof o.text === 'string') return o.text;\n  if (Array.isArray(o.content?.parts)) return o.content.parts.map((p) => p.text || '').join('');\n  if (Array.isArray(o.candidates)) return geminiText(o.candidates[0]);\n  if (typeof o.content === 'string') return o.content;\n  if (typeof o.output === 'string') return o.output;\n  return '';\n}\nconst result = (r.error ? '' : geminiText(r).trim()) || '(no se pudo leer el contenido)';\nconst crm = { ...base.crm };\nconst caption = String(crm.content || '').trim();\nconst withCaption = (t) => (caption ? 'Texto del cliente: ' + caption + (t ? '\\n' + t : '') : t);\n\nlet label = null;\nlet body = caption;\nswitch (crm.content_type) {\n  case 'audio':\n    label = 'Nota de voz del cliente (transcripción automática)';\n    body = result;\n    break;\n  case 'image':\n    label = 'Imagen enviada por el cliente (descripción automática)';\n    body = withCaption(result);\n    break;\n  case 'sticker':\n    label = 'Sticker enviado por el cliente';\n    body = result;\n    break;\n  case 'document':\n    label = 'Documento enviado por el cliente: ' + (crm.media_filename || 'archivo');\n    body = withCaption(result.slice(0, 4000));\n    break;\n  case 'video':\n    label = 'Video enviado por el cliente (descripción automática)';\n    body = withCaption(result);\n    break;\n}\nif (base.download_failed) body = withCaption('(no se pudo descargar el archivo)');\nif (label && !body) body = '(no se pudo leer el contenido)';\ncrm.content = label ? '[' + label + ']\\n' + body : body;\n\nconst { download_failed, ...rest } = base;\nreturn { json: { ...rest, crm } };"
+      },
+      "id": "c85364c5-eed2-44bb-a879-995adc3c3e28",
+      "name": "Armar contenido",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2224,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.config.crm_url }}/api/webhooks/n8n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-webhook-secret",
+              "value": "={{ $json.config.webhook_secret }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.crm) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "380cb34b-d90c-46c7-bdfa-3d9ae79900f0",
+      "name": "Guardar mensaje en el CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2480,
+        400
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5e7776c7-257b-4719-8db3-02fe68e26fb6",
+              "leftValue": "={{ $json.ai_enabled }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1e6097c2-4122-4146-a3ae-36fd13d4a029",
+      "name": "¿IA activa?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2720,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración y normalizar').item.json.config.bot_webhook_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-webhook-secret",
+              "value": "={{ $('Configuración y normalizar').item.json.config.webhook_secret }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ...$('Configuración y normalizar').item.json.crm, media_id: $('Configuración y normalizar').item.json.media_id, media_url: $json.media_url, contact_id: $json.contact_id, conversation_id: $json.conversation_id, message_id: $json.message_id }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "b26ecda5-57cd-4b3b-b6d4-cb44df5e2f5e",
+      "name": "Enviar al bot del cliente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2960,
+        400
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "content": "## CRM Entrada · YCloud (con archivos)\n- En YCloud → Webhooks, apunta a la URL de producción de \"Webhook YCloud\" con los eventos whatsapp.inbound_message.received y whatsapp.message.updated.\n- Audio, imagen, sticker, documento o video: se descarga con la API key de YCloud, se sube al CRM (bucket chat-media) y Gemini lo transcribe o describe.\n- Si la IA está activa se reenvía al bot con message_id (para claim_pending).\n\nCredenciales: Header Auth de YCloud (X-API-Key) y Google Gemini. Edita CONFIG en \"Configuración y normalizar\".",
+        "height": 300,
+        "width": 620,
+        "color": 4
+      },
+      "id": "08e7763c-b899-4e70-bc33-61667b502e6b",
+      "name": "Nota",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        -280
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook YCloud": {
+      "main": [
+        [
+          {
+            "node": "Configuración y normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuración y normalizar": {
+      "main": [
+        [
+          {
+            "node": "¿Estado o mensaje?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Estado o mensaje?": {
+      "main": [
+        [
+          {
+            "node": "Actualizar estado en el CRM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Tiene archivo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Tiene archivo?": {
+      "main": [
+        [
+          {
+            "node": "Descargar archivo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Guardar mensaje en el CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar archivo": {
+      "main": [
+        [
+          {
+            "node": "Subir archivo al CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Subir archivo al CRM": {
+      "main": [
+        [
+          {
+            "node": "Tipo de archivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tipo de archivo": {
+      "main": [
+        [
+          {
+            "node": "Transcribir audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Describir imagen",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Leer documento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Describir video",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Armar contenido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribir audio": {
+      "main": [
+        [
+          {
+            "node": "Armar contenido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Describir imagen": {
+      "main": [
+        [
+          {
+            "node": "Armar contenido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer documento": {
+      "main": [
+        [
+          {
+            "node": "Armar contenido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Describir video": {
+      "main": [
+        [
+          {
+            "node": "Armar contenido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar contenido": {
+      "main": [
+        [
+          {
+            "node": "Guardar mensaje en el CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar mensaje en el CRM": {
+      "main": [
+        [
+          {
+            "node": "¿IA activa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿IA activa?": {
+      "main": [
+        [
+          {
+            "node": "Enviar al bot del cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
