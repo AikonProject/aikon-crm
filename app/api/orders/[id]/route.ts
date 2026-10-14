@@ -101,8 +101,7 @@ export async function PATCH(
             const { error: deleteErr } = await supabase
                 .from('order_items')
                 .delete()
-                .eq('order_id', id)
-                .eq('tenant_id', TENANT_ID);
+                .eq('order_id', id); // the order was already checked to belong to this tenant
             if (deleteErr) {
                 console.error('[PATCH /api/orders/[id]] delete items', deleteErr);
                 return NextResponse.json({ error: deleteErr.message }, { status: 500 });
@@ -111,7 +110,6 @@ export async function PATCH(
             const { error: insertErr } = await supabase
                 .from('order_items')
                 .insert(items.map((item) => ({
-                    tenant_id:    TENANT_ID,
                     order_id:     id,
                     product_id:   item.product_id ?? null,
                     product_name: item.product_name.trim(),
@@ -119,7 +117,7 @@ export async function PATCH(
                     unit_price:   item.unit_price,
                     subtotal:     item.quantity * item.unit_price,
                     notes:        null,
-                })));
+                })) as never);
             if (insertErr) {
                 console.error('[PATCH /api/orders/[id]] insert items', insertErr);
                 return NextResponse.json({ error: insertErr.message }, { status: 500 });

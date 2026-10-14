@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
 
         // Fetch item counts for each order in a single query
         const orderIds = (data ?? []).map((o: { id: string }) => o.id);
-        let itemCounts: Record<string, number> = {};
+        const itemCounts: Record<string, number> = {};
 
         if (orderIds.length > 0) {
             const { data: itemRows, error: itemErr } = await supabase
@@ -158,7 +158,7 @@ export async function POST(req: NextRequest) {
                 discount:    appliedDiscount,
                 total,
                 notes:       notes   ?? null,
-                source:      source  ?? 'manual',
+                source:      ['crm', 'web', 'whatsapp', 'pos'].includes(source ?? '') ? source : 'crm',
             })
             .select()
             .single();
@@ -170,7 +170,6 @@ export async function POST(req: NextRequest) {
 
         // Insert order items
         const itemRows = items.map((item) => ({
-            tenant_id:    TENANT_ID,
             order_id:     (order as { id: string }).id,
             product_id:   item.product_id  ?? null,
             product_name: item.product_name.trim(),
@@ -182,7 +181,8 @@ export async function POST(req: NextRequest) {
 
         const { error: itemsErr } = await supabase
             .from('order_items')
-            .insert(itemRows);
+            // order_items has no tenant_id column (it hangs from the order)
+            .insert(itemRows as never);
 
         if (itemsErr) {
             console.error('[POST /api/orders] insert order_items', itemsErr);

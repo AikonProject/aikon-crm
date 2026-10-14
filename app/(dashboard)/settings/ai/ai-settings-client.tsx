@@ -1,4 +1,5 @@
 'use client';
+import { AiActionsLog } from '@/components/settings/ai-actions-log';
 
 import { useEffect, useState } from 'react';
 import { Save, Loader2, Check, Plus, Trash2, Bot, Brain, Wrench, BookOpen } from 'lucide-react';
@@ -273,6 +274,8 @@ export default function AiSettingsClient() {
                         {saved ? 'Guardado' : 'Guardar configuración'}
                     </Button>
                 </div>
+
+                <AiActionsLog />
             </div>
         </>
     );
