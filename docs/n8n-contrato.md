@@ -88,6 +88,9 @@ Qué garantiza el CRM:
 - **Respuestas a campañas:** si un contacto responde, su mensaje de campaña pasa a `replied`.
 - **Conversaciones al día:** el resumen y los no leídos los actualizan triggers de la base de datos.
 
+## Herramientas del agente de IA
+El bot puede editar el CRM (etiquetas, etapa, campos, notas, citas, deals, pedidos, transferir a humano) con `POST /api/bot/<herramienta>`. Guía: [n8n-herramientas-bot.md](n8n-herramientas-bot.md).
+
 ## Archivos y buffer
 Guía paso a paso y nodos: [n8n-media-y-buffer.md](n8n-media-y-buffer.md).
 - Los archivos viven en el bucket `chat-media` bajo `<tenant>/inbound/<año-mes>/`. Cada noche se borran los que superan la
