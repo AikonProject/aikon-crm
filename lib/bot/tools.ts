@@ -1,7 +1,7 @@
 import type { createAdminClient } from '@/lib/supabase/admin';
 import { getTenantConfig, hasModule } from '@/lib/tenant-plan';
 import { APPOINTMENT_SELECT } from '@/lib/appointments';
-import { buildAppointmentFields, formatWhen, ValidationError } from '@/app/api/appointments/shared';
+import { buildAppointmentFields, formatWhen } from '@/app/api/appointments/shared';
 import type { PlanModule } from '@/lib/types/database';
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -24,12 +24,12 @@ export type ToolContext = {
     conversationId: string | null;
     body: Record<string, unknown>;
     /** Lines for the timeline (each becomes one activity_log entry). */
-    log: (type: string, description: string, metadata?: Record<string, unknown>) => void;
+    log: (type: string, description: string, metadata?: Record<string, unknown>, contactId?: string) => void;
 };
 
 export type ToolResult = { summary: string; data?: unknown; stageBefore?: string | null; stageAfter?: string | null };
 
-type Tool = { module?: PlanModule; write: boolean; run: (ctx: ToolContext) => Promise<ToolResult> };
+export type Tool = { module?: PlanModule; write: boolean; run: (ctx: ToolContext) => Promise<ToolResult> };
 
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : v == null ? '' : String(v).trim());
 const list = (v: unknown): string[] =>
@@ -72,7 +72,7 @@ async function stageName(supabase: Admin, id: string | null) {
 
 // ─── Tools ────────────────────────────────────────────────────────────────────
 
-const TOOLS: Record<string, Tool> = {
+const TOOLS: Record<'context' | 'update_contact' | 'tags' | 'stage' | 'fields' | 'note' | 'appointment' | 'deal' | 'order' | 'handoff', Tool> = {
     /** Everything the agent may need to decide: contact, stage, tags, fields, deals, orders, appointments and catalogs. */
     context: {
         write: false,
@@ -437,56 +437,6 @@ const TOOLS: Record<string, Tool> = {
     },
 };
 
-export const TOOL_NAMES = Object.keys(TOOLS);
-
-/** Runs a tool and records it (ai_actions + timeline). Throws ToolError for bad input. */
-export async function runTool(
-    name: string,
-    base: Omit<ToolContext, 'log'>
-): Promise<{ ok: true; summary: string; data?: unknown } | { ok: false; error: string; status: number }> {
-    const tool = TOOLS[name];
-    if (!tool) return { ok: false, error: `Herramienta desconocida: ${name}. Disponibles: ${TOOL_NAMES.join(', ')}`, status: 404 };
-
-    const { supabase, tenantId, contact, conversationId, body } = base;
-    if (tool.module && !hasModule(await getTenantConfig(tenantId), tool.module)) {
-        return { ok: false, error: `El plan de este negocio no incluye el módulo "${tool.module}".`, status: 403 };
-    }
-
-    const entries: { type: string; description: string; metadata?: Record<string, unknown> }[] = [];
-    const ctx: ToolContext = { ...base, log: (type, description, metadata) => entries.push({ type, description, metadata }) };
-    const reason = str(body.reason) || null;
-    const input = Object.fromEntries(Object.entries(body).filter(([k]) => !['tenant_id'].includes(k)));
-
-    try {
-        const result = await tool.run(ctx);
-        if (tool.write) {
-            await supabase.from('ai_actions').insert({
-                tenant_id: tenantId, conversation_id: conversationId, contact_id: contact.id,
-                action_type: name, tool_name: name, status: 'completed', summary: result.summary,
-                details: { input, result: result.data ?? null }, reasoning: reason,
-                stage_before: result.stageBefore ?? null, stage_after: result.stageAfter ?? null,
-            } as never);
-            if (entries.length) {
-                await supabase.from('activity_log').insert(entries.map((e) => ({
-                    tenant_id: tenantId, contact_id: contact.id, activity_type: e.type, description: e.description,
-                    performed_by_name: 'IA', channel: 'n8n', metadata: { ...(e.metadata ?? {}), tool: name, reason },
-                })) as never);
-            }
-        }
-        return { ok: true, summary: result.summary, data: result.data };
-    } catch (err) {
-        const message = err instanceof ToolError || err instanceof ValidationError
-            ? err.message
-            : (err as { message?: string })?.message ?? 'Error interno';
-        const status = err instanceof ToolError || err instanceof ValidationError ? err.status : 500;
-        if (status >= 500) console.error(`[bot tool ${name}]`, err);
-        if (tool.write) {
-            await supabase.from('ai_actions').insert({
-                tenant_id: tenantId, conversation_id: conversationId, contact_id: contact.id,
-                action_type: name, tool_name: name, status: 'failed', summary: message.slice(0, 500),
-                details: { input }, reasoning: reason,
-            } as never);
-        }
-        return { ok: false, error: message, status };
-    }
-}
+/** Implementations reused by the tool catalog (lib/bot/catalog.ts), which adds names, schemas and logging. */
+export const IMPL = TOOLS;
+export { str, list, norm, findStage };

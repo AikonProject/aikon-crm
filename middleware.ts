@@ -10,7 +10,7 @@ const APP_ROUTES = new Set([
 
 export default clerkMiddleware(async (_auth, _request) => {
     const path = _request.nextUrl.pathname;
-    const PUBLIC_PREFIXES = ['/sign-in', '/sign-up', '/api/public', '/api/webhooks', '/api/cron', '/api/bot'];
+    const PUBLIC_PREFIXES = ['/sign-in', '/sign-up', '/api/public', '/api/webhooks', '/api/cron', '/api/bot', '/api/mcp'];
 
     // Check if path is a valid public booking slug: /{slug} where slug is lowercase alphanumeric + hyphens
     const isBookingSlug = /^\/[a-z0-9][a-z0-9-]*$/.test(path) && !APP_ROUTES.has(path);
