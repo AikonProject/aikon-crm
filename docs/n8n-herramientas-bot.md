@@ -48,6 +48,7 @@ Los errores de datos (etapa que no existe, opción inválida, falta precio) lleg
 | Herramienta | Qué hace | Parámetros |
 |---|---|---|
 | `create_contact` | Crea un contacto (ej. un referido). Si el número existe, devuelve el existente | `nombre`, `phone` (con indicativo), `email?` |
+| `upsert_contact` | Crea o actualiza por teléfono (para sincronizar otro sistema): datos, campos y etiquetas en una llamada. Solo escribe lo que cambió; no quita etiquetas. Ejemplo: `docs/n8n/sync-embajadores-agroapoya2.json` | `phone` (sin indicativo asume `country_code`, por defecto 57), `nombre?`, `email?`, `fields?`, `tags?` |
 | `update_contact` | Nombre, email o cargo del cliente | `nombre?`, `email?`, `job_title?` |
 | `add_tags` | **Agrega** etiquetas (no quita). Las que no existen se crean | `tags: ["Interesado maíz"]` |
 | `remove_tags` | **Quita** etiquetas (no agrega) | `tags: ["Cliente frío"]` |

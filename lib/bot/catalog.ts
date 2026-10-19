@@ -197,6 +197,77 @@ export const CATALOG: Record<string, ToolDef> = {
             return { summary: `Creó el contacto ${created.nombre}`, data: { contact: data, created: true } };
         },
     },
+    upsert_contact: {
+        description: 'Crea o actualiza un contacto por su número (para sincronizar desde otro sistema): datos, campos personalizados y etiquetas en una sola llamada. No quita etiquetas.',
+        params: {
+            phone: S('Teléfono; sin indicativo se asume country_code'), nombre: S('Nombre'), email: S('Email (opcional)'),
+            fields: OBJ('Campos personalizados { campo: valor }'), tags: ARR('Etiquetas a agregar (se crean si no existen)'),
+            country_code: S('Indicativo para números locales (por defecto 57)'),
+        },
+        required: ['phone'], write: true, contact: 'none',
+        async run({ supabase, tenantId, conversationId, body, log }) {
+            let phone = str(body.phone ?? body.wa_id).replace(/\D/g, '');
+            const cc = str(body.country_code).replace(/\D/g, '') || '57';
+            if (phone.startsWith('00')) phone = phone.slice(2);
+            if (phone && phone.length <= 10 && !phone.startsWith(cc)) phone = cc + phone;
+            if (phone.length < 8) throw new ToolError('phone no es un número válido.');
+            const nombre = str(body.nombre ?? body.name).slice(0, 200);
+            let email: string | null = str(body.email).toLowerCase() || null;
+            if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) email = null;
+
+            const { data: existing } = await supabase.from('contacts').select('id, nombre, wa_id, email, funnel_stage_id')
+                .eq('tenant_id', tenantId).eq('wa_id', phone).maybeSingle();
+            let contact = existing as (Contact & { email: string | null }) | null;
+            const created = !contact;
+            let updated = false;
+            if (!contact) {
+                const { data, error } = await supabase.from('contacts').insert({
+                    tenant_id: tenantId, nombre: nombre || phone, wa_id: phone, email, source: 'n8n', ai_active: true,
+                } as never).select('id, nombre, wa_id, email, funnel_stage_id').single();
+                if (error) throw error;
+                contact = data as Contact & { email: string | null };
+                log('contact_created', `Sincronización creó el contacto ${contact.nombre}`, { contact_id: contact.id }, contact.id);
+            } else {
+                const patch: Record<string, unknown> = {};
+                if (nombre && nombre !== contact.nombre) patch.nombre = nombre;
+                if (email && email !== contact.email) patch.email = email;
+                if (Object.keys(patch).length) {
+                    const { error } = await supabase.from('contacts').update({ ...patch, updated_at: new Date().toISOString() } as never)
+                        .eq('id', contact.id).eq('tenant_id', tenantId);
+                    if (error) throw error;
+                    Object.assign(contact, patch);
+                    updated = true;
+                    log('contact_updated', `Sincronización actualizó el contacto (${Object.keys(patch).join(', ')})`, patch, contact.id);
+                }
+            }
+
+            // Reuse the field / tag implementations, attributing their timeline lines to this contact
+            const sub = { supabase, tenantId, conversationId, contact, log: (t: string, d: string, m?: Json) => log(t, d, m, contact!.id) };
+            // Re-syncs only write what changed, so the timeline isn't flooded on every run
+            let wantFields = (body.fields && typeof body.fields === 'object' ? body.fields : {}) as Json;
+            let wantTags = list(body.tags);
+            if (!created) {
+                const [{ data: vals }, { data: defs }, have, { data: allTags }] = await Promise.all([
+                    supabase.from('contact_field_values').select('field_key, value').eq('contact_id', contact.id),
+                    supabase.from('custom_fields').select('field_key, label').eq('tenant_id', tenantId),
+                    contactTagIds(supabase, contact.id),
+                    supabase.from('tags').select('id, name').eq('tenant_id', tenantId),
+                ]);
+                const current = new Map(((vals ?? []) as { field_key: string; value: string }[]).map((v) => [v.field_key, v.value]));
+                const keyOf = (ref: string) => ((defs ?? []) as { field_key: string; label: string }[])
+                    .find((d) => d.field_key === ref || norm(d.label) === norm(ref))?.field_key ?? ref;
+                wantFields = Object.fromEntries(Object.entries(wantFields).filter(([k, v]) => (current.get(keyOf(k)) ?? '') !== str(v)));
+                const assigned = new Set(((allTags ?? []) as { id: string; name: string }[]).filter((t) => have.has(t.id)).map((t) => norm(t.name)));
+                wantTags = wantTags.filter((t) => !assigned.has(norm(t)));
+            }
+            const fields = Object.keys(wantFields).length ? await IMPL.fields.run({ ...sub, body: { fields: wantFields } }) : null;
+            const tags = wantTags.length ? await IMPL.tags.run({ ...sub, body: { add: wantTags } }) : null;
+            return {
+                summary: `${created ? 'Creó' : updated || fields || tags ? 'Actualizó' : 'Sin cambios:'} ${contact.nombre}`,
+                data: { contact: { id: contact.id, nombre: contact.nombre, wa_id: contact.wa_id }, created, updated: !created && !!(updated || fields || tags), fields: fields?.data ?? null, tags: tags?.data ?? null },
+            };
+        },
+    },
     update_contact: {
         description: 'Actualiza datos del cliente que él mismo dio: nombre, email o cargo. Envía solo los que cambian.',
         params: { nombre: S('Nombre completo'), email: S('Email'), job_title: S('Cargo u ocupación') },
@@ -373,7 +444,8 @@ export async function runTool(
     try {
         const result = await tool.run(ctx);
         if (tool.write) {
-            const subject = contact?.id ?? entries.find((e) => e.contactId)?.contactId ?? null;
+            const subject = contact?.id ?? entries.find((e) => e.contactId)?.contactId
+                ?? (result.data as { contact?: { id?: string } } | undefined)?.contact?.id ?? null;
             await supabase.from('ai_actions').insert({
                 tenant_id: tenantId, conversation_id: conversationId, contact_id: subject,
                 action_type: name, tool_name: name, status: 'completed', summary: result.summary,
