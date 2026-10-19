@@ -263,8 +263,12 @@ export default function ConversationsClient({ initialConversations }: Conversati
         if (!silent) setLoadingConvs(true);
         try {
             const filter = statusFilterRef.current;
-            const params = filter !== 'all' ? `?status=${filter}` : '';
-            const res = await fetch(`/api/conversations${params}`);
+            const params = new URLSearchParams();
+            if (filter !== 'all') params.set('status', filter);
+            // The open chat stays in the list even while it has no messages yet
+            if (activeConvIdRef.current) params.set('include', activeConvIdRef.current);
+            const qs = params.toString();
+            const res = await fetch(`/api/conversations${qs ? `?${qs}` : ''}`);
             if (!res.ok) {
                 if (!silent) toast.error(await readError(res, 'No se pudieron cargar las conversaciones'));
                 return;
