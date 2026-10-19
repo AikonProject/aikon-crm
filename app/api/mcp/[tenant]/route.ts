@@ -84,7 +84,9 @@ async function handleRpc(
             const name = String(msg.params?.name ?? '');
             if (!CATALOG[name] || CATALOG[name].legacy) return fail(-32602, `Herramienta desconocida: ${name}`);
             const args = { ...urlArgs, ...((msg.params?.arguments as Record<string, unknown>) ?? {}) };
-            const { contact, conversationId, notFound } = await resolveContact(supabase, tenantId, args);
+            const { contact, conversationId, notFound } = CATALOG[name].contact === 'none'
+                ? { contact: null, conversationId: null, notFound: false }
+                : await resolveContact(supabase, tenantId, args);
             const result = notFound
                 ? { ok: false as const, error: 'Contacto no encontrado: revisa wa_id.', status: 404 }
                 : await runTool(name, { supabase, tenantId, contact, conversationId, body: args });

@@ -35,7 +35,10 @@ async function handle(request: NextRequest, tool: string, body: Record<string, u
         return NextResponse.json({ ok: false, error: `Herramienta desconocida: ${tool}. Disponibles: ${names}` }, { status: 404 });
     }
 
-    const { contact, conversationId, notFound } = await resolveContact(auth.supabase, tenantId, body);
+    // Tenant-wide tools (create/upsert/search) take phone as data, not as the customer to act on
+    const { contact, conversationId, notFound } = CATALOG[tool].contact === 'none'
+        ? { contact: null, conversationId: null, notFound: false }
+        : await resolveContact(auth.supabase, tenantId, body);
     if (notFound) return NextResponse.json({ ok: false, error: 'Contacto no encontrado' }, { status: 404 });
 
     const result = await runTool(tool, { supabase: auth.supabase, tenantId, contact, conversationId, body });
