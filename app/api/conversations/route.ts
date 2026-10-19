@@ -4,6 +4,8 @@ import { requireModule } from '@/lib/tenant-plan';
 import { TenantError } from '@/lib/tenant';
 import type { ConversationStatus } from '@/lib/types/database';
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function GET(request: NextRequest) {
     try {
         const supabase = createAdminClient();
@@ -27,6 +29,16 @@ export async function GET(request: NextRequest) {
         if (status && status !== 'all') {
             query = query.eq('status', status as ConversationStatus);
         }
+        // Chats without messages (e.g. contacts imported or synced) stay hidden,
+        // except the one being opened on purpose (?include=<conversation_id> / ?contact=<contact_id>)
+        const include = searchParams.get('include');
+        const contact = searchParams.get('contact');
+        const keep = [
+            'last_message_at.not.is.null',
+            ...(include && UUID.test(include) ? [`id.eq.${include}`] : []),
+            ...(contact && UUID.test(contact) ? [`contact_id.eq.${contact}`] : []),
+        ];
+        query = query.or(keep.join(','));
 
         const { data, error } = await query;
 
