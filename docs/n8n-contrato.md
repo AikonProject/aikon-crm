@@ -72,7 +72,7 @@ Header `x-webhook-secret`. Si el tenant tiene secreto configurado, una llamada s
 | `media_upload_url` | Antes de guardar un archivo del cliente | `mime_type, filename?` → responde `{ upload_url, public_url, path, max_bytes }`. n8n sube el archivo con `PUT upload_url` (cuerpo = binario, header `Content-Type`) y manda `public_url` como `media_url` en `inbound_message` |
 | `claim_pending` | Buffer: el bot, tras esperar unos segundos, reclama los mensajes sin responder | `conversation_id, message_id` → responde `{ is_latest, ai_enabled, count, messages[], text }`. Si `is_latest` es `false` llegó otro mensaje después y esa ejecución se detiene; si no, `text` trae todos los mensajes pendientes juntos |
 | `message_sent` | Resultado de un envío manual o de reserva | `contact_id, conversation_id?, wa_message_id, content, content_type, sent_by_name, template_name?, status ('sent' \| 'failed'), error_code?, error_message?` (con `failed`, el chat muestra el error al agente) |
-| `ai_response` | Respuesta del bot | `contact_id, conversation_id, wa_message_id, content` |
+| `ai_response` | Respuesta del bot | `contact_id, conversation_id, wa_message_id, content, content_type?, media_url?, media_mime_type?, media_filename?` (para que una foto o PDF que envía el bot se vea en el chat) |
 | `message_status` | Recibo del proveedor | `wa_message_id, status ('sent' \| 'delivered' \| 'read' \| 'failed'), error_code?, error_message?` (también actualiza campañas) |
 | `campaign_message_status` | Resultado por destinatario de una campaña | `campaign_message_id, wa_message_id, status, error_*` (con `sent`, la plantilla aparece en el chat) |
 | `campaign_status` | Opcional | `campaign_id, status ('running' \| 'completed' \| 'cancelled')` |
