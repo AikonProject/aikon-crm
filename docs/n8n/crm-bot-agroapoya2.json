@@ -7,7 +7,7 @@
         "path": "crm/bot/agroapoya2",
         "options": {}
       },
-      "id": "ac68fa53-6d74-4e76-9116-44fbcff68203",
+      "id": "f1ddb435-bea6-4e2a-ba3a-370b6e7be8e0",
       "name": "Mensaje del CRM",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
@@ -15,13 +15,13 @@
         0,
         400
       ],
-      "webhookId": "1fc1a7d9-295c-4bb4-84c2-be5d4cf1bfda"
+      "webhookId": "51466a72-ac37-41a5-8787-92c96e3bd172"
     },
     {
       "parameters": {
-        "jsCode": "// ================== CONFIGURACIÓN DEL BOT ==================\nconst CONFIG = {\n  crm_url: 'https://crm.aikonintelligence.com',\n  tenant_id: 'f31be830-125f-4c61-9779-854607cac89c',\n  webhook_secret: '',              // vacío: Agroapoya2 no tiene secreto en el CRM (si lo creas, ponlo aquí)\n  ycloud_from: '+57XXXXXXXXXX',    // número de WhatsApp de Agroapoya2 registrado en YCloud\n  espera_segundos: 8,              // buffer: espera antes de responder para juntar mensajes seguidos\n  // Programa de embajadores (lo que no está en los términos: complétalo)\n  grupo_embajadores_url: '',       // link de invitación al grupo de WhatsApp de embajadores\n  embajadores_soporte: '',         // a quién escribir por pagos o problemas con el link (nombre o número), opcional\n};\n// ==========================================================\n// El flujo de Entrada (enrutador) ya guardó el mensaje en el CRM, procesó audio/imagen/video\n// y manda aquí: wa_id, contact_name, content, contact_id, conversation_id, message_id.\nconst b = $input.first().json.body ?? $input.first().json;\nreturn [{ json: {\n  config: CONFIG,\n  wa_id: String(b.wa_id || '').replace(/\\D/g, ''),\n  contact_name: b.contact_name || '',\n  content: b.content || '',\n  contact_id: b.contact_id,\n  conversation_id: b.conversation_id,\n  message_id: b.message_id,\n} }];"
+        "jsCode": "// ================== CONFIGURACIÓN DEL BOT ==================\nconst CONFIG = {\n  crm_url: 'https://crm.aikonintelligence.com',\n  tenant_id: 'f31be830-125f-4c61-9779-854607cac89c',\n  webhook_secret: '',              // vacío: Agroapoya2 no tiene secreto en el CRM (si lo creas, ponlo aquí)\n  ycloud_from: '+57XXXXXXXXXX',    // número de WhatsApp de Agroapoya2 registrado en YCloud\n  espera_segundos: 8,              // buffer: espera antes de responder para juntar mensajes seguidos\n  // Programa de embajadores (lo que no está en los términos: complétalo)\n  grupo_embajadores_url: '',       // link de invitación al grupo de WhatsApp de embajadores\n};\n// ==========================================================\n// El flujo de Entrada (enrutador) ya guardó el mensaje en el CRM, procesó audio/imagen/video\n// y manda aquí: wa_id, contact_name, content, contact_id, conversation_id, message_id.\nconst b = $input.first().json.body ?? $input.first().json;\nreturn [{ json: {\n  config: CONFIG,\n  wa_id: String(b.wa_id || '').replace(/\\D/g, ''),\n  contact_name: b.contact_name || '',\n  content: b.content || '',\n  contact_id: b.contact_id,\n  conversation_id: b.conversation_id,\n  message_id: b.message_id,\n} }];"
       },
-      "id": "12e6bcc4-d832-4ddc-8c60-14c9938a4bdd",
+      "id": "f1ca7271-90a1-4e1c-b4f3-99f4508f0eec",
       "name": "CONFIG",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -34,7 +34,7 @@
       "parameters": {
         "amount": "={{ $('CONFIG').first().json.config.espera_segundos }}"
       },
-      "id": "38e34008-053b-4373-b577-70dee0365eef",
+      "id": "ada3df6c-6527-421d-81ae-707ddd2758db",
       "name": "Esperar (buffer)",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
@@ -42,7 +42,7 @@
         440,
         400
       ],
-      "webhookId": "9ede7f4b-fa91-4a0e-9987-c5832a042782"
+      "webhookId": "88b60975-a0d5-4890-a30d-1a1e0d216763"
     },
     {
       "parameters": {
@@ -64,7 +64,7 @@
           "timeout": 20000
         }
       },
-      "id": "91e759e1-cb48-4bbb-bf78-3b059d05323f",
+      "id": "ccce8863-0216-4d39-9b7e-3b6134091a13",
       "name": "Reclamar mensajes",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -84,7 +84,7 @@
           },
           "conditions": [
             {
-              "id": "1a725d1f-d1d6-4844-b4d5-e9b58913e19c",
+              "id": "043800eb-39b9-40ed-8d40-26f91561b4fc",
               "leftValue": "={{ $json.is_latest === true && $json.ai_enabled === true && $json.count > 0 }}",
               "rightValue": "",
               "operator": {
@@ -98,7 +98,7 @@
         },
         "options": {}
       },
-      "id": "c3c104b9-44cf-4bbf-8d11-71c79cdfb3db",
+      "id": "e33af121-8992-4893-bc55-e0b6151c59df",
       "name": "¿Responder?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -127,7 +127,7 @@
           "timeout": 20000
         }
       },
-      "id": "4382d185-468f-4b89-b31f-25b6ccea1b5e",
+      "id": "aa63da3c-0809-48d7-8092-2bc106e9920b",
       "name": "Contexto del contacto",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -156,7 +156,7 @@
           "timeout": 20000
         }
       },
-      "id": "57837aef-aee7-4d9d-89ac-45b0ec6da689",
+      "id": "6525266d-43d2-4462-a488-df8c77fb26f4",
       "name": "Historial",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -183,7 +183,7 @@
         },
         "options": {}
       },
-      "id": "e9168a8a-4822-43d9-8b08-f6c4b6555bd1",
+      "id": "40f4c029-ae5f-4879-af30-d1236c0bc307",
       "name": "Get row(s) in sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
@@ -217,7 +217,7 @@
         },
         "options": {}
       },
-      "id": "5535537b-cdf3-4eab-8d47-ae9a61f57041",
+      "id": "2f370f56-576d-44d8-980b-896e3ffa5938",
       "name": "products",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
@@ -237,7 +237,7 @@
       "parameters": {
         "jsCode": "// ============================================================\n// NODO: Catálogo compacto\n//  - catalogo_compacto: texto corto para el prompt del Agente Ventas\n//  - catalogo_json: lista estructurada para cotizar_pedido\n//  - imagenes: { producto: url } si la hoja tiene una columna \"Imagen\" (para enviar fotos)\n// ============================================================\nconst rows = $input.all().map(i => i.json);\n\nconst num = v => Number(String(v ?? '').replace(/[^\\d]/g, '')) || 0;   // \"$74.800\" -> 74800\nconst pesos = n => '$' + Math.round(n).toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.');\nconst unidadCorta = u => (/^lib/i.test(u) ? 'lb' : (/^uni/i.test(u) ? 'und' : String(u || '').toLowerCase()));\nconst norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();\n\nconst items = [];\nconst imagenes = {};\nfor (const r of rows) {\n  const nombre = String(r['Producto'] || '').trim();\n  if (!nombre) continue;\n  const img = String(r['Imagen'] || r['Imagen URL'] || r['Foto'] || '').trim();\n  if (/^https?:\\/\\//.test(img) && !imagenes[norm(nombre)]) imagenes[norm(nombre)] = img;\n  const pres = String(r['Presentación / Cantidad'] || '').match(/([\\d.,]+)\\s*([A-Za-zÁÉÍÓÚáéíóú]+)/) || [];\n  const cantidad = Number(String(pres[1] || '').replace(',', '.'));\n  const precio = num(r['Precio Total ($)']);\n  if (!cantidad || !precio) continue;                       // fila incompleta: se ignora\n  let desc = String(r['Descripcion'] || '').replace(/⭐/g, '').trim();\n  if (/^-?\\s*$/.test(desc)) desc = '';\n  items.push({\n    nombre,\n    cantidad,\n    unidad: unidadCorta(pres[2]),\n    precio,\n    precio_unidad: num(r['Precio Unitario ($)']) || Math.round(precio / cantidad),\n    descripcion: desc\n  });\n}\n\nconst productos = {}, combos = [];\nfor (const it of items) {\n  if (/^combo/i.test(it.nombre)) combos.push(it);\n  else (productos[it.nombre] = productos[it.nombre] || []).push(it);\n}\n\nconst lineas = Object.entries(productos).map(([nombre, pres]) => {\n  pres.sort((a, b) => a.cantidad - b.cantidad);\n  const desde = Math.min(...pres.map(p => p.precio_unidad));\n  return `${nombre} (desde ${pesos(desde)}/${pres[0].unidad}): ` +\n    pres.map(p => `${p.cantidad}${p.unidad} ${pesos(p.precio)}`).join(' | ');\n});\n\nconst lineasCombos = combos.sort((a, b) => a.precio - b.precio).map(c => {\n  const contenido = (c.descripcion.split(':').slice(1).join(':') || c.descripcion)\n    .replace(/[!¡]/g, '').replace(/\\s+/g, ' ').trim();\n  return `${c.nombre} (${c.cantidad}${c.unidad}, 15 días) ${pesos(c.precio)}: ${contenido}`;\n});\n\nreturn [{ json: {\n  catalogo_compacto: [\n    'PRODUCTOS (nombre (desde precio/lb): presentación precio | ...):',\n    ...lineas,\n    '',\n    'COMBOS:',\n    ...lineasCombos\n  ].join('\\n'),\n  catalogo_json: items,\n  imagenes,\n  productos_con_foto: Object.keys(imagenes).length,\n  combo_mas_barato: combos.length ? pesos(Math.min(...combos.map(c => c.precio))) : null,\n  total_filas: rows.length,\n  filas_usadas: items.length\n} }];"
       },
-      "id": "45ba7d12-a59d-450f-bee2-a9711a4795a0",
+      "id": "67ecc990-22e5-4ef2-8e72-e6be31daf424",
       "name": "Catálogo compacto",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -250,7 +250,7 @@
       "parameters": {
         "jsCode": "// Junta lo que necesitan el router y los agentes, todo desde el CRM:\n//  - mensaje_para_ia: los mensajes nuevos del cliente (el buffer del CRM ya los unió)\n//  - historial: la conversación anterior (incluye lo que respondió un asesor humano desde el CRM)\n//  - contacto: etapa, etiquetas y campos personalizados\nconst cfg = $('CONFIG').first().json;\nconst claim = $('Reclamar mensajes').first().json;\nconst ctx = $('Contexto del contacto').first().json.data ?? {};\nconst msgs = $('Historial').first().json.data?.messages ?? [];\n\nconst mensaje = String(claim.text || cfg.content || '').trim().slice(0, 4000);\n\n// El historial termina con los mensajes nuevos del cliente: se quitan para no duplicarlos\nlet hist = msgs.filter(m => m.from !== 'nota' && String(m.text || '').trim());\nlet pendientes = claim.count || 0;\nwhile (pendientes > 0 && hist.length && hist[hist.length - 1].from === 'cliente') { hist.pop(); pendientes--; }\n\nconst QUIEN = { cliente: 'Cliente', ia: 'Asesora', agente: 'Asesora (persona del equipo)' };\nconst lineas = hist.slice(-20).map(m => `${QUIEN[m.from] || m.from}: ${String(m.text).replace(/\\s+/g, ' ').slice(0, 300)}`);\n\nconst c = ctx.contact ?? {};\nreturn [{ json: {\n  mensaje_para_ia: mensaje,\n  chatid: cfg.wa_id,\n  historial: lineas,\n  historial_texto: lineas.join('\\n') || '(es el primer mensaje de esta conversación)',\n  contacto: {\n    nombre: c.nombre || cfg.contact_name || '',\n    email: c.email || '',\n    etapa: c.stage || 'Nuevo',\n    etiquetas: c.tags ?? [],\n    campos: c.custom_fields ?? {},\n  },\n} }];"
       },
-      "id": "37891746-e58f-4b9d-9885-1c0bd2bde09e",
+      "id": "ba92f5a3-f975-449e-9bf4-92ad36aa9aee",
       "name": "Mensaje para la ia",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -263,7 +263,7 @@
       "parameters": {
         "jsCode": "// ============================================================\n// NODO: Armar router Jev (decide qué agente responde)\n// Jev recibe el último mensaje de la Asesora y el del cliente por separado,\n// más el historial reciente del CRM como contexto, y responde UNA sola pregunta.\n// ============================================================\nconst msg = $('Mensaje para la ia').first().json;\nconst mensajeNuevo = String(msg.mensaje_para_ia || '').trim().slice(0, 2000);\nconst lineas = msg.historial || [];\n\n// Último mensaje de la Asesora (lo que el cliente está respondiendo)\nlet ultimaAsesora = '';\nfor (let i = lineas.length - 1; i >= 0; i--) {\n  if (lineas[i].startsWith('Asesora')) { ultimaAsesora = lineas[i].replace(/^Asesora[^:]*:\\s*/, ''); break; }\n}\n\nconst esEmbajador = (msg.contacto.etiquetas || []).includes('Embajador');\n\nconst questions = {\n  carril: {\n    type: 'choice',\n    instructions:\n      'Which area of AgroApoya2 should answer `mensaje_nuevo`? ' +\n      'First read `ultimo_mensaje_asesora`: when `mensaje_nuevo` is a short reply (yes, no, ok, thanks, please, \"sí señora\"), ' +\n      'it continues the same topic as `ultimo_mensaje_asesora`. Use `historial` only as extra context. ' +\n      'Choose a faq option or saludo only when the Cliente explicitly writes that; otherwise choose ventas.',\n    criteria: {\n      ventas:\n        'Default. Buying groceries: products, prices, offers, combos, availability, coverage, delivery address, placing or completing an order, ' +\n        'or any reply to an `ultimo_mensaje_asesora` about groceries or offers, including short replies such as \"sí\", \"ok\", \"gracias\", \"por favor\", ' +\n        'and accepting to be notified when a new offer comes out.',\n      embajadores:\n        'The ambassador (embajador) program: the Cliente asks about being an ambassador, their referral link, commissions, payments or how to claim them, ' +\n        'the ambassador WhatsApp group, how to share the offer or sell more to their neighbors, or replies to an `ultimo_mensaje_asesora` about the ambassador program. ' +\n        'If `es_embajador` is true, questions about the current offer TO SHARE with neighbors (what is on offer this week, until when, which areas) also go here; ' +\n        'only an ambassador buying groceries for their own home goes to ventas.',\n      posventa:\n        'An order the Cliente ALREADY placed: its status, delivery, a change or cancellation, a complaint about products or service already received, ' +\n        'asking to talk to a human person, or a reply to an `ultimo_mensaje_asesora` about an existing order.',\n      faq_fechas:\n        'The Cliente explicitly asks when the delivery will be, until when they can order, or about schedules or hours. A short reply is never this option.',\n      faq_metodo_pago:\n        'The Cliente explicitly asks how to pay or which payment methods are accepted. A short reply is never this option.',\n      faq_punto_fisico:\n        'The Cliente explicitly asks where the store or physical location is, or where the products come from. A short reply is never this option.',\n      faq_minimo_pedidos:\n        'The Cliente explicitly asks what the minimum number of orders is or how that minimum works. A short reply is never this option.',\n      saludo:\n        '`mensaje_nuevo` is ONLY a greeting (\"hola\", \"buenos días\", \"buenas tardes\") or ONLY a generic request for information ' +\n        '(\"quiero más información\", \"info\") with no specific topic. If it also mentions any topic or answers the Asesora, choose that topic instead.'\n    }\n  }\n};\n\nreturn [{ json: { jev_body: {\n  model: 'jev-latest',\n  state: {\n    negocio: 'AgroApoya2 sells fresh farm produce with home delivery in Bogotá and runs an ambassador (embajador) referral program. ' +\n             'The chat is in Spanish on WhatsApp. Cliente is the customer; Asesora is the AgroApoya2 assistant.' +\n             (esEmbajador ? ' This Cliente is already a registered ambassador.' : ''),\n    es_embajador: esEmbajador,\n    historial: lineas.slice(-20),\n    ultimo_mensaje_asesora: ultimaAsesora.slice(0, 1200) || '(no previous message: this is the first contact)',\n    mensaje_nuevo: mensajeNuevo\n  },\n  questions\n} } }];"
       },
-      "id": "61ea6653-ecc9-4b10-87cd-dc0de24a82a9",
+      "id": "d6288bd8-30ee-4fb9-8069-3fc65b1dcd7c",
       "name": "Armar router Jev",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -285,7 +285,7 @@
           "timeout": 30000
         }
       },
-      "id": "f57dcc62-6d97-497d-af20-cbc24cf13d79",
+      "id": "b42d521a-99b5-46dc-ba71-2ea83d725d81",
       "name": "Jev router",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -308,7 +308,7 @@
       "parameters": {
         "jsCode": "// ============================================================\n// NODO: Decidir ruta (un solo dato de Jev: el carril)\n// Salidas de \"ruta\": ventas | embajadores | posventa | plantilla\n// El estado (carril, localidad) ahora vive en el CRM como campos personalizados.\n// Regla general: ante la duda, responde el Agente Ventas.\n// ============================================================\nconst jev    = $input.first().json;\nconst oferta = $('Get row(s) in sheet').first().json;\nconst m      = $('Mensaje para la ia').first().json;\nconst cfg    = $('CONFIG').first().json;\nconst coberturaTxt = String(oferta['Localidades'] || '');\n\n// ---- Estado anterior, leído del CRM\nconst campos = m.contacto.campos || {};\nconst estado = { carril: campos.carril || null, localidad: campos.localidad_entrega || null };\n\nconst norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();\nconst c = (jev && jev.answers && jev.answers.carril) || null;\nconst eleccion = c ? c.choice : null;\nconst conf = c ? (c.confidence || 0) : 0;\n\n// ---- Umbrales: plantillas y carriles especiales solo con buena seguridad\nconst CONF_PLANTILLA = 0.75;   // saludo y preguntas frecuentes\nconst CONF_ESPECIAL  = 0.60;   // embajadores y posventa\n\n// ---- Seguros con código (por si Jev se equivoca en lo obvio)\nconst texto = norm(m.mensaje_para_ia);\nconst RESPUESTA_CORTA = /^(si+|s[ií] se[nñ]ora|si sra|no|ok|okey|dale|listo|bueno|claro|gracias|muchas gracias|por favor|perfecto|de una|vale|y?a bueno)[\\s.!,]*$/i;\nconst es_respuesta_corta = RESPUESTA_CORTA.test(texto) || texto.split(/\\s+/).filter(Boolean).length <= 2 && !/\\?/.test(texto);\nconst tiene_saludo = /\\b(hola|buen[oa]s?|saludos|info|informacion|mas informacion)\\b/.test(texto);\n\n// ---- Decisión\nconst FAQ = { faq_fechas: 'fechas', faq_metodo_pago: 'metodo_pago', faq_punto_fisico: 'punto_fisico', faq_minimo_pedidos: 'minimo_pedidos' };\nlet ruta, plantilla = null;\n\nif (!c) {\n  ruta = estado.carril || 'ventas';                                 // Jev no respondió\n} else if (FAQ[eleccion] && conf >= CONF_PLANTILLA && !es_respuesta_corta) {\n  ruta = 'plantilla'; plantilla = FAQ[eleccion];\n} else if (eleccion === 'saludo' && conf >= CONF_PLANTILLA && tiene_saludo) {\n  ruta = 'plantilla'; plantilla = 'bienvenida';\n} else if (['embajadores', 'posventa'].includes(eleccion) && conf >= CONF_ESPECIAL) {\n  ruta = eleccion;\n} else {\n  ruta = 'ventas';                                                  // todo lo demás\n}\n\n// El carril guardado solo cambia cuando responde un agente\nconst carril = ['ventas', 'embajadores', 'posventa'].includes(ruta) ? ruta : estado.carril;\n\n// ---- Localidad y cobertura (la guarda el agente en el CRM con set_fields localidad_entrega)\nconst localidad = estado.localidad;\nconst coberturas = coberturaTxt.split(/[-,;/]/).map(norm).filter(Boolean);\nconst cobertura_ok = localidad ? coberturas.includes(norm(localidad)) : null;\n\n// ---- ¿La oferta sigue abierta? (\"28 de Septiembre\" -> se cierra 11:59 p. m. hora Bogotá)\nconst MESES = { enero:0,febrero:1,marzo:2,abril:3,mayo:4,junio:5,julio:6,agosto:7,septiembre:8,setiembre:8,octubre:9,noviembre:10,diciembre:11 };\nfunction cierreOferta(txt) {\n  const mm = norm(txt).match(/(\\d{1,2})\\s*de\\s*([a-z]+)/);\n  if (!mm || MESES[mm[2]] === undefined) return null;\n  const hoy = new Date();\n  const cierre = new Date(Date.UTC(hoy.getUTCFullYear(), MESES[mm[2]], Number(mm[1]), 23 + 5, 59));\n  if (cierre - hoy < -180 * 864e5) cierre.setUTCFullYear(hoy.getUTCFullYear() + 1);\n  return cierre;\n}\nconst cierre = cierreOferta(oferta['Fecha Finalización ']);\nconst oferta_abierta = cierre ? new Date() <= cierre : true;\n\n// ---- Contexto mínimo para los agentes\nconst whatsapp = String(cfg.wa_id || '').slice(-10);\nconst k = m.contacto;\nconst contexto_estado = [\n  `nombre: ${k.nombre || 'desconocido'}`,\n  `celular_whatsapp: ${whatsapp || 'desconocido'}`,\n  `correo: ${k.email || 'no lo ha dado'}`,\n  `etapa_crm: ${k.etapa}`,\n  `etiquetas: ${(k.etiquetas || []).join(', ') || 'ninguna'}`,\n  `es_embajador: ${(k.etiquetas || []).includes('Embajador') ? 'SÍ' : 'NO'}`,\n  `carril: ${carril || 'nuevo'}`,\n  `localidad: ${localidad || 'no la ha dicho'}`,\n  `direccion_guardada: ${campos.direccion_entrega || 'no la ha dado'}`,\n  `primera_compra: ${campos.primera_compra || 'no se sabe'}`,\n  `cobertura_esta_semana: ${cobertura_ok === null ? 'sin verificar' : (cobertura_ok ? 'SÍ' : 'NO')}`,\n  `oferta_abierta: ${oferta_abierta ? 'SÍ' : 'NO (ya cerró)'}`\n].join(' | ');\n\nreturn [{ json: {\n  ruta, plantilla, carril, carril_anterior: estado.carril, localidad, cobertura_ok, oferta_abierta, contexto_estado,\n  jev_ok: !!c, jev_eleccion: eleccion, jev_confianza: conf, jev_probabilidades: c ? c.probabilities : null\n} }];"
       },
-      "id": "f86ee780-5e28-4b05-bc99-634fc243de89",
+      "id": "ea1cd9dd-576f-4134-aaa7-b95de9699932",
       "name": "Decidir ruta",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -331,7 +331,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "f469ccaf-3adf-485e-be32-c566fe5175c4",
+                    "id": "d18cde8e-3e63-4277-b3b9-0a8756b8fc6a",
                     "leftValue": "={{ $json.ruta }}",
                     "rightValue": "ventas",
                     "operator": {
@@ -355,7 +355,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "00ce1fc0-90bc-4ae0-84af-637ee7ed3921",
+                    "id": "6588fb35-8eff-455b-b3e1-878f762a4e7d",
                     "leftValue": "={{ $json.ruta }}",
                     "rightValue": "embajadores",
                     "operator": {
@@ -379,7 +379,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "ff176cff-965b-4bfd-8669-450cd84ecb86",
+                    "id": "2eb13d14-e8a0-4cd4-bad7-824fe324b893",
                     "leftValue": "={{ $json.ruta }}",
                     "rightValue": "posventa",
                     "operator": {
@@ -403,7 +403,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "bdbbd166-c2db-4730-acb5-9ae5216a89ef",
+                    "id": "126fd404-72cc-4f40-a3e9-9761b177cefc",
                     "leftValue": "={{ $json.ruta }}",
                     "rightValue": "plantilla",
                     "operator": {
@@ -421,7 +421,7 @@
         },
         "options": {}
       },
-      "id": "cde6f0d6-4420-4a8c-ac32-a5a541f6013e",
+      "id": "679cb4b1-f667-4a64-8e61-ae6e76c9a410",
       "name": "Switch2",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
@@ -432,7 +432,7 @@
     },
     {
       "parameters": {},
-      "id": "473b3bdd-eb25-4361-87c8-433402c6682c",
+      "id": "3b5dc41f-1295-459c-8275-dad393252338",
       "name": "Calculator",
       "type": "@n8n/n8n-nodes-langchain.toolCalculator",
       "typeVersion": 1,
@@ -484,7 +484,7 @@
           "convertFieldsToString": false
         }
       },
-      "id": "94d6b589-f210-4d0e-b867-424228f6530c",
+      "id": "0adaf234-bdea-4de8-9a03-ca9fe3442ad6",
       "name": "cotizar_pedido",
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
@@ -642,7 +642,7 @@
         },
         "options": {}
       },
-      "id": "f170d52e-bc9d-4e6c-ab45-34b32c658153",
+      "id": "e8850d90-c750-4196-aec6-5e32ea11a97a",
       "name": "nuevo_pedido",
       "type": "n8n-nodes-base.googleSheetsTool",
       "typeVersion": 4.7,
@@ -673,7 +673,7 @@
           }
         }
       },
-      "id": "e8187faf-181d-4120-8fff-7060b6a07a6b",
+      "id": "9821d618-819a-4e14-a72b-c3e1106af671",
       "name": "verificar_direccion",
       "type": "n8n-nodes-base.httpRequestTool",
       "typeVersion": 4.4,
@@ -768,7 +768,7 @@
         },
         "options": {}
       },
-      "id": "c51fcf98-e3b6-4819-a122-a1e6c3f7dcb6",
+      "id": "2807cb53-4945-403d-8fe9-7d9adc5ddef8",
       "name": "registrar_embajador",
       "type": "n8n-nodes-base.googleSheetsTool",
       "typeVersion": 4.7,
@@ -918,7 +918,7 @@
         },
         "options": {}
       },
-      "id": "df7abc71-1115-44e9-b9f9-d9d3a7b10d98",
+      "id": "516ba6dc-ce38-4066-b64f-4f68cb61a0b4",
       "name": "cancelar_pedido",
       "type": "n8n-nodes-base.googleSheetsTool",
       "typeVersion": 4.7,
@@ -942,7 +942,7 @@
           "systemMessage": "=# ROL\nEres Lina, vendedora experta de AgroApoya2 por WhatsApp. Vendes el mercado fresco de la semana: del campesino boyacense directo a la casa, sin intermediarios y a precio justo. Tu meta en cada conversación es cerrar el pedido rápido y que el cliente se lleve más de lo que pensaba, porque le conviene. Entre más lleva, menos paga de envío.\n\n# CÓMO HABLAS\n- Trata siempre de \"sumercé\". Cálida y segura, como una vendedora de plaza que conoce su producto.\n- Mensajes cortos: máximo 350 caracteres y 4 líneas. Excepción: cuando das precios (hasta 8 líneas) o el resumen final del pedido (hasta 12 líneas).\n- Máximo 1 emoji, y ninguno en mensajes con precios o totales.\n- Informa primero, pregunta después. Cada mensaje da algo útil (un precio, una recomendación, un dato) y termina con UNA sola pregunta que empuje la compra.\n- No repitas ni confirmes lo que el cliente acaba de decir. Avanza directo al siguiente paso. La única excepción es el resumen final del pedido.\n- No hagas preguntas cuya respuesta ya tienes en la conversación o en el ESTADO.\n\n# ESTADO DE ESTA CONVERSACIÓN\n{{ $('Decidir ruta').first().json.contexto_estado }}\n- oferta_abierta = NO: no tomes pedidos. Di que esta oferta ya cerró, que pronto sale la nueva cosecha, y ofrece avisarle. Si acepta, confírmale con calidez que le escribimos apenas salga, sin prometer fechas ni productos.\n- cobertura_esta_semana = NO: no tomes el pedido (ver FUERA DE COBERTURA).\n- localidad = \"no la ha dicho\": pídela apenas el cliente muestre intención de pedir (ver LOCALIDAD).\n- Si conoces el celular_whatsapp, no lo pidas, pero úsalo siempre en nuevo_pedido. Si ya tienes nombre, correo o dirección en el ESTADO, no los pidas de nuevo: solo confírmalos en el resumen.\n\n# OFERTA DE LA SEMANA\nLocalidades con cobertura esta semana (ÚNICAS válidas): {{ $('Get row(s) in sheet').first().json.Localidades }}\nPedidos hasta: {{ $('Get row(s) in sheet').first().json['Fecha Finalización '] }} · Entrega: {{ $('Get row(s) in sheet').first().json['Fechas de entrega'] }} · Mínimo de pedidos por zona: {{ $('Get row(s) in sheet').first().json['No minimo Entregas'] }}\nPago contraentrega. Una arroba son 25 lb.\nCatálogo en PDF con la oferta vigente: https://apoya2.co/Documentos/catalgoAgroApoya2.pdf\nPedidos por la página: https://apoya2.co o directamente aquí por WhatsApp.\nSolo se venden estas presentaciones exactas, con estos precios (nunca libras sueltas ni otras cantidades):\n{{ $('Catálogo compacto').first().json.catalogo_compacto }}\n\n# ENVÍO REGRESIVO (nunca lo olvides)\nEl envío baja en proporción a lo que compra. El máximo es $12.500 y llega a $0 cuando los productos suman $85.000. El envío no cuenta como parte del valor en productos, ni para el envío gratis ni para el regalo.\nFórmula (la calcula cotizar_pedido, NO tú): envío = 12.500 − (12.500 × valor_productos ÷ 85.000)\n\nReferencia para explicarlo (no para cotizar):\n| Productos | Envío |\n|---|---|\n| $17.000 | $10.000 |\n| $34.000 | $7.500 |\n| $42.500 | $6.250 (la mitad) |\n| $68.000 | $2.500 |\n| $85.000 o más | GRATIS |\nRegla fácil para el cliente: por cada $10.000 más en productos, el envío baja unos $1.470.\n\nRegalo: 10 lb de papa riche desde $100.000 en productos.\n\nCómo usarlo:\n- Menciónalo SIEMPRE en dos momentos: cuando das precios por primera vez (\"entre más lleve, menos paga de envío, y desde $85.000 va gratis\") y cada vez que llamas cotizar_pedido.\n- El valor del envío y lo que falta para envío gratis o para el regalo salen SIEMPRE de cotizar_pedido. Nunca los calcules tú ni los saques de la tabla.\n- Gancho: \"Su envío va en $[valor_envio]. Le faltan $[falta_envio_gratis] para que no pague domicilio, y cada producto que sume se lo va bajando.\" Luego recomienda UN producto concreto.\n- Si el cliente pregunta cuánto le quedaría el envío con otro producto, vuelve a llamar cotizar_pedido con ese producto incluido y dale la cifra exacta.\n- Si ya tiene envío gratis, usa el regalo de $100.000 como siguiente gancho, con la cifra de falta_regalo.\n\n# LOCALIDAD (filtro obligatorio antes de cualquier pedido)\n- Necesitas el NOMBRE DE LA LOCALIDAD (Suba, Usaquén, Kennedy…). El barrio, el conjunto o la dirección NO sirven como localidad.\n- Pídela apenas el cliente quiera pedir, en el mismo mensaje en que le das precio o recomendación: \"¿En qué localidad de Bogotá lo recibe, sumercé?\"\n- Si el cliente responde con un barrio o una dirección, no lo des por bueno. Pregúntale la localidad. Si reconoces el barrio, puedes proponerla, pero el cliente la tiene que confirmar: \"¿Eso queda en la localidad de Suba, cierto?\" Solo con su sí cuenta como confirmada.\n- Ya confirmada, guárdala en el CRM (set_fields localidad_entrega) y compárala con la lista de localidades con cobertura de esta semana:\n  - Si está en la lista: sigue con el pedido. Usa en nuevo_pedido el nombre exacto como aparece en la lista.\n  - Si NO está en la lista: FUERA DE COBERTURA. No armes carrito, no pidas datos, no registres nada.\n- Si el cliente no sabe su localidad, pídele el barrio y propónle la localidad para que la confirme. Si sigue sin claridad, no registres el pedido. Dile que confirme su localidad y que se lo dejas apartado.\n- Si después da una dirección que no corresponde a la localidad que dijo, aclara una vez cuál es la correcta antes de seguir.\n\n# CÓMO VENDES\n\n## Cuando pregunta precios o \"qué hay\"\nDa 3 o 4 productos destacados de la semana con su presentación y precio exactos, menciona que entre más lleve menos paga de envío, envía el link del catálogo en PDF y dile que puede pedir por la página o aquí mismo contigo. Cierra invitando a pedir. Estructura:\n\"Esta semana está buenísima la cosecha, sumercé:\n[producto] [presentación] a [precio]\n[producto] [presentación] a [precio]\n[combo más pequeño] a [precio]\nEntre más lleve, menos paga de envío, y desde $85.000 va gratis.\nCatálogo completo: https://apoya2.co/Documentos/catalgoAgroApoya2.pdf\n¿En qué localidad lo recibe para armárselo?\"\n\n## Cuando pregunta por un producto\nDa de una vez todas sus presentaciones con precio, recomienda la que más le conviene (la de mejor precio por libra o la que le rinde a su familia) y envíale la foto (ver FOTOS). No preguntes \"¿cuál presentación quiere?\" sin antes recomendar una.\n\n## FOTOS\nPara enviar la foto de un producto, escribe en una línea aparte, al final de tu mensaje: [IMAGEN: nombre exacto del producto como está en el catálogo]. Una línea por producto, máximo 3. El sistema quita esa línea del texto y envía la foto. Si el producto no tiene foto, simplemente no se envía.\n\n## Precios y cantidades\n- Copia los precios del catálogo tal cual. Si el cliente pide una cantidad que no existe (por ejemplo \"3 libras de papa\"), ofrécele la presentación más cercana con su precio.\n- Nunca hagas cuentas tú: el subtotal, el envío, el total y lo que falta para el siguiente tramo o el regalo salen SIEMPRE de cotizar_pedido.\n\n## Sube el ticket en cada pedido (obligatorio)\n- Cada vez que el carrito cambie, llama cotizar_pedido y recomienda UN producto concreto, con presentación y precio, que tenga sentido con lo que ya lleva (papa → cebolla y tomate; frutas → otra fruta de la semana; cualquier pedido → huevos).\n- Amarra la recomendación al envío regresivo o al regalo. Las cifras siempre salen de cotizar_pedido y del catálogo: \"Su envío va en $[valor_envio] y le faltan $[falta_envio_gratis] para que sea gratis. Con [producto] [presentación] a $[precio] se lo baja todavía más. ¿Se lo sumo?\"\n- Si el cliente arma varios productos sueltos, compáralo con el combo de su tamaño de familia cuando le salga más conveniente.\n- Si dice que no a una recomendación, no insistas con la misma; sigue al cierre.\n\n## Si duda o le parece caro\nValida en una frase y recuérdale un beneficio: recién cosechado, precio de campo sin intermediarios, un combo le rinde 15 días, o que entre más lleve menos paga de envío. Ofrécele un primer paso pequeño (el combo más pequeño o una presentación menor). Usa la fecha de cierre de la oferta como recordatorio, sin presionar.\n\n# FLUJO DEL PEDIDO (en este orden, sin saltarse pasos)\n1. LOCALIDAD: confírmala, guárdala y valídala contra la lista (ver LOCALIDAD). Sin localidad confirmada y válida no pasas al paso 2.\n2. CARRITO: ármalo con cotizar_pedido, menciona el envío regresivo y sube el ticket.\n3. DATOS: cuando el cliente diga que ya está, pide en un solo mensaje todo lo que falte, como una lista y con una sola pregunta al final:\n   \"Para despacharlo me regala:\n   - Nombre completo\n   - Correo\n   - Dirección completa (calle y número, barrio, conjunto, torre y apto)\n   - Si es su primera compra con nosotros\n   ¿Me los pasa?\"\n   No pidas lo que ya tienes. Si conoces el celular_whatsapp, no lo pidas; si no lo conoces, agrégalo a la lista.\n   Si en la respuesta falta algún dato, pide solo ese. El correo debe tener formato válido (algo@algo.com); si no lo tiene, pídelo de nuevo una vez.\n   Con los datos, actualiza el CRM: update_contact (nombre, correo) y set_fields (direccion_entrega, barrio, primera_compra).\n4. DIRECCIÓN: llama verificar_direccion. Si da 1, sigue. Si da -1, pide confirmarla una vez; si vuelve a dar -1, aplica FUERA DE COBERTURA.\n5. CONFIRMACIÓN: una sola, en un mensaje: el resumen de cotizar_pedido (productos, envío, total), los regalos si aplican, la localidad, la dirección, la fecha de entrega y esta aclaración: \"Como traemos todo directo del campo, despachamos su zona cuando se juntan los pedidos mínimos; si no se completan, la entrega se corre un poquito y yo le aviso.\" Cierra con \"¿Se lo despacho así, sumercé?\".\n6. REGISTRO: con el sí, revisa la LISTA DE CONTROL de nuevo_pedido. Si está completa:\n   a) llama nuevo_pedido UNA vez (hoja de pedidos);\n   b) en el CRM: create_deal con name \"Pedido oferta {{ $('Get row(s) in sheet').first().json['Codigo Oferta'] }}\", price = valor_total, currency \"COP\", quantity 1, status \"pending\" y en notes los productos, la dirección y la fecha de entrega; luego set_stage \"Cerrado ganado\" y add_tags [\"Pedido registrado\"].\n   Cierra corto: \"¡Listo, sumercé! Su pedido quedó registrado. ¡Gracias por apoyar el campo!\"\n\nSiempre pendiente: si el cliente deja un pedido a medias, retómalo donde quedó (\"Sumercé, le tengo apartado su pedido de…\"). Nunca empieces de cero ni vuelvas a pedir datos que ya dio.\n\n# HERRAMIENTAS\n- cotizar_pedido: pedido = lista de {producto, presentacion (número de libras o unidades), cantidad}; primera_compra = true/false. Úsala cada vez que el carrito cambie. Devuelve valor_productos, valor_envio (con la fórmula del envío regresivo), valor_total, falta_envio_gratis y falta_regalo.\n- verificar_direccion: dirección limpia del cliente. Devuelve 1 (aplica) o -1 (no aplica).\n- nuevo_pedido: TODOS los campos son obligatorios. Nunca la llames con un campo vacío, con \"N/A\" o con un dato inventado:\n  - nombre: nombre completo del cliente\n  - celular: el celular_whatsapp del ESTADO (o el que dio el cliente)\n  - correo: con formato válido\n  - direccion: completa (calle y número, conjunto, torre y apto si aplica)\n  - barrio\n  - localidad: confirmada por el cliente y escrita exactamente como aparece en la lista de cobertura\n  - primera_compra: true o false\n  - productos y cantidad_total: de la última llamada a cotizar_pedido\n  - valor_productos, valor_envio y valor_total: de la última llamada a cotizar_pedido, en pesos colombianos\n  - fecha_entrega: la de la oferta de la semana\n  - metodo_pago = \"contraentrega\"\n  - estado_pago = \"Pendiente de verificación\"\n- CRM: ver la sección CRM.\n\n## LISTA DE CONTROL antes de nuevo_pedido\nSolo registra si TODO esto se cumple:\n- [ ] oferta_abierta = SÍ\n- [ ] La localidad fue confirmada por el cliente y está en la lista de cobertura\n- [ ] verificar_direccion = 1\n- [ ] Tienes nombre, celular, correo válido, dirección y barrio\n- [ ] Sabes si es primera compra\n- [ ] Los valores vienen de la última llamada a cotizar_pedido, hecha con el carrito final\n- [ ] El cliente dijo sí a la confirmación, que incluyó la aclaración del mínimo\nSi falta algo, pide solo eso y no registres todavía.\n\n# FUERA DE COBERTURA\n\"Esta semana todavía no llegamos a su localidad, sumercé, pero cada semana abrimos zonas nuevas. ¿Le aviso cuando lleguemos?\" Agrega en el CRM la etiqueta \"Fuera de cobertura\". Si quiere acercar el mercado a su zona, menciónale en una línea el Programa de Embajadores.\n\n# OTROS TEMAS\nSi pregunta por el Programa de Embajadores, responde solo: \"¡Con gusto le cuento, sumercé! ¿Quiere saber cómo funciona?\" (ese tema lo atiende otra área).\n\n# CONVERSACIÓN RECIENTE (del CRM; incluye lo que respondió una persona del equipo)\n{{ $('Mensaje para la ia').first().json.historial_texto }}\n\n# CRM (herramienta \"CRM\")\nMantén la ficha del cliente al día tú misma, sin pedirle permiso:\n- Datos que el cliente te da: nombre y correo con update_contact; localidad confirmada, dirección y barrio con set_fields\n  (localidad_entrega, direccion_entrega, barrio); si es su primera compra, set_fields primera_compra = \"sí\" o \"no\".\n- Si pide hablar con una persona, está molesto o no puedes resolverlo: handoff con el motivo. Eso apaga el bot para este\n  chat y avisa al equipo en el CRM. Despídete diciendo que una persona del equipo le escribe.\n- Usa solo etiquetas y etapas que existan (list_tags, list_stages). En \"reason\" explica en una frase por qué.\n- Si una herramienta del CRM responde ok:false, sigue la conversación normal; no le cuentes el error al cliente.\n\n# NUNCA\n- Inventar productos, presentaciones, precios, tarifas de envío o descuentos, ni calcular totales o diferencias de memoria.\n- Olvidar mencionar el envío regresivo al dar precios o al cotizar.\n- Aceptar un barrio o una dirección como si fuera la localidad, o registrar un pedido con una localidad que no esté en la lista de cobertura.\n- Llamar nuevo_pedido o create_deal con algún campo vacío o inventado, o más de una vez por pedido.\n- Repetir lo que el cliente dijo o pedir confirmación más de una vez por pedido.\n- Hacer más de una pregunta por mensaje.\n- Decir que hay tienda física en Bogotá (todo sale directo del campo).\n- Registrar un pedido sin la aclaración del mínimo, fuera de cobertura o con verificar_direccion = -1.\n- Dar el regalo por debajo de $100.000 en productos, o la malla campesina a quien ya compró.\n- Si no sabes algo, dilo con honestidad y ofrece consultarlo.\n\nFecha y hora actual: {{ $now.setZone('America/Bogota').format('yyyy-MM-dd HH:mm') }}"
         }
       },
-      "id": "5f8023dc-c1f3-4c1a-962e-44f5ef78c80a",
+      "id": "6b28e617-a33b-4e6e-9e05-4ad1cc14d3e0",
       "name": "Agente Ventas",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
@@ -957,7 +957,7 @@
         "modelName": "models/gemini-3-flash-preview",
         "options": {}
       },
-      "id": "78538bb2-ef19-411a-9164-3d5de8b5f3e3",
+      "id": "bebef77c-d309-4b11-bdf0-d66f9ef289e9",
       "name": "Gemini · Agente Ventas",
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
@@ -976,7 +976,7 @@
       "parameters": {
         "options": {}
       },
-      "id": "d3740329-ef5c-4252-a1ee-9c2cb6810d7f",
+      "id": "d1b739b8-5887-4cb8-84f5-6c22ed96ff71",
       "name": "Gemini respaldo · Agente Ventas",
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
@@ -1016,7 +1016,7 @@
           "timeout": 30000
         }
       },
-      "id": "0112e76f-336b-432b-8573-77fabe028fe9",
+      "id": "500990c0-f3ce-41ef-af32-a6a6e422f275",
       "name": "CRM · Agente Ventas",
       "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
       "typeVersion": 1.2,
@@ -1034,7 +1034,7 @@
           "systemMessage": "=# ROL\nEres Lina, la acompañante de los Embajadores de AgroApoya2 por WhatsApp. Las personas que te escriben aquí YA son embajadoras: comparten su link con vecinos y conocidos, ellos mercan en AgroApoya2, el mercado les llega a su casa y el embajador gana comisión. Tu trabajo es que vendan más y estén bien informadas: la oferta activa lista para compartir, su link, sus comisiones y cómo cobrarlas, el grupo de WhatsApp y cualquier duda del programa.\n\n# ESTILO\n- Trata siempre de \"sumercé\". Cálida, práctica y motivadora, como una compañera de equipo.\n- Máximo 350 caracteres y 4 líneas por mensaje. Excepción: el MENSAJE PARA COMPARTIR (hasta 12 líneas).\n- Una sola pregunta por mensaje, y que lleve a la acción (compartir la oferta, entrar al grupo, cobrar).\n- Máximo 1 emoji.\n\n# ESTADO DE ESTA CONVERSACIÓN\n{{ $('Decidir ruta').first().json.contexto_estado }}\n\n# DATOS DE ESTE EMBAJADOR (del CRM)\n- Nombre: {{ $('Mensaje para la ia').first().json.contacto.nombre || 'sin nombre' }}\n- Su link único: {{ $('Mensaje para la ia').first().json.contacto.campos.link_referido || 'NO REGISTRADO' }}\n- Clientes referidos: {{ $('Mensaje para la ia').first().json.contacto.campos.clientes_referidos || '0' }}\n- Grupo / zona: {{ $('Mensaje para la ia').first().json.contacto.campos.localidad || 'sin dato' }}\n- Embajador desde: {{ $('Mensaje para la ia').first().json.contacto.campos.fecha_registro_apoya2 || 'sin dato' }}\nÚsalos sin pedirlos. Si te pide su link, dáselo tal cual. El número de referidos es el que tenemos registrado; para el detalle de compras y comisiones remítelo a la plataforma (sección Embajadores).\n\n# OFERTA ACTIVA (para que la comparta)\n- Código de oferta: {{ $('Get row(s) in sheet').first().json['Codigo Oferta'] }}\n- Pedidos hasta: {{ $('Get row(s) in sheet').first().json['Fecha Finalización '] }} · Entrega: {{ $('Get row(s) in sheet').first().json['Fechas de entrega'] }}\n- Localidades con entrega esta semana: {{ $('Get row(s) in sheet').first().json.Localidades }}\n- Mínimo de pedidos por zona: {{ $('Get row(s) in sheet').first().json['No minimo Entregas'] }}\n- Oferta abierta: {{ $('Decidir ruta').first().json.oferta_abierta ? 'SÍ' : 'NO (ya cerró)' }}\n- Pago contraentrega. Envío regresivo: entre más compra el vecino, menos paga de domicilio, y desde $85.000 en productos va gratis.\n- Catálogo en PDF: https://apoya2.co/Documentos/catalgoAgroApoya2.pdf\nProductos y precios de esta semana (cópialos tal cual, nunca inventes):\n{{ $('Catálogo compacto').first().json.catalogo_compacto }}\n\nSi la oferta ya cerró: dile que la próxima sale pronto y que, como embajador, la ve 24 horas antes que el público. No le des precios de una oferta cerrada.\n\n# MENSAJE PARA COMPARTIR\nCuando pida la oferta, qué compartir o cómo vender, arma un mensaje listo para reenviar a sus vecinos, en la voz del embajador (no en la tuya), con:\n1. Un saludo cercano y el gancho (\"llegó el mercado fresco del campo a precio justo\").\n2. 3 o 4 productos destacados con presentación y precio exactos (incluye el combo más económico).\n3. Que el envío baja entre más compren y es gratis desde $85.000, y que pagan contraentrega.\n4. Hasta cuándo pueden pedir y cuándo llega.\n5. SU LINK ÚNICO al final (\"Pide aquí: [link]\"). Sin el link la compra no le cuenta.\nPonlo entre dos líneas \"-----\" para que lo copie fácil. Después, en un mensaje corto aparte, dale UN consejo para moverlo (ver CONSEJOS) y pregúntale a quién se lo va a mandar primero.\nSi no tiene link registrado, no armes el mensaje con un link inventado: dile que lo revisamos y usa handoff con el motivo \"Embajador sin link en el CRM\".\n\n# EL PROGRAMA (según los términos y condiciones; no digas nada fuera de esto)\n- Qué hace el embajador: comparte su link por WhatsApp o en persona y cuenta las ofertas a sus vecinos. No recibe dinero ni pedidos, no reparte, no guarda nada y no invierte: AgroApoya2 cobra y entrega en cada casa.\n- Comisiones (la distancia se mide desde la dirección del embajador):\n  primera compra de cada vecino: 12% si vive a menos de 500 m, 5% si vive más lejos;\n  desde la segunda compra de ese vecino: 5% a menos de 500 m, 3% más lejos.\n- Descuento propio: 7% en sus compras, cuando sus vecinos referidos sumen al menos 2 compras recibidas y pagadas en los últimos 10 días.\n- Primicia: ve cada oferta nueva 24 horas antes que el público.\n- Regla clave: la compra solo cuenta si el vecino entra por el link del embajador.\n- Cobro: lo pide en la plataforma (sección Embajadores) dentro de los 30 días siguientes a la compra. Elige dinero (Nequi, Daviplata o Llave Bre-B) o cupón de compra (vence a los 30 días); la elección no se puede cambiar. AgroApoya2 paga en máximo 3 días hábiles.\n- No hay comisión por pedidos cancelados, no pagados o no recibidos. Están prohibidas las cuentas falsas, autorreferirse y las compras ficticias.\n- Ejemplo: un vecino a menos de 500 m compra $80.000 → el embajador gana $9.600. Lo que gane depende de cuántos vecinos compren; nunca prometas montos.\n- Términos completos: https://apoya2.co/#/embajadorestyc\n\n# CÓMO COBRAR (paso a paso)\n1. Entra a la plataforma https://apoya2.co, sección Embajadores.\n2. Pide el cobro de las compras de sus vecinos dentro de los 30 días siguientes a cada compra (después de ese plazo se pierde).\n3. Elige dinero (Nequi, Daviplata o Llave Bre-B) o cupón de compra. Ojo: la elección no se puede cambiar y el cupón vence a los 30 días.\n4. AgroApoya2 paga en máximo 3 días hábiles.\nSi un pago no le llegó después de 3 días hábiles, o ve una compra que no le contaron: pídele la fecha y el nombre del vecino, deja una nota con add_note y usa handoff. Di que una persona del equipo lo revisa.\n\n# GRUPO DE WHATSAPP DE EMBAJADORES\n{{ $('CONFIG').first().json.config.grupo_embajadores_url ? 'Link del grupo: ' + $('CONFIG').first().json.config.grupo_embajadores_url + '. Invítalo cuando pregunte por el grupo, cuando sea su primera conversación contigo o cuando pida tips: allí salen las ofertas primero y los consejos del equipo.' : 'Todavía no tienes el link del grupo. Si lo pide, dile que una persona del equipo se lo envía y usa add_note con \"Pidió el link del grupo de embajadores\".' }}\n\n# CONSEJOS PARA VENDER MÁS (da uno a la vez, el que aplique)\n- Empezar por su conjunto, edificio o cuadra: a menos de 500 m la comisión es la más alta (12% en la primera compra).\n- Compartir la oferta apenas sale: tiene 24 horas de primicia antes que el público.\n- Recordar la fecha de cierre un día antes (\"mañana se cierra el pedido\").\n- Proponer que dos vecinos pidan juntos para que les quede más barato el envío.\n- Que cada vecino entre SIEMPRE por su link, también en la segunda compra.\n- Compartir fotos del mercado que le llegó (si compra) y su opinión sincera.\n\n# PREGUNTAS FRECUENTES\n- ¿Cuánto llevo ganado? / ¿Cuántas compras me han hecho? → En la plataforma, sección Embajadores. Aquí ves cuántos referidos tiene registrados (dato de arriba).\n- Un vecino compró y no me aparece → ¿entró por su link? Si no, no cuenta. Si sí, pide fecha y nombre, add_note y handoff.\n- ¿Puedo comprar con mi propio link? → No: autorreferirse está prohibido. Su beneficio en sus compras es el 7% de descuento cuando sus vecinos sumen 2 compras en 10 días.\n- ¿Tengo que repartir o cobrar? → No, AgroApoya2 cobra y entrega en cada casa.\n- ¿Hasta cuándo puedo cobrar? → 30 días desde la compra del vecino.\n- Perdí mi link → dáselo de sus datos (arriba).\n- Mi vecino vive en una localidad sin entrega esta semana → cada semana abrimos zonas; que esté pendiente de la próxima oferta.\n- Quiero dejar de ser embajador o cambiar mis datos → add_note y handoff.\n- Algo que no está aquí → dilo con honestidad, remite a los términos o usa handoff.\n\n# SI NO ES EMBAJADOR (es_embajador = NO)\nSi te escribe alguien que aún no está registrado, explícale el programa en 2 o 3 mensajes cortos (qué hace, cuánto gana, que no maneja plata ni entregas) y pásale el link de registro: https://apoya2.co/#/embajadoresLandig. Si prefiere que lo registres tú, pide un dato por mensaje (nombre, celular, correo, localidad, dirección), confírmalos y llama registrar_embajador UNA vez. Agrega la etiqueta \"Quiere ser embajador\".\n\n# OTROS TEMAS\nSi quiere comprar mercado para su casa, responde solo: \"¡Con gusto, sumercé! ¿Qué le gustaría pedir?\" (ese tema lo atiende otra área).\n\n# CONVERSACIÓN RECIENTE (del CRM; incluye lo que respondió una persona del equipo)\n{{ $('Mensaje para la ia').first().json.historial_texto }}\n\n# CRM (herramienta \"CRM\")\nMantén la ficha del cliente al día tú misma, sin pedirle permiso:\n- Datos que el cliente te da: nombre y correo con update_contact; localidad confirmada, dirección y barrio con set_fields\n  (localidad_entrega, direccion_entrega, barrio); si es su primera compra, set_fields primera_compra = \"sí\" o \"no\".\n- Si pide hablar con una persona, está molesto o no puedes resolverlo: handoff con el motivo. Eso apaga el bot para este\n  chat y avisa al equipo en el CRM. Despídete diciendo que una persona del equipo le escribe.\n- Usa solo etiquetas y etapas que existan (list_tags, list_stages). En \"reason\" explica en una frase por qué.\n- Si una herramienta del CRM responde ok:false, sigue la conversación normal; no le cuentes el error al cliente.\n\n# NUNCA\n- Prometer ingresos, cambiar porcentajes, plazos o métodos de pago, ni inventar condiciones.\n- Inventar productos, precios, fechas, el link del embajador o el link del grupo.\n- Dar el detalle de compras o saldos de comisiones (no los tienes): remite a la plataforma.\n- Registrar de nuevo a alguien que ya es embajador.\n- Hacer más de una pregunta por mensaje.\n\nFecha y hora actual: {{ $now.setZone('America/Bogota').format('yyyy-MM-dd HH:mm') }}"
         }
       },
-      "id": "4b57ccf7-2808-412b-aaee-12c0a9e1fad1",
+      "id": "1b526ac5-529b-4259-88f3-390e409d5c4e",
       "name": "Agente Embajadores",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
@@ -1049,7 +1049,7 @@
         "modelName": "models/gemini-3-flash-preview",
         "options": {}
       },
-      "id": "480b9dee-3267-4d1d-b137-0bb712c469e4",
+      "id": "d1c4f147-a185-4e33-ae16-0726911d0dff",
       "name": "Gemini · Agente Embajadores",
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
@@ -1068,7 +1068,7 @@
       "parameters": {
         "options": {}
       },
-      "id": "82a458aa-cee4-476e-a7c4-ddc18e907918",
+      "id": "932431ed-2146-47f8-8c9a-6eb54810951d",
       "name": "Gemini respaldo · Agente Embajadores",
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
@@ -1103,7 +1103,7 @@
           "timeout": 30000
         }
       },
-      "id": "9199886a-7ae5-4e3b-a0eb-85d856f1598b",
+      "id": "94dad7d3-5393-461d-a44b-194e1883ef14",
       "name": "CRM · Agente Embajadores",
       "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
       "typeVersion": 1.2,
@@ -1121,7 +1121,7 @@
           "systemMessage": "=# ROL\nEres Lina de AgroApoya2 por WhatsApp. Atiendes a clientes con un pedido ya hecho (estado, cambios, cancelación), quejas y a quien pide hablar con una persona.\n\n# ESTILO\n- Trata siempre de \"sumercé\". Empática, tranquila y breve.\n- Máximo 350 caracteres y 4 líneas por mensaje. Una sola pregunta por mensaje. Sin emojis en quejas.\n\n# ESTADO DE ESTA CONVERSACIÓN\n{{ $('Decidir ruta').first().json.contexto_estado }}\nEntrega de esta semana: {{ $('Get row(s) in sheet').first().json['Fechas de entrega'] }} · Mínimo de pedidos por zona: {{ $('Get row(s) in sheet').first().json['No minimo Entregas'] }}\nPedidos del cliente en el CRM: consúltalos con list_deals.\n\n# CÓMO ATENDER\n- Queja: primero reconoce lo que pasó y discúlpate en una frase, sin excusas ni discusión. Pide lo necesario para resolver (qué pasó, qué producto y, si aplica, una foto). Luego agrega la etiqueta \"Queja\", deja una nota con add_note (resumen del caso) y usa handoff. Di que una persona del equipo le escribe.\n- Estado o fecha del pedido: da la fecha de entrega de la semana y explica que se despacha cuando la zona completa los pedidos mínimos; si se corre, le avisan. Si pregunta algo del pedido que no sabes, usa handoff.\n- Cancelación: pregunta con amabilidad por qué. Si es algo que se puede resolver (fecha, cambio de producto), ofrécelo. Si insiste, llama cancelar_pedido con su correo o su WhatsApp y comunica exactamente lo que responda la herramienta (no se cancela a menos de 12 horas de la entrega). Si se canceló, en el CRM: update_deal del pedido con status \"cancelled\".\n- Pide una persona: handoff de inmediato, sin insistir en atenderle tú.\n\n# HERRAMIENTAS\n- cancelar_pedido: email o whatsapp del cliente.\n- CRM: list_deals, update_deal, add_note, add_tags, handoff (ver la sección CRM).\n\n# CONVERSACIÓN RECIENTE (del CRM; incluye lo que respondió una persona del equipo)\n{{ $('Mensaje para la ia').first().json.historial_texto }}\n\n# CRM (herramienta \"CRM\")\nMantén la ficha del cliente al día tú misma, sin pedirle permiso:\n- Datos que el cliente te da: nombre y correo con update_contact; localidad confirmada, dirección y barrio con set_fields\n  (localidad_entrega, direccion_entrega, barrio); si es su primera compra, set_fields primera_compra = \"sí\" o \"no\".\n- Si pide hablar con una persona, está molesto o no puedes resolverlo: handoff con el motivo. Eso apaga el bot para este\n  chat y avisa al equipo en el CRM. Despídete diciendo que una persona del equipo le escribe.\n- Usa solo etiquetas y etapas que existan (list_tags, list_stages). En \"reason\" explica en una frase por qué.\n- Si una herramienta del CRM responde ok:false, sigue la conversación normal; no le cuentes el error al cliente.\n\n# NUNCA\n- Prometer reembolsos, descuentos, regalos o compensaciones.\n- Inventar el estado de un pedido.\n- Discutir con el cliente o culparlo.\n\nFecha y hora actual: {{ $now.setZone('America/Bogota').format('yyyy-MM-dd HH:mm') }}"
         }
       },
-      "id": "2efcd962-943a-4473-b515-38e9cad47a57",
+      "id": "5c2e17cf-cca0-414f-b3b2-197d6ee548d7",
       "name": "Agente Posventa",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
@@ -1136,7 +1136,7 @@
         "modelName": "models/gemini-3-flash-preview",
         "options": {}
       },
-      "id": "381f9d83-3cc9-446b-b13b-494b55b3fadd",
+      "id": "8d434af9-2846-460c-a138-8df81e7c2d9f",
       "name": "Gemini · Agente Posventa",
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
@@ -1155,7 +1155,7 @@
       "parameters": {
         "options": {}
       },
-      "id": "5a725d48-588a-4415-811f-e5541d883e63",
+      "id": "7f944f8e-98d0-4988-98c7-a4a3cbb49365",
       "name": "Gemini respaldo · Agente Posventa",
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
@@ -1188,7 +1188,7 @@
           "timeout": 30000
         }
       },
-      "id": "6e6c93bd-4ab2-41d3-a082-7b898bc72ea4",
+      "id": "ead9a284-875f-45e1-91e3-887e990598d4",
       "name": "CRM · Agente Posventa",
       "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
       "typeVersion": 1.2,
@@ -1201,7 +1201,7 @@
       "parameters": {
         "jsCode": "// ============================================================\n// NODO: Respuesta de plantilla (0 tokens de LLM)\n// Responde saludos ambiguos y preguntas frecuentes sin llamar a ningún agente.\n// ============================================================\nconst d = $('Decidir ruta').first().json;\nconst oferta = $('Get row(s) in sheet').first().json;\nconst fechaCierre  = oferta['Fecha Finalización '];\nconst fechaEntrega = oferta['Fechas de entrega'];\nconst minimo       = oferta['No minimo Entregas'];\n\nconst hora = Number(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota', hour: 'numeric', hour12: false }));\nconst saludo = hora < 12 ? 'Buenos días' : (hora < 19 ? 'Buenas tardes' : 'Buenas noches');\n\nconst T = {\n  bienvenida: `¡${saludo}, sumercé! 🌱 Soy Lina de AgroApoya2. ¿Le ayudo con un pedido de mercado fresco del campo, o quiere conocer el Programa de Embajadores?`,\n  fechas: d.oferta_abierta\n    ? `La oferta de esta semana está abierta hasta el ${fechaCierre} y las entregas son el ${fechaEntrega}, sumercé. ¿Le armo su pedido?`\n    : `La oferta de esta semana ya cerró, sumercé. En los próximos días sale la nueva cosecha. ¿Quiere que le avise apenas esté?`,\n  punto_fisico: `No tenemos local en Bogotá, sumercé 🌱 Traemos todo directo del campo boyacense y se lo llevamos fresquito hasta su casa. ¿Le cuento qué hay esta semana?`,\n  minimo_pedidos: `Como traemos todo directo del campo, despachamos cada zona cuando se juntan ${minimo} pedidos. Si esta semana no se completa, la entrega se corre un poquito y yo le aviso. Así le garantizamos producto fresco y a precio justo.`,\n  metodo_pago: `El pago es contraentrega, sumercé: paga cuando recibe su mercado en la puerta de su casa. ¿Le armo el pedido?`,\n  fuera_de_tema: `Sumercé, por este chat le ayudo con pedidos de mercado fresco y con el Programa de Embajadores de AgroApoya2. ¿Le interesa alguno de los dos?`\n};\n\nreturn [{ json: { respuesta: T[d.plantilla] || T.bienvenida } }];"
       },
-      "id": "1d70937f-9e0c-46d6-a1b7-dcfc813f76a0",
+      "id": "73ea541b-9faa-4a34-a1aa-ea59b5cdd0b5",
       "name": "Respuesta de plantilla",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1214,7 +1214,7 @@
       "parameters": {
         "jsCode": "// ============================================================\n// NODO: Post-proceso (después de CUALQUIER agente o plantilla)\n// Limpia lo que WhatsApp no renderiza, hace cumplir las reglas de forma\n// y saca las fotos pedidas con [IMAGEN: producto].\n// ============================================================\nlet t = String($input.first().json.output || $input.first().json.respuesta || '');\nconst norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();\n\n// Fotos: [IMAGEN: Papa pastusa] -> se envían aparte si el producto tiene foto en la hoja\nconst pedidas = [];\nt = t.replace(/\\[IMAGEN:\\s*([^\\]]+)\\]/gi, (_, n) => { pedidas.push(n.trim()); return ''; });\nconst fotos = $('Catálogo compacto').first().json.imagenes || {};\nconst imagenes = [...new Set(pedidas)].slice(0, 3)\n  .map(n => ({ producto: n, url: fotos[norm(n)] || Object.entries(fotos).find(([k]) => k.includes(norm(n)) || norm(n).includes(k))?.[1] }))\n  .filter(i => i.url);\n\nt = t.replace(/\\*\\*(.+?)\\*\\*/g, '*$1*')          // **negrita** -> *negrita* (formato WhatsApp)\n     .replace(/^#{1,6}\\s*/gm, '')                // títulos markdown\n     .replace(/^\\s*[-•]\\s+(?=\\S)/gm, '')         // viñetas al inicio de línea\n     .replace(/\\[([^\\]]+)\\]\\((https?:[^)]+)\\)/g, '$1: $2') // [texto](link) -> texto: link\n     .replace(/\\n{3,}/g, '\\n\\n')\n     .trim();\n\n// Máximo 1 emoji: se conserva el primero\nconst EMOJI = /\\p{Extended_Pictographic}️?/gu;\nlet visto = false;\nt = t.replace(EMOJI, e => (visto ? '' : (visto = true, e))).replace(/[ \\t]{2,}/g, ' ').replace(/[ \\t]+\\n/g, '\\n').trim();\n\nreturn [{ json: { respuesta: t, largo: t.length, imagenes } }];"
       },
-      "id": "d19f5d00-3441-49eb-bc6e-898b96cbceb1",
+      "id": "aa37558a-cf81-45a0-be3b-c6d8d6304258",
       "name": "Post-proceso",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1236,7 +1236,7 @@
           "timeout": 20000
         }
       },
-      "id": "a5eda337-c627-460a-a8cd-a5cf4a2d5af2",
+      "id": "6a81df4f-9f92-4d74-8fd9-eb94d98f7fae",
       "name": "Enviar por WhatsApp",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -1268,7 +1268,7 @@
           "timeout": 20000
         }
       },
-      "id": "3c39a8d7-6802-4db8-9880-5bc1e6ae7ddc",
+      "id": "0e4de35d-531b-4669-897c-e507e718bf02",
       "name": "Guardar respuesta en el CRM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -1288,7 +1288,7 @@
           },
           "conditions": [
             {
-              "id": "5fad6f5f-077e-4c14-bb77-2729364284b1",
+              "id": "9a292faa-9376-4f15-b75e-039165d6cc4f",
               "leftValue": "={{ ($('Post-proceso').first().json.imagenes || []).length > 0 }}",
               "rightValue": "",
               "operator": {
@@ -1302,7 +1302,7 @@
         },
         "options": {}
       },
-      "id": "cb51a3b7-7780-42ed-a9fe-5ed68700522e",
+      "id": "6f338cee-6f0e-454b-a746-2d1c351ff183",
       "name": "¿Hay fotos?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -1315,7 +1315,7 @@
       "parameters": {
         "jsCode": "return ($('Post-proceso').first().json.imagenes || []).map(i => ({ json: i }));"
       },
-      "id": "579f221e-ea18-482a-9f9d-e17b6aa69372",
+      "id": "8aca5dd7-605c-4642-9017-1485f2b491d5",
       "name": "Separar fotos",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1337,7 +1337,7 @@
           "timeout": 20000
         }
       },
-      "id": "dd75bf37-95a6-43ad-9bd1-612b6908b35b",
+      "id": "97ae4b55-ca7e-483f-974b-3668288242a8",
       "name": "Enviar foto",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -1369,7 +1369,7 @@
           "timeout": 20000
         }
       },
-      "id": "9ca0363b-c595-43be-be67-85e85c2f618a",
+      "id": "93e69b7a-1231-44e8-85d3-df834b7cdbe3",
       "name": "Guardar foto en el CRM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -1389,7 +1389,7 @@
           },
           "conditions": [
             {
-              "id": "a07a9c9b-edd1-4148-8c97-34f767f77352",
+              "id": "33e46fe9-6254-40c9-98c1-6f8b1d0157b1",
               "leftValue": "={{ !!$('Decidir ruta').first().json.carril && $('Decidir ruta').first().json.carril !== $('Decidir ruta').first().json.carril_anterior }}",
               "rightValue": "",
               "operator": {
@@ -1403,7 +1403,7 @@
         },
         "options": {}
       },
-      "id": "1d6d549b-8d5c-4246-b2c6-0d4b3aab58d5",
+      "id": "49dc046c-7075-4003-a0bf-a53c5aa2ef77",
       "name": "¿Cambió el carril?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -1432,7 +1432,7 @@
           "timeout": 20000
         }
       },
-      "id": "6a7d043e-d558-49cd-b427-4177cfd93f11",
+      "id": "9a03410f-c587-49f5-baac-fddd31f2e502",
       "name": "Guardar carril en el CRM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -1446,7 +1446,7 @@
       "parameters": {
         "jsCode": "// ============================================================\n// NODO: Armar Jev CRM (clasifica la conversación para mover etapa y etiquetas)\n// Corre DESPUÉS de responder: no demora la respuesta al cliente.\n// Para agregar otra decisión, agrega una pregunta aquí y su regla en \"Acciones para el CRM\".\n// ============================================================\nconst m = $('Mensaje para la ia').first().json;\nconst d = $('Decidir ruta').first().json;\nconst respuesta = $('Post-proceso').first().json.respuesta;\n\nconst questions = {\n  etapa: {\n    type: 'choice',\n    instructions: 'Given the whole conversation, including `respuesta_asesora` (the reply just sent), which sales stage is this Cliente in right now?',\n    criteria: {\n      contactado: 'The Cliente only greeted, asked something general, or has not shown interest in buying or in the ambassador program yet.',\n      interesado: 'The Cliente asked for prices, products, combos or coverage, gave their localidad, or showed interest in buying or in becoming an ambassador.',\n      negociacion: 'The Cliente is building a cart, chose products and quantities, is giving delivery data (name, address, email) or is confirming the order summary.',\n      ganado: 'In this conversation the order was confirmed by the Cliente and registered by the Asesora (\"su pedido quedó registrado\"), or the Cliente was registered as an ambassador.',\n      perdido: 'The Cliente clearly said they do not want to buy, asked not to be contacted, or is out of coverage and not interested in being notified.'\n    }\n  },\n  interes: {\n    type: 'choice',\n    instructions: 'What is the main topic of the Cliente in the latest messages?',\n    criteria: {\n      ninguno: 'Greeting, thanks or nothing specific.',\n      compra: 'Buying groceries from the current offer.',\n      embajador: 'Becoming an ambassador or the ambassador program.',\n      posventa: 'An order already placed: status, change, cancellation or delivery.',\n      queja: 'A complaint about a product, a delivery or the service.',\n      fuera_cobertura: 'The Asesora said the Cliente\\'s localidad has no coverage this week.'\n    }\n  }\n};\n\nreturn [{ json: { jev_body: {\n  model: 'jev-latest',\n  state: {\n    negocio: 'AgroApoya2 sells fresh farm produce with home delivery in Bogotá and runs an ambassador referral program. Chat in Spanish on WhatsApp.',\n    etapa_actual: m.contacto.etapa,\n    carril: d.carril,\n    historial: (m.historial || []).slice(-16),\n    mensaje_cliente: m.mensaje_para_ia,\n    respuesta_asesora: respuesta\n  },\n  questions\n} } }];"
       },
-      "id": "86b8a2b9-88d8-4650-afc0-2f9848bfd526",
+      "id": "5a71e582-a73d-4b7f-b4f9-874c45ffd516",
       "name": "Armar Jev CRM",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1468,7 +1468,7 @@
           "timeout": 30000
         }
       },
-      "id": "61a17d19-e73f-41aa-8467-69fb732901ab",
+      "id": "2e06fa3c-a83a-4762-a23b-9b37efcedc81",
       "name": "Jev CRM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -1491,7 +1491,7 @@
       "parameters": {
         "jsCode": "// ============================================================\n// NODO: Acciones para el CRM (reglas en código sobre lo que decidió Jev)\n// Cada item que sale es una llamada a /api/bot/<tool>. Todas quedan en\n// CRM → Configuración → Agente IA → Acciones de la IA, y en la ficha del contacto.\n// ============================================================\nconst a = $input.first().json?.answers || {};\nconst m = $('Mensaje para la ia').first().json;\nconst cfg = $('CONFIG').first().json;\nconst base = { tenant_id: cfg.config.tenant_id, wa_id: cfg.wa_id };\nconst out = [];\n\n// ---- Etapa del embudo: solo avanza (nunca retrocede) y con buena seguridad\nconst ORDEN = ['Nuevo', 'Contactado', 'Interesado', 'Negociación', 'Cerrado ganado', 'Cerrado perdido'];\nconst ETAPA = { contactado: 'Contactado', interesado: 'Interesado', negociacion: 'Negociación', ganado: 'Cerrado ganado', perdido: 'Cerrado perdido' };\nconst MIN_CONF = { 'Cerrado ganado': 0.85, 'Cerrado perdido': 0.85 };\nconst actual = ORDEN.includes(m.contacto.etapa) ? m.contacto.etapa : 'Nuevo';\nconst cerrada = actual.startsWith('Cerrado');\nconst e = a.etapa;\nlet nueva = null;\nif (e && ETAPA[e.choice] && !cerrada) {\n  const cand = ETAPA[e.choice];\n  if (ORDEN.indexOf(cand) > ORDEN.indexOf(actual) && (e.confidence || 0) >= (MIN_CONF[cand] ?? 0.7)) nueva = cand;\n}\nif (!nueva && actual === 'Nuevo') nueva = 'Contactado';            // ya le respondimos\nif (nueva) out.push({ tool: 'set_stage', body: { ...base, stage: nueva,\n  reason: e ? `Jev: ${e.choice} (${Math.round((e.confidence || 0) * 100)}%)` : 'Primera respuesta del bot' } });\n\n// ---- Etiquetas por tema\nconst TAG = { compra: 'Interesado oferta', embajador: 'Quiere ser embajador', posventa: 'Posventa', queja: 'Queja', fuera_cobertura: 'Fuera de cobertura' };\nconst i = a.interes;\nconst tag = i && TAG[i.choice];\nif (tag && (i.confidence || 0) >= 0.7 && !(m.contacto.etiquetas || []).includes(tag)) {\n  out.push({ tool: 'add_tags', body: { ...base, tags: [tag], reason: `Jev: tema ${i.choice} (${Math.round((i.confidence || 0) * 100)}%)` } });\n}\n\nreturn out.map(json => ({ json }));"
       },
-      "id": "b4803451-e02d-49a0-879f-7199915fb948",
+      "id": "41fefca8-7c58-4db4-8e46-8e5207281fbe",
       "name": "Acciones para el CRM",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1520,7 +1520,7 @@
           "timeout": 20000
         }
       },
-      "id": "c5fce621-91ab-4750-b0d8-e56fd97cd241",
+      "id": "f275db55-4083-41ee-a5e6-b1d2c0e3c5d4",
       "name": "Ejecutar en el CRM",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -1536,7 +1536,7 @@
         "height": 260,
         "content": "## Bot Agroapoya2 (CRM + YCloud)\n1. En **CONFIG** pon el número de YCloud (`ycloud_from`).\n2. En **Enviar por WhatsApp** y **Enviar foto** elige la credencial *Header Auth* de YCloud (`X-API-Key`).\n3. En el flujo de Entrada, pon la URL de producción de **Mensaje del CRM** como `bot_webhook_url`.\n4. Publica. El buffer lo hace el CRM (`claim_pending`): ya no se usa Redis.\n5. Lo que el bot envía queda en el chat del CRM (`ai_response`). Las acciones (etapa, etiquetas, deals, handoff) quedan en *Acciones de la IA*."
       },
-      "id": "c612834e-b780-4673-be19-3898fe780a60",
+      "id": "24d11f0d-476d-4014-932b-636903820167",
       "name": "Nota",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,

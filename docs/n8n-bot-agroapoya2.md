@@ -42,7 +42,7 @@ Atiende a embajadores ya registrados (etiqueta `Embajador`, sincronizada desde A
 - Les explica comisiones, el descuento propio, la primicia de 24 horas y cómo cobrar (según los términos).
 - Ante pagos que no llegan, compras no contadas o cambios de datos: deja una nota y hace handoff.
 
-En **CONFIG** completa `grupo_embajadores_url` (link de invitación al grupo de WhatsApp) y, si quieres, `embajadores_soporte`.
+En **CONFIG** completa `grupo_embajadores_url` (link de invitación al grupo de WhatsApp).
 Sin link de grupo, el bot no lo inventa: dice que alguien del equipo se lo envía.
 El router manda a este agente las preguntas de un embajador sobre la oferta *para compartir*; si compra para su casa, va a Ventas.
 
