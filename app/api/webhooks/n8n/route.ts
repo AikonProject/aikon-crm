@@ -258,7 +258,7 @@ async function handleAiResponse(
     supabase: ReturnType<typeof createAdminClient>,
     body: N8NPayload
 ) {
-    const { tenant_id, conversation_id, contact_id, wa_message_id, content, content_type } = body;
+    const { tenant_id, conversation_id, contact_id, wa_message_id, content, content_type, media_url, media_mime_type, media_filename } = body;
 
     if (!contact_id) {
         return NextResponse.json({ error: 'Missing contact_id' }, { status: 400 });
@@ -289,6 +289,10 @@ async function handleAiResponse(
             direction: 'outbound' as const,
             content_type: (content_type ?? 'text') as MessageType,
             content: content ?? null,
+            // The bot can also send a product photo or a PDF (shown in the chat like any file)
+            media_url: media_url ?? null,
+            media_mime_type: media_mime_type ?? null,
+            media_filename: media_filename ?? null,
             wa_message_id: wa_message_id ?? null,
             status: 'sent' as const,
             delivery_status: 'sent' as const,
