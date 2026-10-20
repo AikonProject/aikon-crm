@@ -35,6 +35,17 @@ Entrada (enrutador: guarda en el CRM, transcribe audio/imagen/video)
 6. Opcional: agrega una columna `Imagen` (URL pública) a la hoja de productos para que el bot mande fotos.
 7. Publica y apaga el bot de ManyChat para ese número.
 
+## Agente Embajadores
+Atiende a embajadores ya registrados (etiqueta `Embajador`, sincronizada desde Apoya2):
+- Les da la oferta activa (hoja "Información Oferta" + catálogo) y les arma un mensaje listo para reenviar con su link único.
+- Usa sus datos del CRM: `link_referido`, `clientes_referidos`, `localidad`, `fecha_registro_apoya2`.
+- Les explica comisiones, el descuento propio, la primicia de 24 horas y cómo cobrar (según los términos).
+- Ante pagos que no llegan, compras no contadas o cambios de datos: deja una nota y hace handoff.
+
+En **CONFIG** completa `grupo_embajadores_url` (link de invitación al grupo de WhatsApp).
+Sin link de grupo, el bot no lo inventa: dice que alguien del equipo se lo envía.
+El router manda a este agente las preguntas de un embajador sobre la oferta *para compartir*; si compra para su casa, va a Ventas.
+
 ## Cómo ajustar
 - **Router (qué agente responde)**: `Armar router Jev` (criterios) y `Decidir ruta` (umbrales y seguros con código).
 - **Etapa y etiquetas automáticas**: `Armar Jev CRM` (preguntas) y `Acciones para el CRM` (reglas). Cada item que sale es
