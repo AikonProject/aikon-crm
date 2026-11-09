@@ -258,10 +258,17 @@ async function handleAiResponse(
     supabase: ReturnType<typeof createAdminClient>,
     body: N8NPayload
 ) {
-    const { tenant_id, conversation_id, contact_id, wa_message_id, content, content_type, media_url, media_mime_type, media_filename } = body;
+    const { tenant_id, conversation_id, wa_message_id, content, content_type, media_url, media_mime_type, media_filename } = body;
+    let contact_id = body.contact_id;
 
+    // Bots fed straight by a WhatsApp trigger only know the customer's number
+    if (!contact_id && body.wa_id) {
+        const { data } = await supabase.from('contacts').select('id')
+            .eq('tenant_id', tenant_id).eq('wa_id', String(body.wa_id).replace(/\D/g, '')).maybeSingle();
+        contact_id = data?.id;
+    }
     if (!contact_id) {
-        return NextResponse.json({ error: 'Missing contact_id' }, { status: 400 });
+        return NextResponse.json({ error: body.wa_id ? 'Contact not found for wa_id' : 'Missing contact_id or wa_id' }, { status: body.wa_id ? 404 : 400 });
     }
     const conversationId = conversation_id
         ?? (await getOrCreateConversation(supabase, tenant_id, contact_id))?.id;
